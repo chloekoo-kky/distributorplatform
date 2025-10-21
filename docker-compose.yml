@@ -4,12 +4,12 @@ services:
   app:
     build:
       context: .
-    # Add this line 👇
     env_file:
       - .env
     ports:
       - "8000:8000"
     volumes:
+      # Add this line to mount your application code
       - ./app:/app
       - static-data:/vol/web
     command: >
