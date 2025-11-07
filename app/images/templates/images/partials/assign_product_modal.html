@@ -1,0 +1,87 @@
+{# distributorplatform/app/images/templates/images/partials/assign_product_modal.html #}
+
+<div x-show="$store.images.showAssignProductModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="$store.images.showAssignProductModal = false"
+     style="display: none;">
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 h-[80vh] flex flex-col"
+         @click.away="$store.images.showAssignProductModal = false">
+
+        <button @click="$store.images.showAssignProductModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <div class="p-6 border-b">
+            <h3 class="text-2xl font-bold text-gray-800">Assign Image to Products</h3>
+            <p class="text-sm text-gray-500">Assign "<span x-text="$store.images.selectedImageToAssign ? $store.images.selectedImageToAssign.title : ''"></span>" to products.</p>
+        </div>
+
+        <div class="p-4 border-b flex justify-center space-x-6 bg-gray-50">
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" value="featured"
+                       x-model="$store.images.assignProductModalAssignmentType"
+                       @change="$store.images.updateProductModalSelections()">
+                <span class="font-medium text-gray-700">Assign as Featured Image</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" value="gallery"
+                       x-model="$store.images.assignProductModalAssignmentType"
+                       @change="$store.images.updateProductModalSelections()">
+                <span class="font-medium text-gray-700">Add to Image Gallery</span>
+            </label>
+        </div>
+
+        <div class="p-4 border-b">
+            <input type="text"
+                   x-model.debounce.300ms="$store.images.assignProductModalSearchTerm"
+                   placeholder="Search by product name or SKU..."
+                   class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-2">
+            <template x-if="$store.images.filteredProductsForModal.length === 0">
+                <p class="text-center text-gray-500">No products found matching your search.</p>
+            </template>
+            <template x-for="product in $store.images.filteredProductsForModal" :key="product.id">
+                <label :for="'product-' + product.id"
+                       class="flex items-center w-full p-3 border border-gray-200 rounded-md hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-colors"
+                       :class="{ 'bg-indigo-50 border-indigo-500': $store.images.assignProductModalSelectedProducts.includes(product.id) }">
+                    <input type="checkbox"
+                           :id="'product-' + product.id"
+                           :value="product.id"
+                           x-model="$store.images.assignProductModalSelectedProducts"
+                           class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <span class="ml-3 text-sm font-medium text-gray-700">
+                        <span x-text="product.name"></span>
+                        <span x-text="product.sku ? `(${product.sku})` : ''" class="text-xs text-gray-500"></span>
+                    </span>
+
+                    <span x-show="$store.images.assignProductModalAssignmentType === 'featured' && product.featured_image_id && $store.images.selectedImageToAssign && product.featured_image_id !== $store.images.selectedImageToAssign.id"
+                          class="ml-auto text-xs font-semibold text-yellow-600"
+                          title="This product already has a different featured image.">
+                        (Has other image)
+                    </span>
+                    <span x-show="$store.images.assignProductModalAssignmentType === 'gallery' && $store.images.selectedImageToAssign && product.gallery_image_ids.includes($store.images.selectedImageToAssign.id)"
+                          class="ml-auto text-xs font-semibold text-green-600"
+                          title="This image is already in this post's gallery.">
+                        (Already in gallery)
+                    </span>
+                    </label>
+            </template>
+        </div>
+
+        <div class="p-6 bg-gray-50 border-t flex justify-between items-center">
+            <span class="text-sm text-gray-600">
+                <span x-text="$store.images.assignProductModalSelectedProducts.length"></span> product(s) selected.
+            </span>
+            <button type="button"
+                    @click="$store.images.submitProductAssignment()"
+                    :disabled="$store.images.assignProductModalIsSubmitting"
+                    class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span x-show="!$store.images.assignProductModalIsSubmitting">Save Assignments</span>
+                <span x-show="$store.images.assignProductModalIsSubmitting">Saving...</span>
+            </button>
+        </div>
+    </div>
+</div>

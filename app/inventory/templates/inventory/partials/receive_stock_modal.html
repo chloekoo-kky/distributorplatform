@@ -1,0 +1,75 @@
+<div x-show="receiveStockModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+    x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+    x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="display: none;">
+
+    <div @click.away="closeReceiveStockModal()"
+        class="relative bg-white rounded-lg shadow-xl w-full max-w-lg p-8 m-4"
+        x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+        x-transition:enter-end="opacity-100 transform scale-100"
+        x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
+        x-transition:leave-end="opacity-0 transform scale-95">
+
+        <button @click="closeReceiveStockModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        <h3 class="text-2xl font-bold text-gray-800 mb-2">Receive Stock</h3>
+        <p class="text-sm text-gray-600 mb-6">
+            Product: <strong x-text="receiveStockData.productName"></strong> (SKU: <span x-text="receiveStockData.productSku"></span>)<br>
+            Supplier: <strong x-text="receiveStockData.supplierName"></strong><br>
+            Invoice ID: <strong x-text="receiveStockData.invoiceId"></strong>
+        </p>
+
+        <form method="POST" action="{% url 'inventory:receive_stock' %}" id="receive-stock-form">
+            {% csrf_token %}
+            <div class="space-y-4">
+                {% for field in receive_stock_form %}
+                    {% if not field.is_hidden %}
+                    <div>
+                        <label for="{{ field.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
+                            {{ field.label }}
+                        </label>
+                        {# --- START MODIFICATION (Problem 1 Fix) --- #}
+                        {% if field.name == 'quantity' %}
+                            <input type="{{ field.widget_type }}"
+                                name="{{ field.name }}"
+                                id="{{ field.id_for_label }}"
+                                x-model="receiveStockData.quantity_to_receive"
+                                :max="receiveStockData.max_receivable"
+                                min="0"
+                                required
+                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}">
+                        {% else %}
+                            {# Render other fields normally #}
+                            {{ field }}
+                        {% endif %}
+                        {# --- END MODIFICATION --- #}
+                        {% if field.help_text %}<p class="text-xs text-gray-500 mt-1">{{ field.help_text }}</p>{% endif %}
+                        {% for error in field.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
+                    </div>
+                    {% endif %}
+                {% endfor %}
+
+                {# Hidden fields remain the same #}
+                <input type="hidden" name="product" :value="receiveStockData.productId">
+                <input type="hidden" name="supplier" :value="receiveStockData.supplierId">
+                <input type="hidden" name="quotation" :value="receiveStockData.quotationId">
+                <input type="hidden" name="invoice_item" :value="receiveStockData.invoiceItemId"> {# Ensure name is invoice_item #}
+            </div>
+
+            <div id="receive-stock-error-container" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+                <span class="block sm:inline" id="receive-stock-error-message"></span>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                 <button type="button" @click="closeReceiveStockModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Cancel
+                </button>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    Confirm Stock Received
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

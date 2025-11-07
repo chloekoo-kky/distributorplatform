@@ -38,11 +38,21 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'user',
-    'product',
-    'inventory',
+    # Local Apps
+    'user.apps.UserConfig',
+    'product.apps.ProductConfig',
+    'inventory.apps.InventoryConfig',
+    'sales.apps.SalesConfig',
+    'blog.apps.BlogConfig',
+    'seo.apps.SeoConfig',
+    'images.apps.ImagesConfig',
+
+    # Third-party Apps
     'phonenumber_field',
-    'ratelimit', # Add the ratelimit app
+    'django_ratelimit',
+    'import_export',
+
+    'tinymce',
 ]
 
 MIDDLEWARE = [
@@ -56,6 +66,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'core.urls'
+# --- UPDATED LOGIN_REDIRECT_URL ---
+LOGIN_REDIRECT_URL = 'product:product_list'
 
 TEMPLATES = [
     {
@@ -68,6 +80,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'product.context_processors.category_nav_context', # <-- ADD THIS LINE
             ],
         },
     },
@@ -90,6 +103,20 @@ DATABASES = {
     }
 }
 
+# Caching Configuration
+# https://docs.djangoproject.com/en/4.2/topics/cache/
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://redis:6379/1", # Connects to the 'redis' service
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+# Django Ratelimit Configuration
+RATELIMIT_USE_CACHE = 'default' # This setting is now preferred
 
 
 # Password validation
@@ -137,6 +164,43 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'user.CustomUser'
+
+
+CKEDITOR_CONFIGS = {
+    'default': {
+        'toolbar': 'full',
+        'height': 300,
+        'width': '100%',
+        'extraPlugins': ','.join(['codesnippet']),
+    },
+}
+
+# Add TinyMCE configuration
+TINYMCE_DEFAULT_CONFIG = {
+    'height': 360,
+    'width': '100%',
+    'cleanup_on_startup': True,
+    'custom_undo_redo_levels': 20,
+    'selector': 'textarea',
+    'plugins': '''
+            autolink lists link image charmap preview anchor
+            searchreplace visualblocks code fullscreen
+            insertdatetime media table codesample help wordcount
+            ''',
+    'toolbar': '''
+            undo redo | formatselect |
+            bold italic underline | alignleft aligncenter
+            alignright alignjustify | bullist numlist |
+            link image media | codesample | fullscreen | help
+            ''',
+    'menubar': False,
+    'skin': 'oxide',  # Use the modern 'oxide' skin
+    'content_css': 'default',
+    'images_upload_credentials': True,
+    # This uses the default uploader URL from tinymce.urls
+    'images_upload_url': 'upload_image',
+}
+TINYMCE_SPELLCHECKER = False # Disable spellchecker by default
 
 # Twilio Configuration
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')

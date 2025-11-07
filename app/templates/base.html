@@ -3,8 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Distributor Platform{% endblock %}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+
+    <meta name="description" content="{{ meta_description }}">
+    <title>{% block title %}{{ meta_title }}{% endblock %}</title>    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <style>
+        /* Add slight transparency to bottom nav for better look */
+        .bottom-nav {
+            background-color: rgba(255, 255, 255, 0.95); /* White with slight transparency */
+            backdrop-filter: blur(5px); /* Optional: blur effect for modern look */
+        }
+        /* Style for active link (example) */
+        .bottom-nav a.active svg {
+            color: theme('colors.indigo.600');
+        }
+        .bottom-nav a.active span {
+            color: theme('colors.indigo.600');
+        }
+        /* Basic transition for dropdown */
+        .dropdown-menu {
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex flex-col min-h-screen">
 
@@ -12,22 +37,66 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <div class="flex items-center space-x-8">
-                    <a href="#" class="text-2xl font-bold text-indigo-600">Distributor Platform</a>
-                    <a href="{% url 'product_list' %}" class="text-gray-500 hover:text-gray-900">Products</a>
+                    <a href="{% url 'product:home' %}" class="text-2xl font-bold text-indigo-600">Distributor Platform</a>
+
+                    <div class="hidden md:flex space-x-8">
+                        <a href="#" class="text-gray-500 hover:text-gray-900">About Us</a>
+                        <a href="#" class="text-gray-500 hover:text-gray-900">Services</a>
+                        <a href="#" class="text-gray-500 hover:text-gray-900">Contact</a>
+
+                        {% comment %} 'Manage' link was REMOVED from here {% endcomment %}
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-4">
                     {% if user.is_authenticated %}
-                        <span class="text-gray-700">Welcome, {{ user.username }}!</span>
-                        <form action="{% url 'logout' %}" method="post" class="inline">
-                            {% csrf_token %}
-                            <button type="submit" class="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
-                                Logout
-                            </button>
-                        </form>
+
+                        {# --- START MODIFICATION: 'Manage' link moved here --- #}
+                        {% if user.is_staff %}
+<a href="{% url 'manage_dashboard' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Manage</a>                        {% endif %}
+                        {# --- END MODIFICATION --- #}
+
+                        <span class="hidden sm:inline text-sm text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
+                            {% with user_groups=user.user_groups.all %}
+                                {% if user_groups %}
+                                    {{ user_groups|join:", " }}
+                                {% else %}
+                                    Member
+                                {% endif %}
+                            {% endwith %}
+                        </span>
+
+                        <div class="relative">
+                            <div>
+                                <button type="button" class="relative flex rounded-full bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" id="user-menu-button" aria-expanded="false" aria-haspopup="true">
+                                    <span class="absolute -inset-1.5"></span>
+                                    <span class="sr-only">Open user menu</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div id="user-menu" class="dropdown-menu absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden opacity-0 transform scale-95" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
+                                <span class="block px-4 py-2 text-sm text-gray-700 font-medium border-b border-gray-100" role="none">
+                                    Signed in as<br><strong>{{ user.username }}</strong>
+                                </span>
+                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-0">Your Profile</a>
+                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-1">Settings</a>
+                                <form action="{% url 'user:logout' %}" method="post" role="none">
+                                    {% csrf_token %}
+                                    <button type="submit" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-2">
+                                        Sign out
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     {% else %}
-                        <a href="{% url 'login' %}" class="text-gray-500 hover:text-gray-900">Login</a>
-                        <a href="{% url 'register' %}" class="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                        <span class="text-sm text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
+                            Guest
+                        </span>
+                        <a href="{% url 'user:login' %}" class="text-gray-500 hover:text-gray-900">Login</a>
+                        <a href="{% url 'user:register' %}" class="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                             Register
                         </a>
                     {% endif %}
@@ -36,16 +105,128 @@
         </div>
     </nav>
 
-    <main class="flex-grow max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 w-full">
+    {% block full_width_banner %}
+    <div class="bg-yellow-400 text-gray-900">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 rounded-lg flex flex-col sm:flex-row items-center justify-between text-center sm:text-left">
+            <div class="flex-1">
+                <p class="text-xl sm:text-2xl font-bold">New Arrivals Every Week!</p>
+                <p class="text-sm sm:text-base mt-1">Discover our latest products and exclusive deals.</p>
+            </div>
+            <div class="mt-4 sm:mt-0 sm:ml-6">
+                <a href="{% url 'product:product_list' %}" class="inline-block bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-lg transform hover:scale-105 transition duration-300">
+                    Shop Now
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endblock %}
+
+    {% block full_width_sticky_nav %}
+    {% if allowed_categories_list %}
+    <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+
+                <a href="{% url 'product:product_list' %}"
+                   class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                        {% if not selected_category_code %}
+                            border-indigo-500 text-indigo-600
+                        {% else %}
+                            border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
+                        {% endif %}">
+                    All Products
+                </a>
+
+                {% for category in allowed_categories_list %}
+                <a href="{% url 'product:product_list' %}?category={{ category.code }}"
+                   class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                        {% if selected_category_code == category.code %}
+                            border-indigo-500 text-indigo-600
+                        {% else %}
+                            border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
+                        {% endif %}">
+                    {{ category.name }}
+                </a>
+                {% endfor %}
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+    {% endblock %}
+
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-20">
         {% block content %}
         {% endblock %}
     </main>
 
-    <footer class="bg-white mt-12">
-        <div class="max-w-7xl mx-auto py-6 px-4 text-center text-gray-500">
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 shadow-lg bottom-nav z-40">
+        <div class="max-w-7xl mx-auto px-4 h-full">
+            <div class="flex justify-around items-center h-full">
+                <a href="{% url 'product:product_list' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9.75l-9-5.25M12 17.25v-9.75" />
+                    </svg>
+                    <span class="text-xs mt-1">Products</span>
+                </a>
+                {% if user.is_authenticated %}
+                <a href="#" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {# Add active class logic if needed #}">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span class="text-xs mt-1">Account</span>
+                </a>
+                 {% else %}
+                 <a href="{% url 'user:login' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.url_name == 'login' %}active{% endif %}">
+                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                    </svg>
+                    <span class="text-xs mt-1">Login</span>
+                 </a>
+                 {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <footer class="hidden md:block bg-white mt-auto py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-gray-500">
             &copy; 2025 Distributor Platform. All Rights Reserved.
         </div>
     </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const menuButton = document.getElementById('user-menu-button');
+            const userMenu = document.getElementById('user-menu');
+
+            if (menuButton && userMenu) {
+                menuButton.addEventListener('click', function() {
+                    const isExpanded = menuButton.getAttribute('aria-expanded') === 'true';
+                    menuButton.setAttribute('aria-expanded', !isExpanded);
+                    if (!isExpanded) {
+                        userMenu.classList.remove('hidden', 'opacity-0', 'scale-95');
+                        userMenu.classList.add('opacity-100', 'scale-100');
+                    } else {
+                        userMenu.classList.add('opacity-0', 'scale-95');
+                        setTimeout(() => {
+                           if (menuButton.getAttribute('aria-expanded') === 'false') {
+                              userMenu.classList.add('hidden');
+                           }
+                        }, 200);
+                    }
+                });
+
+                document.addEventListener('click', function(event) {
+                    if (!menuButton.contains(event.target) && !userMenu.contains(event.target)) {
+                        menuButton.setAttribute('aria-expanded', 'false');
+                        userMenu.classList.add('opacity-0', 'scale-95');
+                        setTimeout(() => {
+                           userMenu.classList.add('hidden');
+                        }, 200);
+                    }
+                });
+            }
+        });
+    </script>
 
 </body>
 </html>

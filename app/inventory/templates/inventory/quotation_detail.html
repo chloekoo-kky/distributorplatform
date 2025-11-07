@@ -1,0 +1,456 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Manage Quotation {{ quotation.quotation_id }}{% endblock %}
+
+{% block full_width_banner %}{% endblock %}
+{% block full_width_sticky_nav %}{% endblock %}
+
+{% block content %}
+
+{% include 'core/partials/manage_tabs.html' with active_manage_tab='quotations' %}
+
+<div class="w-full max-w-6xl mx-auto pt-8"
+     x-data="quotationEditorData()"
+     x-init="init()"
+     id="quotation-editor"
+     data-items='{{ supplier_products_json|safe }}'
+     data-transport-cost="{{ initial_transport_cost|safe }}"
+     data-is-locked="{{ quotation.invoice|yesno:'true,false' }}"
+     data-update-url="{% url 'inventory:quotation_detail' quotation.quotation_id %}"
+     data-csrf-token="{{ csrf_token }}"
+>
+
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+        {% for message in messages %}
+         <div class="px-4 py-3 rounded relative
+            {% if message.tags == 'success' %} bg-green-100 border border-green-400 text-green-700
+            {% elif message.tags == 'warning' %} bg-yellow-100 border border-yellow-400 text-yellow-700
+            {% elif message.tags == 'error' %} bg-red-100 border border-red-400 text-red-700
+            {% else %} bg-blue-100 border border-blue-400 text-blue-700
+            {% endif %}" role="alert">
+            <span class="block sm:inline">{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <div>
+            <h2 class="text-3xl font-bold text-gray-800">Quotation Details</h2>
+            <p class="text-lg text-gray-600">{{ quotation.quotation_id }}</spsn>
+        </div>
+        <div class="flex items-center space-x-2">
+            {% if not quotation.invoice %}
+                <form method="POST" action="{% url 'sales:create_invoice_from_quotation' quotation.quotation_id %}" onsubmit="return confirm('Convert to invoice? Items cannot be changed after this.');">
+                    {% csrf_token %}
+                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 flex items-center"
+                            :disabled="isLocked">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Convert to Invoice
+                    </button>
+                </form>
+            {% else %}
+                 <span class="px-4 py-2 text-sm font-medium text-gray-500 bg-gray-100 border border-gray-300 rounded-md flex items-center cursor-not-allowed" title="Quotation already invoiced.">
+                     <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                     Invoiced ({{ quotation.invoice.invoice_id }})
+                 </span>
+            {% endif %}
+            <a href="{% url 'manage_dashboard' %}#quotations" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Manage Tools
+            </a>
+        </div>
+    </div>
+
+    <div class="bg-white shadow-lg rounded-lg overflow-hidden p-6 mb-8">
+         <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">Summary & Rates</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <dt class="text-sm font-medium text-gray-500">Supplier</dt>
+                <dd class="mt-1 text-md text-gray-900">{{ quotation.supplier.name }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500">Date Quoted</dt>
+                <dd class="mt-1 text-md text-gray-900">
+                     <input type="date" id="date-quoted-input" x-model="dateQuoted" :disabled="isLocked"
+                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                </dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-gray-500">Transportation (RM)</dt>
+                <dd class="mt-1 text-md text-gray-900">
+                     <input type="number" step="0.01" min="0" id="transport-cost-input" x-model.number="transportCost" @change="formatTransportCost" :disabled="isLocked"
+                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                </dd>
+            </div>
+             <div></div>
+
+             <div>
+                <dt class="text-sm font-medium text-gray-500">Rate (1 EUR to MYR)</dt>
+                <dd class="mt-1 text-md text-gray-900">
+                     <input type="number" step="0.1" min="0" id="rate-eur-input" x-model.number="rateEUR" @change="formatRateEUR(); updateAllPrices();" :disabled="isLocked"
+                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                </dd>
+            </div>
+             <div>
+                <dt class="text-sm font-medium text-gray-500">Rate (1 USD to MYR)</dt>
+                <dd class="mt-1 text-md text-gray-900">
+                     <input type="number" step="0.1" min="0" id="rate-usd-input" x-model.number="rateUSD" @change="formatRateUSD(); updateAllPrices();" :disabled="isLocked"
+                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                </dd>
+            </div>
+        </div>
+
+        <div class="mt-6 border-t pt-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2 space-y-2">
+                    <div class="flex justify-between items-baseline">
+                        <dt class="text-sm font-medium text-gray-700">Subtotal (Items - RM):</dt>
+                        <dd class="text-sm font-bold text-gray-900" id="subtotal-display" x-text="formatPrice(subtotal)"></dd>
+                    </div>
+                    <div class="flex justify-between items-baseline">
+                        <dt class="text-sm font-medium text-gray-700">Transportation Cost (RM):</dt>
+                        <dd class="text-sm font-bold text-gray-900" id="transport-cost-display" x-text="formatPrice(transportCost)"></dd>
+                    </div>
+                    <div class="flex justify-between items-baseline border-t pt-2 mt-2">
+                        <dt class="text-base font-semibold text-gray-900">Total Landed Cost (RM):</dt>
+                        <dd class="text-base font-bold text-indigo-700" id="total-landed-cost-display" x-text="formatPrice(totalLandedCost)"></dd>
+                    </div>
+                </div>
+
+                <div class="md:col-span-1 flex items-end justify-end">
+                    {% if not quotation.invoice %}
+                        <button id="update-quotation-button"
+                                @click="submitUpdate"
+                                :disabled="isLocked || isSaving"
+                                class="w-full md:w-auto px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                             <span x-show="!isSaving">Update Quotation Items</span>
+                             <span x-show="isSaving">Saving...</span>
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        </div>
+
+    <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+        <h3 class="text-xl font-semibold text-gray-700 p-6 border-b">Products from {{ quotation.supplier.name }}</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('sku')">
+                            <span class="flex items-center">SKU<span x-html="sortIcon('sku')"></span></span>
+                        </th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('name')">
+                             <span class="flex items-center">Product<span x-html="sortIcon('name')"></span></span>
+                        </th>
+                        <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('previous_quoted_price')">
+                             <span class="flex items-center justify-end">Previous Price (RM)<span x-html="sortIcon('previous_quoted_price')"></span></span>
+                        </th>
+                        <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Quantity</th>
+                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (EUR)</th>
+                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (USD)</th>
+                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('quoted_price')">
+                            <span class="flex items-center">Input Price (MYR)<span x-html="sortIcon('quoted_price')"></span></span>
+                        </th>
+                        <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('line_total')">
+                            <span class="flex items-center justify-end">Line Total (RM)<span x-html="sortIcon('line_total')"></span></span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200" id="product-table-body">
+                    <template x-if="items.length === 0">
+                        <tr><td colspan="8" class="px-6 py-4 text-center text-gray-500">No products found for this supplier.</td></tr>
+                    </template>
+                    <template x-for="(item, index) in sortedItems" :key="item.product_id">
+                        <tr>
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="item.sku || '-'"></td>
+                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="item.name"></td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500 text-right" x-text="formatPrice(item.previous_quoted_price)"></td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <div class="flex items-center justify-center">
+                                    <button type="button" @click="updateItemQuantity(index, -1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-l text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> - </button>
+                                    <input type="number" min="0" :value="item.quantity" @change="setItemQuantity(index, $event.target.value)" :disabled="isLocked" class="qty-input w-16 p-1 text-center border-t border-b border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    <button type="button" @click="updateItemQuantity(index, 1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-r text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> + </button>
+                                </div>
+                            </td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'EUR')" @change="updateItemPrice(index, $event.target.value, 'EUR')" :disabled="isLocked"
+                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                            </td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'USD')" @change="updateItemPrice(index, $event.target.value, 'USD')" :disabled="isLocked"
+                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                            </td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <input type="number" step="0.01" min="0" :value="calculatePrice(item.quoted_price, 'MYR')" @change="updateItemPrice(index, $event.target.value, 'MYR')" :disabled="isLocked"
+                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                            </td>
+                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-900 text-right line-total" x-text="formatPrice(lineTotal(item))"></td>
+                        </tr>
+                    </template>
+                </tbody>
+                 </table>
+        </div>
+        </div>
+
+</div>
+
+<script>
+    function quotationEditorData() {
+        const editorElement = document.getElementById('quotation-editor');
+        const initialItems = JSON.parse(editorElement.dataset.items || '[]');
+        const initialTransportCost = parseFloat(editorElement.dataset.transportCost) || 0;
+        const isLocked = editorElement.dataset.isLocked === 'true';
+        const updateUrl = editorElement.dataset.updateUrl;
+        const csrfToken = editorElement.dataset.csrfToken;
+
+        return {
+            // --- State Properties ---
+            sortColumn: 'name',
+            sortAsc: true,
+            items: [], // Populated in init
+            transportCost: initialTransportCost,
+            isLocked: isLocked,
+            dateQuoted: '{{ quotation.date_quoted|date:"Y-m-d" }}',
+            notes: `{{ quotation.notes|escapejs|default:"" }}`,
+            rateEUR: 4.9, // Default
+            rateUSD: 4.2, // Default
+            isSaving: false,
+
+            // --- Computed Properties ---
+            get sortedItems() {
+                return [...this.items].sort((a, b) => {
+                    let valA, valB;
+                    if (this.sortColumn === 'line_total') {
+                        valA = this.lineTotal(a);
+                        valB = this.lineTotal(b);
+                        return this.sortAsc ? valA - valB : valB - valA;
+                    } else if (this.sortColumn === 'quoted_price' || this.sortColumn === 'previous_quoted_price') {
+                        valA = parseFloat(a[this.sortColumn] || 0);
+                        valB = parseFloat(b[this.sortColumn] || 0);
+                        return this.sortAsc ? valA - valB : valB - valA;
+                    } else {
+                         valA = (a[this.sortColumn] || '').toString().toLowerCase();
+                         valB = (b[this.sortColumn] || '').toString().toLowerCase();
+                         if (valA < valB) return this.sortAsc ? -1 : 1;
+                         if (valA > valB) return this.sortAsc ? 1 : -1;
+                         return 0;
+                    }
+                });
+            },
+            get subtotal() {
+                return this.items.reduce((sum, item) => sum + this.lineTotal(item), 0);
+            },
+            get totalLandedCost() {
+                // Ensure transportCost is treated as a number
+                const transport = parseFloat(this.transportCost) || 0;
+                return this.subtotal + transport;
+            },
+
+            // --- Methods ---
+            init() {
+                console.log('Alpine init() called.');
+                this.items = initialItems.map(item => {
+                    const currentPrice = parseFloat(item.quoted_price || 0);
+                    const prevPrice = parseFloat(item.previous_quoted_price || 0);
+                    let finalQuotedPrice = '0.00';
+                    if (currentPrice > 0) { finalQuotedPrice = currentPrice.toFixed(2); }
+                    else if (prevPrice > 0) { finalQuotedPrice = prevPrice.toFixed(2); }
+                    return {
+                        ...item,
+                        quoted_price: finalQuotedPrice,
+                        previous_quoted_price: prevPrice.toFixed(2),
+                        quantity: Math.max(0, parseInt(item.quantity || 0))
+                    };
+                });
+                // Read initial values from potentially autofilled inputs OR defaults
+                this.transportCost = parseFloat(document.getElementById('transport-cost-input').value) || initialTransportCost;
+                this.rateEUR = parseFloat(document.getElementById('rate-eur-input').value) || 4.9;
+                this.rateUSD = parseFloat(document.getElementById('rate-usd-input').value) || 4.2;
+                // Format initial values
+                this.formatTransportCost();
+                this.formatRateEUR();
+                this.formatRateUSD();
+                console.log('Initial items processed:', this.items);
+            },
+            sortTable(column) {
+                if (this.sortColumn === column) {
+                    this.sortAsc = !this.sortAsc;
+                } else {
+                    this.sortColumn = column;
+                    this.sortAsc = true;
+                }
+            },
+            sortIcon(column) {
+                if (column !== this.sortColumn) return '';
+                const iconClass = "w-3 h-3 ml-1 inline-block";
+                if (this.sortAsc) {
+                    return `<svg class="${iconClass}" fill="currentColor" viewBox="0 0 16 16"><path d="M7.247 4.86l-4.796 5.481c-.566.647-.106 1.659.753 1.659h9.592a1 1 0 0 0 .753-1.659l-4.796-5.48a1 1 0 0 0-1.506 0z"/></svg>`;
+                } else {
+                    return `<svg class="${iconClass}" fill="currentColor" viewBox="0 0 16 16"><path d="M7.247 11.14l-4.796-5.481c-.566-.647-.106-1.659.753-1.659h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/></svg>`;
+                }
+            },
+            lineTotal(item) {
+                const qty = parseInt(item.quantity || 0);
+                const priceMYR = parseFloat(item.quoted_price || 0);
+                return qty * priceMYR;
+            },
+            formatPrice(value) {
+                const num = parseFloat(value); // Don't default to 0 here
+                 if (isNaN(num)) return '-'; // Return '-' if not a number
+                 return `RM ${num.toFixed(2)}`;
+            },
+            updateItemQuantity(index, delta) {
+                 if (this.isLocked) return;
+                // Find item in the *currently displayed* sorted list
+                 const displayedItem = this.sortedItems[index];
+                 if (!displayedItem) return;
+                // Find the corresponding item in the original unsorted list to modify its state
+                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
+                 if (originalItemIndex === -1) return;
+
+                let currentQty = parseInt(this.items[originalItemIndex].quantity || 0);
+                let newQty = Math.max(0, currentQty + delta);
+                this.items[originalItemIndex].quantity = newQty;
+                // Input value will update automatically via :value binding in x-for
+            },
+             setItemQuantity(index, value) {
+                 if (this.isLocked) return;
+                 const displayedItem = this.sortedItems[index];
+                 if (!displayedItem) return;
+                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
+                 if (originalItemIndex === -1) return;
+
+                 let newQty = Math.max(0, parseInt(value || 0));
+                 this.items[originalItemIndex].quantity = newQty;
+
+                 // Force update input value in case parsing differs slightly
+                 this.$nextTick(() => {
+                    const input = this.$el.querySelector(`#product-table-body tr:nth-child(${index + 1}) input[data-action='set-quantity']`);
+                    if(input && input.value !== newQty.toString()) {
+                         input.value = newQty;
+                    }
+                });
+            },
+            updateItemPrice(index, value, currency) {
+                 if (this.isLocked) return;
+                 const displayedItem = this.sortedItems[index];
+                 if (!displayedItem) return;
+                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
+                 if (originalItemIndex === -1) return;
+
+                 let numericValue = (currency === 'EUR' || currency === 'USD')
+                                ? (parseInt(value, 10) || 0)
+                                : (parseFloat(value) || 0);
+                if (numericValue < 0) numericValue = 0;
+
+                let priceMYR = 0;
+                if (currency === 'EUR') { priceMYR = numericValue * this.rateEUR; }
+                else if (currency === 'USD') { priceMYR = numericValue * this.rateUSD; }
+                else { priceMYR = numericValue; }
+
+                this.items[originalItemIndex].quoted_price = priceMYR.toFixed(2);
+                // Other price inputs update automatically via :value binding
+            },
+            calculatePrice(myrPriceStr, targetCurrency) {
+                 const priceMYR = parseFloat(myrPriceStr || 0);
+                 if (targetCurrency === 'EUR') {
+                    return (this.rateEUR > 0 ? priceMYR / this.rateEUR : 0).toFixed(0);
+                 } else if (targetCurrency === 'USD') {
+                    return (this.rateUSD > 0 ? priceMYR / this.rateUSD : 0).toFixed(0);
+                 } else { // MYR
+                    return priceMYR.toFixed(2);
+                 }
+            },
+             // Method to explicitly update all price inputs when rate changes
+             updateAllPrices() {
+                console.log('updateAllPrices called due to rate change.');
+                // Trigger reactivity by slightly modifying the items array
+                // This forces Alpine to re-evaluate computed properties and bindings
+                // A more robust way might involve deeper reactivity setup if this becomes unreliable.
+                this.items = [...this.items];
+            },
+            formatTransportCost() {
+                if (isNaN(this.transportCost) || this.transportCost < 0) this.transportCost = 0;
+                 this.transportCost = parseFloat(this.transportCost.toFixed(2));
+                 // Input updates via x-model
+            },
+            formatRateEUR() {
+                 if (isNaN(this.rateEUR) || this.rateEUR <= 0) this.rateEUR = 0.1;
+                 this.rateEUR = parseFloat(this.rateEUR.toFixed(1));
+                 // Input updates via x-model
+            },
+            formatRateUSD() {
+                 if (isNaN(this.rateUSD) || this.rateUSD <= 0) this.rateUSD = 0.1;
+                 this.rateUSD = parseFloat(this.rateUSD.toFixed(1));
+                 // Input updates via x-model
+            },
+
+            async submitUpdate() {
+                 if (this.isLocked || this.isSaving) return;
+                 console.log('submitUpdate() called...');
+                 this.isSaving = true;
+
+                 // Ensure rates and cost are valid numbers before sending
+                 this.formatTransportCost();
+                 this.formatRateEUR();
+                 this.formatRateUSD();
+
+                 const itemsToSave = this.items.filter(item => parseInt(item.quantity || 0) > 0);
+                 const payload = {
+                     items: itemsToSave.map(item => ({
+                        product_id: item.product_id,
+                        quantity: parseInt(item.quantity),
+                        quoted_price: parseFloat(item.quoted_price).toFixed(2)
+                     })),
+                     transportation_cost: this.transportCost.toFixed(2),
+                     date_quoted: this.dateQuoted,
+                     notes: this.notes
+                 };
+                 console.log('Submitting payload:', payload);
+
+                 try {
+                     const response = await fetch(updateUrl, {
+                         method: 'POST',
+                         headers: {
+                             'Content-Type': 'application/json',
+                             'X-CSRFToken': csrfToken,
+                             'X-Requested-With': 'XMLHttpRequest'
+                         },
+                         body: JSON.stringify(payload)
+                     });
+                     const data = await response.json();
+                     console.log('Server response:', data);
+                     if (response.ok && data.success) {
+                         alert('Quotation items updated successfully! The page will reload.');
+                         window.location.reload();
+                     } else {
+                         // Improved error display
+                         let errorMsg = 'Error updating quotation:';
+                         if (data.error) {
+                             errorMsg += `\n- ${data.error}`;
+                         } else if (data.errors) { // Handle potential validation errors
+                             for (const field in data.errors) {
+                                 errorMsg += `\n- ${field}: ${data.errors[field].join(', ')}`;
+                             }
+                         } else {
+                             errorMsg += '\n- Unknown server error.';
+                         }
+                         alert(errorMsg);
+                     }
+                 } catch (error) {
+                     console.error('Submit error:', error);
+                     alert('An network error occurred while saving. Please check the console.');
+                 } finally {
+                     this.isSaving = false;
+                 }
+             }
+        }
+    }
+</script>
+
+{% endblock %}

@@ -1,0 +1,124 @@
+<h3 class="text-2xl font-semibold text-gray-700 mb-6">All Invoices</h3>
+<div class="bg-white shadow-lg rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice ID</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Original Quotation</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Issued</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                </tr>
+            </thead>
+            {% for invoice in invoices %}
+            {# --- This line is the key --- #}
+            <tbody x-data="{ open: $store.globals.invoiceToOpen === '{{ invoice.invoice_id }}' }"
+                   x-init="console.log('[DEBUG] tbody init for {{ invoice.invoice_id }}. Store value:', $store.globals.invoiceToOpen, 'My ID:', '{{ invoice.invoice_id }}', 'Am I open?', open)"
+                   class="bg-white">
+                <tr @click="open = !open" class="cursor-pointer hover:bg-gray-50">
+                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                        <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button type="button" @click.stop="fetchInvoiceData('{{ invoice.invoice_id }}')" class="text-indigo-600 hover:text-indigo-900 hover:underline focus:outline-none">
+                            {{ invoice.invoice_id }}
+                        </button>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ invoice.supplier.name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {% if invoice.quotation %}
+                        <a href="{% url 'inventory:quotation_detail' invoice.quotation.quotation_id %}" @click.stop class="text-indigo-600 hover:text-indigo-900">
+                            {{ invoice.quotation.quotation_id }}
+                        </a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ invoice.date_issued }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ invoice.payment_date|default:"-" }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {% include 'inventory/partials/invoice_status_badge.html' with status=invoice.status display=invoice.get_status_display %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">RM {{ invoice.total_amount|floatformat:2 }}</td>
+                </tr>
+                 <tr x-show="open" style="display: none;" class="bg-gray-50">
+    <td colspan="8" class="p-0">
+        <div class="p-4">
+            <h4 class="text-md font-semibold text-gray-700 mb-2 ml-2">Invoice Items</h4>
+            {% with items=invoice.items.all %}
+                {% if items %}
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product / Description</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity (Rcvd/Total)</th> {# <-- Label Change #}
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white">
+                            {% for item in items %}
+                            <tr>
+                                <td class="px-4 py-2 text-sm text-gray-500">{{ item.product.sku|default:"-" }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-900">{{ item.description|default:item.product.name }}</td>
+                               {# START MODIFICATION: Display Received/Total #}
+                                <td class="px-4 py-2 text-sm text-gray-500">
+                                    {{ item.quantity_received }} / {{ item.quantity }}
+                                </td>
+                               {# END MODIFICATION #}
+                                <td class="px-4 py-2 text-sm text-gray-500">RM {{ item.unit_price|floatformat:2 }}</td>
+                                <td class="px-4 py-2 text-sm text-gray-500">RM {{ item.total_price|floatformat:2 }}</td>
+                                <td class="px-4 py-2 text-sm">
+                                    {# START MODIFICATION: Disable button and update data #}
+                                    {% if not item.is_fully_received %}
+                                        <button @click.stop="openReceiveStockModal({
+                                            invoiceItemId: '{{ item.id }}',
+                                            invoiceId: '{{ invoice.invoice_id }}',
+                                            productId: '{{ item.product.id }}',
+                                            productName: '{{ item.product.name|escapejs }}',
+                                            productSku: '{{ item.product.sku|default:"-"|escapejs }}',
+                                            quantity: '{{ item.quantity_remaining }}', {# <-- Pass remaining qty #}
+                                            supplierId: '{{ invoice.supplier.id }}',
+                                            supplierName: '{{ invoice.supplier.name|escapejs }}',
+                                            quotationId: '{{ invoice.quotation.id|default:"" }}'
+                                        })"
+                                            class="px-2 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-green-500">
+                                            Receive Stock
+                                        </button>
+                                    {% else %}
+                                        <span class="px-2 py-1 text-xs font-medium text-gray-500 bg-gray-100 rounded cursor-not-allowed">
+                                            Fully Received
+                                        </span>
+                                    {% endif %}
+                                     {# END MODIFICATION #}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                                {% else %}
+                                    <div class="px-4 py-2 text-center text-gray-500">
+                                        No items found for this invoice.
+                                    </div>
+                                {% endif %}
+                            {% endwith %}
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+            {% empty %}
+             <tbody class="bg-white">
+                <tr>
+                     <td colspan="8" class="px-6 py-4 text-center text-gray-500">No invoices found.</td>
+                </tr>
+             </tbody>
+            {% endfor %}
+        </table>
+    </div>
+</div>

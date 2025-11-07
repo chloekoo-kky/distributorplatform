@@ -94,7 +94,7 @@
         </form>
 
         <p class="mt-6 text-sm text-center text-gray-600">
-            Already have an account? <a href="{% url 'login' %}" class="font-medium text-indigo-600 hover:underline">Sign in</a>
+            Already have an account? <a href="{% url 'user:login' %}" class="font-medium text-indigo-600 hover:underline">Sign in</a>
         </p>
     </div>
 </div>
@@ -217,7 +217,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const verifyForm = document.getElementById('verify-form');
     const modal = document.getElementById('verify-modal');
     const closeModalButton = document.getElementById('close-modal');
-    const csrfToken = registerForm.querySelector('[name=csrfmiddlewaretoken]').value;
+    const csrfTokenInput = registerForm.querySelector('[name=csrfmiddlewaretoken]');
+    const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
 
     const registerButtonText = document.getElementById('register-button-text');
     const registerSpinner = document.getElementById('register-spinner');
@@ -244,37 +245,61 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(registerForm);
 
         try {
-            const response = await fetch('{% url "register" %}', {
+            // --- FIXED URL ---
+            const response = await fetch('{% url "user:register" %}', {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken },
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    // --- FIX: Add the X-CSRFToken header ---
+                    'X-CSRFToken': csrfToken
+                },
                 body: formData
             });
 
-            // --- FIX: Handle non-JSON responses from rate limiter ---
-            if (!response.ok) { // Catches 403, 500, etc.
-                 const data = await response.json();
-                 displayFormErrors(data); // Display the "Too many requests" error
-                 return;
+            // Handle non-JSON responses first (like 403 Forbidden HTML page)
+            if (!response.ok) {
+                // Try to get text first, might be HTML error page
+                const errorText = await response.text();
+                try {
+                    // See if it's actually JSON
+                    const data = JSON.parse(errorText);
+                    displayFormErrors(data); // Display JSON error
+                } catch(jsonError) {
+                    // It wasn't JSON, likely HTML. Show generic CSRF or server error.
+                    if (response.status === 403) {
+                         displayFormErrors({ 'error': 'Security token validation failed. Please refresh the page and try again.' });
+                    } else {
+                         displayFormErrors({ 'error': `Server error (${response.status}). Please try again later.` });
+                    }
+                }
+                return; // Stop processing
             }
 
+
+            // --- If response.ok, process as JSON ---
             const data = await response.json();
 
             if (data.success) {
                 modalMessage.textContent = `A verification code has been sent to your WhatsApp at ${data.phone_number}.`;
                 modalMessageContainer.className = 'bg-green-100 border-green-400 text-green-700 px-4 py-3 rounded relative mb-4';
                 modal.classList.remove('hidden');
+                // Store the phone number for the verify step if needed later
+                // sessionStorage.setItem('verifyingPhoneNumber', data.phone_number);
             } else {
                 displayFormErrors(data);
             }
 
         } catch (error) {
-            displayFormErrors({ 'error': 'An unknown error occurred. Please try again.' });
+             console.error("Fetch Error:", error); // Log the actual error
+             displayFormErrors({ 'error': 'An network or unknown error occurred. Please try again.' });
         } finally {
             registerButtonText.classList.remove('hidden');
             registerSpinner.classList.add('hidden');
+             // Re-enable button based on password criteria check
             passwordInput.dispatchEvent(new Event('input'));
         }
     });
+
 
     // 2. Handle Verification Modal Form Submission
     verifyForm.addEventListener('submit', async (e) => {
@@ -287,7 +312,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const code = document.getElementById('code').value;
 
         try {
-            const response = await fetch('{% url "verify_phone" %}', {
+            // --- FIXED URL ---
+            const response = await fetch('{% url "user:verify_phone" %}', {
                 method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
@@ -300,11 +326,23 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (data.success) {
-                window.location.href = data.redirect_url;
+                // Show success message with Swal
+                Swal.fire({
+                    title: 'Welcome!',
+                    text: 'Your registration was successful.',
+                    icon: 'success',
+                    confirmButtonText: 'Great!'
+                }).then((result) => {
+                    // Redirect after the user clicks "Great!"
+                    if (result.isConfirmed) {
+                        window.location.href = data.redirect_url;
+                    }
+                });
             } else {
                 modalMessage.textContent = data.error || 'An error occurred.';
                 modalMessageContainer.className = 'bg-red-100 border-red-400 text-red-700 px-4 py-3 rounded relative mb-4';
             }
+
 
         } catch (error) {
             modalMessage.textContent = 'An unknown error occurred. Please try again.';
