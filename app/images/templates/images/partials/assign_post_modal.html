@@ -48,9 +48,31 @@
             <div class="space-y-2">
                 <template x-for="post in $store.images.filteredPostsForModal" :key="post.id">
                     <label :for="'post-' + post.id"
-                           class="flex items-center w-full p-3 border border-gray-200 rounded-md hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-colors"
-                           :class="{ 'bg-indigo-50 border-indigo-500': $store.images.assignPostModalSelectedPosts.includes(post.id) }">
-                        </label>
+                        class="flex items-center w-full p-3 border border-gray-200 rounded-md hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-colors"
+                        :class="{ 'bg-indigo-50 border-indigo-500': $store.images.assignPostModalSelectedPosts.includes(post.id) }">
+
+                        {# --- START MODIFICATION: Added content inside the label --- #}
+                        <input type="checkbox"
+                            :id="'post-' + post.id"
+                            :value="post.id"
+                            x-model="$store.images.assignPostModalSelectedPosts"
+                            class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <span class="ml-3 text-sm font-medium text-gray-700">
+                            <span x-text="post.title"></span>
+                        </span>
+
+                        <span x-show="$store.images.assignPostModalAssignmentType === 'featured' && post.featured_image_id && $store.images.selectedImageToAssign && post.featured_image_id !== $store.images.selectedImageToAssign.id"
+                            class="ml-auto text-xs font-semibold text-yellow-600"
+                            title="This post already has a different featured image.">
+                            (Has other image)
+                        </span>
+                        <span x-show="$store.images.assignPostModalAssignmentType === 'gallery' && $store.images.selectedImageToAssign && post.gallery_image_ids.includes($store.images.selectedImageToAssign.id)"
+                            class="ml-auto text-xs font-semibold text-green-600"
+                            title="This image is already in this post's gallery.">
+                            (Already in gallery)
+                        </span>
+                        {# --- END MODIFICATION --- #}
+                    </label>
                 </template>
             </div>
         </div>

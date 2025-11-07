@@ -267,6 +267,11 @@ def manage_product_edit(request, product_id):
             'selectedImageUrl': product.featured_image.image.url if product.featured_image else '',
             'update_url': reverse('product:manage_product_edit', kwargs={'product_id': product.id})
         }
+
+        logger.debug(f"--- [DEBUG] manage_product_edit (GET) for product {product_id} ---")
+        logger.debug(f"[DEBUG] Sending categories: {data['categories']} (Type of first item: {type(data['categories'][0]) if data['categories'] else 'N/A'})")
+        logger.debug(f"[DEBUG] Sending suppliers: {data['suppliers']} (Type of first item: {type(data['suppliers'][0]) if data['suppliers'] else 'N/A'})")
+
         return JsonResponse(data)
 
     # Fallback for non-AJAX GET (though it shouldn't be used anymore)
@@ -288,8 +293,23 @@ def api_manage_products(request):
     limit = request.GET.get('limit', 50) # <-- Add limit parameter
 
     # --- 2. Build Base Queryset ---
-    queryset = Product.objects.select_related('featured_image').prefetch_related(
-        Prefetch('categories', queryset=Category.objects.select_related('group'))
+    queryset = Product.objects.annotate(
+        # --- START REMOVAL ---
+        # annotated_base_cost=Subquery(latest_item_price_sq) # <-- *** ADD THIS ANNOTATION ***
+        # --- END REMOVAL ---
+    ).select_related('featured_image').prefetch_related(
+        Prefetch('categories', queryset=Category.objects.select_related('group')),
+
+        # --- START ADDITION (This prefetch works with the property change) ---
+        Prefetch(
+            'quotationitem_set',
+            queryset=QuotationItem.objects.select_related('quotation')
+                                          .prefetch_related('quotation__items')
+                                          .order_by('-quotation__date_quoted'),
+            to_attr='latest_quotation_items' # This must match the property check
+        )
+        # --- END ADDITION ---
+
     ).order_by('name')
 
     # --- 3. Apply Filters ---
@@ -321,12 +341,21 @@ def api_manage_products(request):
             'id': product.pk,
             'sku': product.sku or '-',
             'name': product.name,
+            'selling_price': product.selling_price,
+
+            # --- START ADDITIONS ---
+            'profit_margin': product.profit_margin,
+            'base_cost': product.base_cost, # This now calls the optimized @property
+            # --- END ADDITIONS ---
+
             'category_groups': sorted(list(set(group_list))),
+
+            # --- START ADDITION ---
             'categories': sorted(list(set(category_list))),
+            # --- END ADDITION ---
+
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
             'featured_image_alt': product.featured_image.alt_text if product.featured_image else product.name,
-            # --- Add fields needed by image modal ---
-            'featured_image_id': product.featured_image_id,
             'gallery_image_ids': list(product.gallery_images.all().values_list('id', flat=True))
         }
         serialized_products.append(product_data)
@@ -341,3 +370,37 @@ def api_manage_products(request):
             'has_previous': page_obj.has_previous(),
         }
     })
+
+
+from decimal import Decimal, InvalidOperation
+
+@staff_required
+def api_manage_pricing(request, product_id):
+    """
+    Handles updating the profit_margin and selling_price for a product.
+    """
+    if not (request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
+
+    product = get_object_or_404(Product, pk=product_id)
+
+    try:
+        data = json.loads(request.body)
+        selling_price_str = data.get('selling_price')
+        profit_margin_str = data.get('profit_margin')
+
+        # Update fields only if they are provided, allowing null
+        product.selling_price = Decimal(selling_price_str) if selling_price_str is not None else None
+        product.profit_margin = Decimal(profit_margin_str) if profit_margin_str is not None else None
+
+        product.save(update_fields=['selling_price', 'profit_margin'])
+
+        logger.info(f"Updated pricing for Product {product_id}: Price={product.selling_price}, Margin={product.profit_margin}")
+        return JsonResponse({'success': True})
+
+    except (json.JSONDecodeError, InvalidOperation):
+        return JsonResponse({'success': False, 'error': 'Invalid data format.'}, status=400)
+    except Exception as e:
+        logger.error(f"Error updating pricing for product {product_id}: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+

@@ -41,10 +41,15 @@ def manage_dashboard(request):
     group_to_categories_map = {}
     all_categories_set = set() # Use a set for unique, flat list
 
-    # Pre-fetch all categories with their groups
-    all_categories_qs = Category.objects.select_related('group').all()
+    # --- START MODIFICATION ---
+    # Pre-fetch all categories and evaluate into a list *once*
+    # This prevents the queryset from being "consumed".
+    all_categories_list_from_db = list(Category.objects.select_related('group').all())
+    # --- END MODIFICATION ---
 
-    for cat in all_categories_qs:
+    # --- MODIFICATION: Iterate over the new list ---
+    for cat in all_categories_list_from_db:
+    # --- END MODIFICATION ---
         # Ensure all parts exist and have names
         if cat.group and cat.group.name and cat.name:
             # Strip whitespace to prevent key mismatches
@@ -76,10 +81,13 @@ def manage_dashboard(request):
 
 
     # --- Data for Modals ---
+    # --- MODIFICATION: Use the new list, but re-sort it as needed for the modal ---
+    # We must sort it here to match the old .order_by() behavior for the modal list
     all_categories_list = [
         {'id': cat.id, 'name': str(cat)}
-        for cat in all_categories_qs.order_by('group__name', 'name') # Re-use the query
+        for cat in sorted(all_categories_list_from_db, key=lambda c: (c.group.name if c.group else '', c.name))
     ]
+    # --- END MODIFICATION ---
     all_suppliers_list = [
         {'id': sup.id, 'name': sup.name}
         for sup in Supplier.objects.all().order_by('name')
@@ -109,7 +117,7 @@ def manage_dashboard(request):
 
         # --- Filter Data (now guaranteed to match) ---
         'all_category_groups': all_category_groups,
-        'all_categories_flat_list': all_categories_flat_list, # Was 'all_categories_flat_list_json'
+        'all_categories_flat_list': all_categories_flat_list,
         'group_to_categories_map': group_to_categories_map,
 
         # --- Modal Forms ---
@@ -121,9 +129,10 @@ def manage_dashboard(request):
         'image_upload_form': ImageUploadForm(),
         'today_date': datetime.date.today(),
 
-        # --- Data for Modals (as JSON) ---
-        'all_categories_list_json': json.dumps(all_categories_list),
-        'all_suppliers_list_json': json.dumps(all_suppliers_list),
+        # --- MODIFICATION: Pass raw lists (not json strings) ---
+        'all_categories_list': all_categories_list,
+        'all_suppliers_list': all_suppliers_list,
+        # --- END MODIFICATION ---
         'all_image_categories_json': json.dumps(all_image_categories),
 
         'invoices': all_invoices,

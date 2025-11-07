@@ -2,6 +2,21 @@
      x-init="init()"
      @refresh-data.window="if ($event.detail.tab === 'quotations') fetchQuotations()"
 >
+    <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-semibold text-gray-700">Manage Quotations</h3>
+        <div class="flex space-x-2">
+            <button @click="$dispatch('open-create-quotation-modal')" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700">
+                Create Quotation
+            </button>
+            <button @click="$dispatch('open-upload-quotation-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                Upload Quotations
+            </button>
+            <a href="{% url 'inventory:export_quotations_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700">
+                Export All Quotations
+            </a>
+        </div>
+    </div>
+
     <div x-show="isLoading" class="p-6 text-center text-gray-500">
         Loading quotations...
     </div>
@@ -17,13 +32,14 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Quoted</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item Count</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Value</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport Cost</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Landed Cost</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="items.length === 0">
                         <tr>
-                            <td colspan="7" class="px-6 py-4 text-center text-gray-500">No quotations match the current filters.</td>
+                            <td colspan="8" class="px-6 py-4 text-center text-gray-500">No quotations match the current filters.</td>
                             </tr>
                     </template>
                     <template x-for="q in items" :key="q.quotation_id">
@@ -48,11 +64,15 @@
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.item_count"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.total_value)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.transportation_cost)"></td>
+
+                                {# --- START MODIFICATION --- #}
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice((parseFloat(q.total_value) || 0) + (parseFloat(q.transportation_cost) || 0))"></td>
+                                {# --- END MODIFICATION --- #}
                             </tr>
 
                             <tr x-show="open" x-transition class="bg-gray-50">
-                                <td colspan="7" class="p-0">
+                                <td colspan="8" class="p-0">
                                     <div class="p-4">
                                         <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading items...</div>
                                         <div x-show="!isLoading && items.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No items found for this quotation.</div>
@@ -82,7 +102,7 @@
                                     </div>
                                 </td>
                             </tr>
-                            </tbody>
+                        </tbody>
                     </template>
                 </tbody>
             </table>
