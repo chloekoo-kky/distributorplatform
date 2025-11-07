@@ -43,7 +43,21 @@ class Product(models.Model):
         db_index=True,
         help_text="Stock Keeping Unit"
     )
-    description = models.TextField(null=True, blank=True) 
+    description = models.TextField(null=True, blank=True)
+    selling_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="The customer-facing selling price."
+    )
+    profit_margin = models.DecimalField(
+        max_digits=5, # e.g., 999.99%
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Profit margin percentage (e.g., 20.00 for 20%)"
+    )
     members_only = models.BooleanField(default=False)
     categories = models.ManyToManyField(Category, related_name='products', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -76,14 +90,24 @@ class Product(models.Model):
         # Import here to avoid circular dependency
         from inventory.models import QuotationItem
 
-        # Find the most recent quotation item for this product
-        # We order by the quotation's date
-        latest_item = QuotationItem.objects.filter(
-            product=self
-        ).order_by('-quotation__date_quoted').first()
+        # --- START MODIFICATION ---
+        # Check if data was prefetched by an API view
+        if hasattr(self, 'latest_quotation_items'):
+            # This attribute is created by the Prefetch in the API views
+            # We use self.latest_quotation_items[0] if the list is not empty
+            latest_item = self.latest_quotation_items[0] if self.latest_quotation_items else None
+        else:
+            # Original query for non-API use (e.g., templates, admin)
+            # We add select_related and prefetch_related here to optimize the standard non-api call
+            latest_item = QuotationItem.objects.filter(
+                product=self
+            ).select_related('quotation').prefetch_related('quotation__items').order_by('-quotation__date_quoted').first()
+        # --- END MODIFICATION ---
 
         if latest_item:
             # Use the new property from QuotationItem
+            # This is now efficient because the related 'quotation' and 'quotation.items'
+            # were prefetched in either branch.
             return latest_item.landed_cost_per_unit
 
         return None # Return None if no quotation has been logged

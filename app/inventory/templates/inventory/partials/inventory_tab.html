@@ -79,7 +79,7 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group(s)</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category(s)</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Stock</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest Quoted Cost</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest Landed Cost</th>
                     </tr>
                 </thead>
 
@@ -103,7 +103,7 @@
                             </tr>
 
                             <tr x-show="open" x-transition class="bg-gray-50">
-                                <td colspan="7" class="p-0">
+                                <td colspan="8" class="p-0">
                                     <div class="p-4">
                                         <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading batches...</div>
                                         <div x-show="!isLoading && batches.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No batch history found for this product.</div>
@@ -114,6 +114,7 @@
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Batch Number</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quotation ID</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Landed Cost (Unit)</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Expiry</th>
@@ -125,6 +126,7 @@
                                                         <td class="px-4 py-2 text-sm text-gray-900" x-text="batch.batch_number"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.supplier_name"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.quotation_id"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(batch.landed_cost)"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.quantity"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.received_date"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.expiry_date"></td>

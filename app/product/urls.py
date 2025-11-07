@@ -10,5 +10,6 @@ urlpatterns = [
     path('upload-products/', views.upload_products, name='upload_products'),
     path('export-products/', views.export_products_csv, name='export_products_csv'),
     path('manage/edit/<int:product_id>/', views.manage_product_edit, name='manage_product_edit'),
+    path('api/manage-pricing/<int:product_id>/', views.api_manage_pricing, name='api_manage_pricing'),
     path('api/manage-products/', views.api_manage_products, name='api_manage_products'),
 ]

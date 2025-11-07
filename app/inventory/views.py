@@ -70,17 +70,21 @@ def api_manage_inventory(request):
     logger.info(f"[DEBUG] api_manage_inventory: Received filters: search='{search_query}', group='{group_filter}', category='{category_filter}'")
     # --- END ADDED ---
 
-    # --- 2. Define Annotations (copied from old view) ---
-    latest_item_price_sq = QuotationItem.objects.filter(
-        product=OuterRef('pk')
-    ).order_by('-quotation__date_quoted').values('quoted_price')[:1]
-
     # --- 3. Build Base Queryset ---
     queryset = Product.objects.annotate(
         total_stock=Coalesce(Sum('batches__quantity'), 0),
-        annotated_base_cost=Subquery(latest_item_price_sq)
+        # --- START REMOVAL ---
+        # annotated_base_cost=Subquery(latest_item_price_sq)
+        # --- END REMOVAL ---
     ).select_related('featured_image').prefetch_related(
-        Prefetch('categories', queryset=Category.objects.select_related('group'))
+        Prefetch('categories', queryset=Category.objects.select_related('group')),
+        Prefetch(
+            'quotationitem_set',
+            queryset=QuotationItem.objects.select_related('quotation')
+                                          .prefetch_related('quotation__items')
+                                          .order_by('-quotation__date_quoted'),
+            to_attr='latest_quotation_items' # This must match the property check
+        )
     ).order_by('name')
 
     # --- 4. Apply Filters ---
@@ -113,7 +117,7 @@ def api_manage_inventory(request):
             'sku': product.sku or '-',
             'name': product.name,
             'total_stock': product.total_stock or 0,
-            'base_cost': product.annotated_base_cost,
+            'base_cost': product.base_cost,
             'category_groups': sorted(list(set(group_list))),
             'categories': sorted(list(set(category_list))),
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
@@ -172,6 +176,7 @@ def api_manage_quotations(request):
         'status': q.status,
         'item_count': q.annotated_item_count,
         'total_value': q.annotated_total_value or 0,
+        'transportation_cost': q.transportation_cost or 0,
         'detail_url': reverse('inventory:quotation_detail', kwargs={'quotation_id': q.quotation_id}),
         'invoice_id': q.invoice.invoice_id if hasattr(q, 'invoice') and q.invoice else None,
     } for q in page_obj.object_list]
@@ -222,7 +227,7 @@ def api_get_quotation_items(request, quotation_id):
         logger.error(f"Error fetching items for quotation {quotation_id}: {e}", exc_info=True)
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
-        
+
 @staff_required
 def add_inventory_batch(request):
      """ View for adding Inventory Batches """
@@ -836,17 +841,43 @@ def api_get_product_batches(request, product_id):
             'supplier', 'quotation'
         ).order_by('-received_date')
 
-        serialized_batches = [
-            {
+        # --- START MODIFICATION ---
+        # 1. Get all unique quotation IDs from the batches
+        quotation_ids = {batch.quotation_id for batch in batches if batch.quotation_id}
+
+        # 2. Find all relevant QuotationItems in one query.
+        #    This is for *this product* across *all relevant quotations*.
+        #    We prefetch 'quotation__items' so the landed_cost_per_unit property
+        #    can calculate efficiently without N+1 queries.
+        relevant_quotation_items = QuotationItem.objects.filter(
+            product_id=product_id,
+            quotation_id__in=quotation_ids
+        ).select_related('quotation').prefetch_related('quotation__items')
+
+        # 3. Create a lookup map: {quotation_id: landed_cost}
+        cost_map = {
+            item.quotation_id: item.landed_cost_per_unit
+            for item in relevant_quotation_items
+        }
+        # --- END MODIFICATION ---
+
+        serialized_batches = []
+        for batch in batches:
+            # --- START MODIFICATION ---
+            # 4. Get the cost from our map
+            batch_landed_cost = cost_map.get(batch.quotation_id)
+
+            batch_data = {
                 'batch_number': batch.batch_number,
                 'supplier_name': batch.supplier.name if batch.supplier else 'N/A',
                 'quotation_id': batch.quotation.quotation_id if batch.quotation else 'N/A',
                 'quantity': batch.quantity,
                 'received_date': batch.received_date,
                 'expiry_date': batch.expiry_date or 'N/A',
+                'landed_cost': batch_landed_cost # Add the cost here
             }
-            for batch in batches
-        ]
+            # --- END MODIFICATION ---
+            serialized_batches.append(batch_data)
 
         return JsonResponse({'batches': serialized_batches})
 

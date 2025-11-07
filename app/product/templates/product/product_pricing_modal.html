@@ -1,0 +1,74 @@
+{# distributorplatform/app/product/templates/product/partials/product_pricing_modal.html #}
+
+<div x-show="showPricingModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="showPricingModal = false"
+     style="display: none;">
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg m-4 flex flex-col"
+         @click.away="showPricingModal = false">
+
+        <button @click="showPricingModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">
+            Set Product Pricing
+        </h3>
+
+        <form @submit.prevent="submitPricingUpdate()" class="flex-1" novalidate>
+            <div class="p-6 space-y-4">
+                <div>
+                    <span class="font-semibold text-gray-700 block mb-1">Product</span>
+                    <p class="text-lg text-indigo-600" x-text="pricingData.name"></p>
+                </div>
+
+                <div>
+                    <span class="font-semibold text-gray-700 block mb-1">Latest Quoted Cost (Base Cost)</span>
+                    <p class="text-lg font-mono"
+                       :class="pricingData.base_cost ? 'text-gray-900' : 'text-red-500'"
+                       x-text="pricingData.base_cost ? `RM ${pricingData.base_cost.toFixed(2)}` : 'N/A (No quote found)'">
+                    </p>
+                    <p x-show="!pricingData.base_cost" class="text-xs text-red-500 mt-1">
+                        A price cannot be calculated without a base cost.
+                    </p>
+                </div>
+
+                <hr class="my-4">
+
+                <div>
+                    <label for="id_pricing_profit_margin" class="font-semibold text-gray-700 block mb-1">Profit Margin (%)</label>
+                    <input type="number" id="id_pricing_profit_margin"
+                           x-model.number="pricingData.profit_margin"
+                           @input.debounce.300ms="calculatePriceFromMargin()"
+                           :disabled="!pricingData.base_cost"
+                           step="1" min="0"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
+                </div>
+
+                <div>
+                    <label for="id_pricing_selling_price" class="font-semibold text-gray-700 block mb-1">Selling Price (RM)</label>
+                    <input type="number" id="id_pricing_selling_price"
+                           x-model.number="pricingData.selling_price"
+                           @input.debounce.300ms="calculateMarginFromPrice()"
+                           :disabled="!pricingData.base_cost"
+                           step="0.01" min="0"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
+                </div>
+
+            </div>
+
+            <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
+                <button type="button" @click="showPricingModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="submit"
+                        :disabled="pricingIsSubmitting"
+                        class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!pricingIsSubmitting">Save Pricing</span>
+                    <span x-show="pricingIsSubmitting">Saving...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
