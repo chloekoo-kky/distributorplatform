@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{# The meta_title and meta_description are set by the context processor #}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white shadow-lg rounded-lg my-12 overflow-hidden">
+    {% if post.featured_image %}
+    <img src="{{ post.featured_image.image.url }}" alt="{{ post.featured_image.alt_text|default:post.title }}" class="w-full h-auto object-cover">
+    {% endif %}
+    <article class_="p-8 md:p-12">
+        <div class="p-8 md:p-12">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4">{{ post.title }}</h1>
+            <p class="text-sm text-gray-500 mb-6">
+                Published by {{ post.author.username|default:"Admin" }} on {{ post.created_at|date:"F d, Y" }}
+            </p>
+
+            <div class="prose prose-lg max-w-none">
+                {# The 'safe' filter trusts the content; use 'linebreaks' if you don't allow HTML #}
+                {{ post.content|safe }}
+            </div>
+
+            {% if post.gallery_images.all %}
+                <div class="my-8">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">Gallery</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {% for image in post.gallery_images.all %}
+                            <a href="{{ image.image.url }}" target="_blank">
+                                <img src="{{ image.image.url }}" alt="{{ image.alt_text }}" class="rounded-lg shadow-md object-cover aspect-square">
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </article>
+</div>
+{% endblock %}

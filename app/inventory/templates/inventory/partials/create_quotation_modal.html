@@ -1,0 +1,61 @@
+{# START MODIFICATION #}
+<div x-show="createQuotationModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+{# END MODIFICATION #}
+    x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+    x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="display: none;">
+
+    {# START MODIFICATION #}
+    <div @click.away="createQuotationModalOpen = false"
+    {# END MODIFICATION #}
+        class="relative bg-white rounded-lg shadow-xl w-full max-w-lg p-8 m-4"
+        x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+        x-transition:enter-end="opacity-100 transform scale-100"
+        x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
+        x-transition:leave-end="opacity-0 transform scale-95">
+
+        {# START MODIFICATION #}
+        <button type="button" @click="createQuotationModalOpen = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+        {# END MODIFICATION #}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        <h3 class="text-2xl font-bold text-gray-800 mb-6">Create New Quotation</h3>
+
+        <p class="text-sm text-gray-600 mb-4">
+            Select a supplier to create a new quotation. You will be redirected to add items and other details.
+        </p>
+
+        <form method="POST" action="{% url 'inventory:create_quotation' %}">
+            {% csrf_token %}
+
+            <div>
+                <label class="font-semibold text-gray-700 block mb-2">
+                    {{ quotation_create_form.supplier.label }}
+                </label>
+
+                {% for error in quotation_create_form.supplier.errors %}
+                    <p class="text-sm text-red-600 mb-2">{{ error }}</p>
+                {% endfor %}
+
+                <div id="{{ quotation_create_form.supplier.id_for_label }}" class="space-y-2">
+                    {% for choice in quotation_create_form.supplier %}
+                    <label for="{{ choice.id_for_label }}" class="flex items-center w-full p-3 border border-gray-200 rounded-md hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-colors">
+                        <input type="radio" name="{{ quotation_create_form.supplier.html_name }}" value="{{ choice.data.value }}" id="{{ choice.id_for_label }}"
+                               class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                               {% if choice.data.selected %}checked{% endif %}>
+                        <span class="ml-3 text-sm font-medium text-gray-700">
+                            {{ choice.choice_label }}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                 </div>
+
+            <div class="mt-6">
+                <button type="submit" class="w-full px-4 py-2 tracking-wide text-white transition-colors duration-200 transform bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:bg-blue-700 flex items-center justify-center">
+                    Save and Add Items
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

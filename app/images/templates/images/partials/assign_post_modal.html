@@ -1,0 +1,71 @@
+{# distributorplatform/app/images/templates/images/partials/assign_post_modal.html #}
+{# This modal is controlled by the main x-data in manage_tools.html #}
+
+<div x-show="$store.images.showAssignPostModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="$store.images.showAssignPostModal = false"
+     style="display: none;">
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 h-[80vh] flex flex-col"
+         @click.away="$store.images.showAssignPostModal = false">
+
+        <button @click="$store.images.showAssignPostModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <div class="p-6 border-b">
+            <h3 class="text-2xl font-bold text-gray-800">Assign Image to Posts</h3>
+            <p class="text-sm text-gray-500">Assign "<span x-text="$store.images.selectedImageToAssign ? $store.images.selectedImageToAssign.title : ''"></span>" to blog posts.</p>
+        </div>
+
+        <div class="p-4 border-b flex justify-center space-x-6 bg-gray-50">
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" value="featured"
+                       x-model="$store.images.assignPostModalAssignmentType"
+                       @change="$store.images.updatePostModalSelections()">
+                <span class="font-medium text-gray-700">Assign as Featured Image</span>
+            </label>
+            <label class="flex items-center space-x-2 cursor-pointer">
+                <input type="radio" value="gallery"
+                       x-model="$store.images.assignPostModalAssignmentType"
+                       @change="$store.images.updatePostModalSelections()">
+                <span class="font-medium text-gray-700">Add to Image Gallery</span>
+            </label>
+        </div>
+
+        <div class="p-4 border-b">
+            <input type="text"
+                   x-model.debounce.300ms="$store.images.assignPostModalSearchTerm"
+                   placeholder="Search by post title..."
+                   class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6">
+            <p x-show="$store.images.filteredPostsForModal.length === 0" class="text-center text-gray-500">
+                No posts found matching your search.
+            </p>
+
+            <div class="space-y-2">
+                <template x-for="post in $store.images.filteredPostsForModal" :key="post.id">
+                    <label :for="'post-' + post.id"
+                           class="flex items-center w-full p-3 border border-gray-200 rounded-md hover:border-indigo-500 hover:bg-indigo-50 cursor-pointer transition-colors"
+                           :class="{ 'bg-indigo-50 border-indigo-500': $store.images.assignPostModalSelectedPosts.includes(post.id) }">
+                        </label>
+                </template>
+            </div>
+        </div>
+
+        <div class="p-6 bg-gray-50 border-t flex justify-between items-center">
+            <span class="text-sm text-gray-600">
+                <span x-text="$store.images.assignPostModalSelectedPosts.length"></span> post(s) selected.
+            </span>
+            <button type="button"
+                    @click="$store.images.submitPostAssignment()"
+                    :disabled="$store.images.assignPostModalIsSubmitting"
+                    class="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span x-show="!$store.images.assignPostModalIsSubmitting">Save Assignments</span>
+                <span x-show="$store.images.assignPostModalIsSubmitting">Saving...</span>
+            </button>
+        </div>
+    </div>
+</div>

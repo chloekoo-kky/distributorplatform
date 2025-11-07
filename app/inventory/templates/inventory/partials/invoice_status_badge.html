@@ -1,0 +1,23 @@
+{% comment %} Expects 'status' (e.g., 'PAID') and 'display' (e.g., 'Paid') in context {% endcomment %}
+
+{% if status == 'PAID' %}
+    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+        {{ display }}
+    </span>
+{% elif status == 'OVERDUE' %}
+     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+        {{ display }}
+    </span>
+{% elif status == 'SENT' %}
+     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+        {{ display }}
+    </span>
+{% elif status == 'CANCELLED' %}
+     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-500 line-through">
+        {{ display }}
+    </span>
+{% else %} {# Default for DRAFT or others #}
+    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+        {{ display }}
+    </span>
+{% endif %}

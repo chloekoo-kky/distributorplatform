@@ -3,13 +3,12 @@ import uuid
 from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
-from product.models import Category
 from phonenumber_field.modelfields import PhoneNumberField
 
 
 class UserGroup(models.Model):
     name = models.CharField(max_length=100, unique=True, help_text="e.g., 'Agent Tiers', 'Customer Types'")
-    product_categories = models.ManyToManyField(Category, blank=True, related_name="user_groups")
+    product_categories = models.ManyToManyField('product.Category', blank=True, related_name="user_groups")
     is_default = models.BooleanField(default=False, help_text="Set this as the default group for new users.")
 
     def __str__(self):

@@ -1,0 +1,92 @@
+<div x-data="quotationsTableData()"
+     x-init="init()"
+     @refresh-data.window="if ($event.detail.tab === 'quotations') fetchQuotations()"
+>
+    <div x-show="isLoading" class="p-6 text-center text-gray-500">
+        Loading quotations...
+    </div>
+
+    <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
+           <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-2 py-3 w-12"></th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quotation ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Quoted</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item Count</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Value</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-if="items.length === 0">
+                        <tr>
+                            <td colspan="7" class="px-6 py-4 text-center text-gray-500">No quotations match the current filters.</td>
+                            </tr>
+                    </template>
+                    <template x-for="q in items" :key="q.quotation_id">
+                        <tbody x-data="quotationAccordionRow(q.quotation_id)" class="contents">
+                            <tr @click="toggle()" class="cursor-pointer hover:bg-gray-50">
+                                <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-400 text-center">
+                                    <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <a :href="q.detail_url" @click.stop class="text-indigo-600 hover:text-indigo-900" x-text="q.quotation_id"></a>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.supplier_name"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                    <span x-show="q.status === 'Invoiced'"
+                                          class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"
+                                          x-text="q.invoice_id ? 'Invoiced (' + q.invoice_id + ')' : 'Invoiced'">
+                                    </span>
+                                    <span x-show="q.status === 'Open'"
+                                          class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                      Open
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.item_count"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.total_value)"></td>
+                            </tr>
+
+                            <tr x-show="open" x-transition class="bg-gray-50">
+                                <td colspan="7" class="p-0">
+                                    <div class="p-4">
+                                        <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading items...</div>
+                                        <div x-show="!isLoading && items.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No items found for this quotation.</div>
+
+                                        <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200">
+                                            <thead class="bg-gray-100">
+                                                <tr>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product Name</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price (RM)</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Price (RM)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="bg-white">
+                                                <template x-for="item in items" :key="item.product_sku">
+                                                    <tr>
+                                                        <td class="px-4 py-2 text-sm text-gray-900" x-text="item.product_sku"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.product_name"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.quantity"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(item.quoted_price)"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(item.total_price)"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                            </tbody>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        </div>
+</div>

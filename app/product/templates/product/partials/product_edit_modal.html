@@ -1,0 +1,190 @@
+{# distributorplatform/app/product/templates/product/partials/product_edit_modal.html #}
+{% load form_tags %}
+
+<div x-show="showProductEditModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="showProductEditModal = false"
+     style="display: none;">
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 h-[90vh] flex flex-col"
+         @click.away="showProductEditModal = false">
+
+        <button @click="showProductEditModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">
+            Edit Product: <span x-text="productEditData.name" class="text-indigo-600"></span>
+        </h3>
+
+        <div x-show="productEditIsLoading" class="flex-1 flex items-center justify-center">
+            <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <form x-show="!productEditIsLoading"
+              id="product-edit-form"
+              @submit.prevent="submitProductEdit()"
+              class="flex-1 overflow-y-auto"
+              novalidate>
+
+            {# Note: We rely on the parent template's CSRF token for the AJAX request #}
+
+            <div class="p-6 space-y-6">
+
+                <template x-if="productEditErrors.__all__">
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                        <strong class="font-bold">Error!</strong>
+                        <span class="block sm:inline" x-text="productEditErrors.__all__.join(', ')"></span>
+                    </div>
+                </template>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="id_edit_product_name" class="font-semibold text-gray-700 block mb-1">Product Name</label>
+                        <input type="text" name="name" id="id_edit_product_name" x-model="productEditData.name"
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <template x-if="productEditErrors.name"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.name.join(', ')"></p></template>
+                    </div>
+                    <div>
+                        <label for="id_edit_product_sku" class="font-semibold text-gray-700 block mb-1">SKU</label>
+                        <input type="text" name="sku" id="id_edit_product_sku" x-model="productEditData.sku"
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <template x-if="productEditErrors.sku"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.sku.join(', ')"></p></template>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="id_edit_product_description" class="font-semibold text-gray-700 block mb-1">Description</label>
+                    <textarea name="description" id="id_edit_product_description" x-model="productEditData.description" rows="5"
+                              class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                    <template x-if="productEditErrors.description"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.description.join(', ')"></p></template>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-1">Featured Image</label>
+                        <input type="hidden" name="featured_image" :value="productEditData.featured_image">
+
+                        <div class="mt-1">
+                            <template x-if="productEditData.selectedImageUrl">
+                                <div class="block mb-2 rounded-md overflow-hidden border border-gray-200">
+                                    <img :src="productEditData.selectedImageUrl" alt="Selected image preview" class="w-full h-48 object-cover">
+                                </div>
+                            </template>
+
+                            <template x-if="!productEditData.selectedImageUrl">
+                                <div class="w-full h-48 bg-gray-100 rounded-md border border-dashed border-gray-300 flex items-center justify-center text-gray-500">
+                                    (No image selected)
+                                </div>
+                            </template>
+                        </div>
+
+                        <template x-if="productEditData.selectedImageUrl">
+                            <div class="flex justify-end mt-1">
+                                <button type="button" @click.prevent="productEditData.featured_image = null; productEditData.selectedImageUrl = ''" class="text-sm font-medium text-red-600 hover:text-red-800">
+                                    Remove Image
+                                </button>
+                            </div>
+                        </template>
+
+                        <p class="text-xs text-gray-500 mt-2">
+                            To set or change the featured image, please use the "Assign to Product" button in the main <strong>Images</strong> tab.
+                        </p>
+
+                        <template x-if="productEditErrors.featured_image"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.featured_image.join(', ')"></p></template>
+                    </div>
+
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-1">Image Gallery</label>
+                        <div class="h-40 overflow-y-scroll p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+
+                            <template x-if="selectedGalleryImages.length === 0">
+                                <p class="text-sm text-gray-500 text-center p-2">(No images in gallery)</p>
+                            </template>
+
+                            <div class="space-y-2">
+                                <template x-for="image in selectedGalleryImages" :key="'gal-' + image.id">
+                                    <div class="flex items-center justify-between p-2 rounded-md bg-gray-50 hover:bg-gray-100">
+                                        <span class="ml-3 text-sm font-medium text-gray-700" x-text="image.title"></span>
+
+                                        <button type="button"
+                                                @click.prevent="productEditData.gallery_images = productEditData.gallery_images.filter(id => id !== image.id)"
+                                                class="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1">
+                                            Remove
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-gray-500 mt-2">
+                            To add new images, please use the "Bulk Assign" button in the main <strong>Images</strong> tab.
+                        </p>
+
+                        <template x-if="productEditErrors.gallery_images"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.gallery_images.join(', ')"></p></template>
+                    </div>
+                </div>
+
+                <div class="border-t pt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-1">Categories</label>
+                        <div class="h-40 overflow-y-scroll p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                            <p x-show="!$store.globals.allCategoriesList || $store.globals.allCategoriesList.length === 0" class="text-sm text-gray-500">Loading...</p>
+                            <div class="space-y-2">
+                                <template x-for="category in $store.globals.allCategoriesList" :key="'cat-' + category.id">
+                                    <label class="flex items-center p-2 rounded-md hover:bg-gray-50">
+                                        <input type="checkbox" name="categories" :value="category.id" x-model="productEditData.categories"
+                                               class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                        <span class="ml-3 text-sm font-medium text-gray-700" x-text="category.name"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                        <template x-if="productEditErrors.categories"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.categories.join(', ')"></p></template>
+                    </div>
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-1">Suppliers</label>
+                        <div class="h-40 overflow-y-scroll p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                            <div class="space-y-2">
+                                <template x-for="supplier in $store.globals.allSuppliersList" :key="'sup-' + supplier.id">
+                                    <label class="flex items-center p-2 rounded-md hover:bg-gray-50">
+                                        <input type="checkbox" name="suppliers" :value="supplier.id" x-model="productEditData.suppliers"
+                                               class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                        <span class="ml-3 text-sm font-medium text-gray-700" x-text="supplier.name"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                        <template x-if="productEditErrors.suppliers"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.suppliers.join(', ')"></p></template>
+                    </div>
+
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-1">Access</label>
+                        <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                            <input type="checkbox" name="members_only" id="id_edit_product_members_only" x-model="productEditData.members_only"
+                                   class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                            <label for="id_edit_product_members_only" class="ml-3 text-sm font-medium text-gray-700">Members Only</label>
+                        </div>
+                        <template x-if="productEditErrors.members_only"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.members_only.join(', ')"></p></template>
+                    </div>
+                    </div>
+
+            </div>
+
+            <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
+                <button type="button" @click="showProductEditModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="submit"
+                        :disabled="productEditIsSubmitting"
+                        class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!productEditIsSubmitting">Save Product</span>
+                    <span x-show="productEditIsSubmitting">Saving...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

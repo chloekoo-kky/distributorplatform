@@ -1,0 +1,127 @@
+{# distributorplatform/app/images/templates/images/manage_images_tab.html #}
+
+<div x-data="imageTabManager()" x-init="init()">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-1">
+            <div class="bg-white shadow-lg rounded-lg p-6">
+                <h3 class="text-2xl font-semibold text-gray-700 mb-6">Upload New Image(s)</h3>
+
+                <form id="image-upload-form" @submit.prevent="$store.images.handleImageUpload($event)" class="space-y-4">
+                    {% csrf_token %}
+                    <div>
+                        <label for="{{ image_upload_form.title.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
+                            {{ image_upload_form.title.label }}
+                        </label>
+                        {{ image_upload_form.title }}
+                        <p class="text-xs text-gray-500 mt-1">Used as a prefix if uploading multiple files (e.g., "My Event (1)").</p>
+                    </div>
+                    <div>
+                        <label for="{{ image_upload_form.images.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
+                            {{ image_upload_form.images.label }}
+                        </label>
+
+                        <input type="file"
+                               name="{{ image_upload_form.images.name }}"
+                               id="{{ image_upload_form.images.id_for_label }}"
+                               multiple
+                               required
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                        {% for error in image_upload_form.images.errors %}
+                            <p class="text-sm text-red-600 mt-1">{{ error }}</p>
+                        {% endfor %}
+                    </div>
+                    <div>
+                        <label for="{{ image_upload_form.alt_text.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
+                            {{ image_upload_form.alt_text.label }}
+                        </label>
+                        {{ image_upload_form.alt_text }}
+                        <p class="text-xs text-gray-500 mt-1">Accessibility text. Will be applied to all uploaded images.</p>
+                    </div>
+
+                    <div>
+                        <label for="{{ image_upload_form.category.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
+                            {{ image_upload_form.category.label }}
+                        </label>
+                        {{ image_upload_form.category }}
+                    </div>
+
+                    <div class="pt-4">
+                        <button type="submit" class="w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                            Upload Image(s)
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-semibold text-gray-700">Image Gallery</h3>
+
+                <div class="flex-shrink-0">
+                    <select x-model="$store.globals.selectedCategoryId" class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option :value="null">All Categories</option>
+                        <template x-for="category in $store.globals.allImageCategories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+            <div x-show="$store.images.bulkSelectedImageIds.length > 0"
+                 class="p-4 bg-indigo-50 border border-indigo-200 rounded-lg mb-4 flex justify-between items-center"
+                 x-transition>
+                <span class="font-medium text-indigo-700">
+                    <span x-text="$store.images.bulkSelectedImageIds.length"></span> image(s) selected
+                </span>
+                <div>
+                    <button @click="$store.images.openBulkAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                        Bulk Assign to Gallery...
+                    </button>
+                    <button @click="$store.images.bulkSelectedImageIds = []" class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md ml-2">
+                        Clear Selection
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="$store.images.filteredImages.length === 0 && !isLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
+                No images found for this category.
+            </div>
+            <div x-show="isLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
+                Loading images...
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <template x-for="(image, index) in $store.images.filteredImages" :key="image.id">
+                    <div class="relative group bg-white rounded-md overflow-hidden shadow-md border"
+                         :class="{ 'ring-2 ring-indigo-500 border-indigo-500': $store.images.bulkSelectedImageIds.includes(image.id) }">
+
+                        <input type="checkbox"
+                               :value="image.id"
+                               x-model="$store.images.bulkSelectedImageIds"
+                               class="absolute top-2 left-2 z-10 h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer">
+
+                        <div class="aspect-square">
+                            <img :src="image.url" :alt="image.alt_text" class="w-full h-full object-cover">
+                        </div>
+                        <div class="p-3">
+                             <p class="text-sm font-medium text-gray-900 truncate" x-text="image.title"></p>
+                             <p class="text-xs font-medium text-indigo-600" x-text="image.category_name"></p>
+                        </div>
+                        <div class="absolute top-2 right-2 flex flex-col space-y-1.5">
+                            <button @click="$store.images.deleteImage(image.id)" class="p-1.5 bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Image">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                            <button @click="$store.images.openAssignProductModal(image)" class="p-1.5 bg-blue-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Assign to Product">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            </button>
+                            <button @click="$store.images.openAssignPostModal(image)" class="p-1.5 bg-green-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Assign to Post">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6M7 8h6"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
