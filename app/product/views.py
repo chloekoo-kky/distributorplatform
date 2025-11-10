@@ -24,7 +24,9 @@ from blog.models import Post
 from blog.views import get_accessible_posts
 from product.models import Product, Category, CategoryGroup
 from images.models import MediaImage, ImageCategory
-from images.forms import ImageUploadForm # Re-use this form
+from images.forms import ImageUploadForm
+from order.views import agent_required
+from images.models import MediaImage
 
 
 logger = logging.getLogger(__name__)
@@ -124,7 +126,9 @@ def upload_products(request):
     logger.info("[upload_products] View called.")
     if request.method != 'POST':
         logger.warning("[upload_products] GET request received, redirecting.")
-        return redirect('product_list')
+        return redirect(reverse('core:manage_dashboard') + '#products')
+
+    redirect_url = reverse('core:manage_dashboard') + '#products'
 
     form = ProductUploadForm(request.POST, request.FILES)
     if form.is_valid():
@@ -134,7 +138,7 @@ def upload_products(request):
         if not file.name.endswith(('.csv', '.xls', '.xlsx')):
             logger.warning(f"[upload_products] Invalid file format: {file.name}")
             messages.error(request, "Invalid file format. Please upload a .csv, .xls, or .xlsx file.")
-            return redirect('product_list')
+            return redirect(redirect_url)
 
         try:
             dataset = Dataset()
@@ -155,7 +159,7 @@ def upload_products(request):
         except Exception as e:
             logger.error(f"[upload_products] Error reading file: {e}", exc_info=True)
             messages.error(request, f"Error reading file: {e}")
-            return redirect('product_list')
+            return redirect(redirect_url)
 
         product_resource = ProductResource()
         logger.info("[upload_products] Starting dry run of import...")
@@ -185,11 +189,11 @@ def upload_products(request):
                 messages.error(request, "An unknown error occurred during validation.")
             messages.error(request, "File import failed. Please correct the file and try again.")
 
-        return redirect('product_list')
+        return redirect(redirect_url)
 
     logger.warning(f"[upload_products] Form was invalid. Errors: {form.errors.as_json()}")
     messages.error(request, "An error occurred with the upload form.")
-    return redirect('product_list')
+    return redirect(redirect_url)
 
 
 @staff_required
@@ -211,7 +215,7 @@ def export_products_csv(request):
     except Exception as e:
         logger.error(f"[export_products_csv] Error during export: {e}", exc_info=True)
         messages.error(request, f"An error occurred during export: {e}")
-        return redirect('product_list')
+        return redirect(reverse('core:manage_dashboard') + '#products')
 
 # --- START NEW VIEW ---
 @staff_required
@@ -404,3 +408,85 @@ def api_manage_pricing(request, product_id):
         logger.error(f"Error updating pricing for product {product_id}: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+def api_get_product_details(request, sku):
+    """
+    API endpoint for the product quick view modal.
+    Returns detailed product info, including agent-specific pricing.
+    """
+    if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    try:
+        product = Product.objects.prefetch_related(
+            'gallery_images',
+            Prefetch(
+                'quotationitem_set',
+                queryset=QuotationItem.objects.select_related('quotation')
+                                              .prefetch_related('quotation__items')
+                                              .order_by('-quotation__date_quoted'),
+                to_attr='latest_quotation_items'
+            )
+        ).select_related('featured_image').get(sku=sku)
+    except Product.DoesNotExist:
+        return JsonResponse({'error': 'Product not found'}, status=404)
+
+    # --- START MODIFICATION ---
+
+    # Default values for public/staff
+    base_cost = None
+    selling_price = None
+    is_orderable = False
+    profit = None
+
+    # Check if user is a logged-in agent (authenticated AND not staff)
+    if request.user.is_authenticated and not request.user.is_staff:
+        # Get agent-specific pricing
+        base_cost = product.base_cost
+        selling_price = product.selling_price
+
+        if base_cost is not None and selling_price is not None:
+            profit = selling_price - base_cost
+            if profit > 0:
+                is_orderable = True
+
+    # --- END MODIFICATION ---
+
+    # Serialize gallery images
+    gallery = [
+        {'id': img.id, 'url': img.image.url, 'alt_text': img.alt_text}
+        for img in product.gallery_images.all()
+    ]
+
+    data = {
+        'id': product.id,
+        'name': product.name,
+        'sku': product.sku,
+        'description': product.description,
+        'featured_image_url': product.featured_image.image.url if product.featured_image else None,
+        'gallery_images': gallery,
+        'is_orderable': is_orderable,
+        'selling_price': selling_price,
+        'base_cost': base_cost,
+        'profit': profit,
+    }
+
+    return JsonResponse(data)
+
+
+def product_detail(request, sku):
+    """
+    Public page showing a single product.
+    """
+    # Find the product by its SKU
+    product = get_object_or_404(Product.objects.prefetch_related('gallery_images'), sku=sku)
+
+    # You can add logic here to check for members_only, just like in your product_list view
+    if product.members_only and not request.user.is_authenticated:
+        messages.error(request, "This is a members-only product. Please log in to view.")
+        return redirect('user:login') # Or wherever you prefer
+
+    context = {
+        'product': product,
+    }
+    return render(request, 'product/product_detail.html', context)

@@ -9,10 +9,8 @@
 
 {% block content %}
 
-{# --- START MODIFICATION: Add json_script tags for the initial image data --- #}
 {{ form.instance.featured_image.id|default:None|json_script:"initial-image-id" }}
 {{ form.instance.featured_image.image.url|default:''|json_script:"initial-image-url" }}
-{# --- END MODIFICATION --- #}
 
 <script>
     function manageBlogFormData() {
@@ -29,20 +27,11 @@
                 }
             },
 
-            // --- Gallery Modal State ---
-            showGalleryModal: false,
-            galleryTab: 'select',
-            galleryImages: [],
-            allCategories: [],
-            selectedCategoryId: null,
-            galleryIsLoading: false,
-
             selectedImageId: null,
             selectedImageUrl: '',
 
-            // --- START MODIFICATION: Read data from the new json_script tags ---
             init() {
-                console.log('Alpine init() called for blog edit modal.');
+                console.log('Alpine init() called for blog edit form.');
                 try {
                     this.selectedImageId = JSON.parse(document.getElementById('initial-image-id').textContent);
                     this.selectedImageUrl = JSON.parse(document.getElementById('initial-image-url').textContent);
@@ -51,138 +40,22 @@
                     console.error('Failed to load initial image data from json_script tags.', e);
                 }
             },
-            // --- END MODIFICATION ---
 
-            // Function to load images from our API view
-            loadGallery() {
-                if (this.galleryImages.length > 0) return;
-
-                this.galleryIsLoading = true;
-                fetch(`{% url 'images:ajax_get_images' %}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        this.galleryImages = data.images;
-                        this.allCategories = data.categories;
-                        this.galleryIsLoading = false;
-                    })
-                    .catch(err => {
-                        console.error(err);
-                        alert('Error loading gallery.');
-                        this.galleryIsLoading = false;
-                    });
-            },
-
-            // Filtered images for gallery modal
-            get filteredImages() {
-                if (this.selectedCategoryId === null) {
-                    return this.galleryImages;
-                }
-                return this.galleryImages.filter(img => img.category_id == this.selectedCategoryId);
-            },
-
-            // Function to select an image from the gallery
-            selectImage(id, url) {
-                this.selectedImageId = id;
-                this.selectedImageUrl = url;
-                document.getElementById('id_featured_image').value = id;
-                this.showGalleryModal = false;
+            // Function to remove the image
+            removeImage() {
+                this.selectedImageId = null;
+                this.selectedImageUrl = '';
+                document.getElementById('id_featured_image').value = '';
                 this.hasUnsavedChanges = true;
-            },
-
-            // Function to handle the upload form
-            async handleImageUpload(event) {
-                const form = event.target;
-                const formData = new FormData(form);
-                const submitButton = form.querySelector('button[type=submit]');
-                const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
-
-                if (!form.querySelector('input[type=file]').files.length) {
-                    alert('Please select one or more images to upload.');
-                    return;
-                }
-
-                submitButton.disabled = true;
-                submitButton.textContent = 'Uploading...';
-
-                try {
-                    const response = await fetch(`{% url 'images:ajax_upload_image' %}`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': csrfToken,
-                            'Accept': 'application/json',
-                        },
-                        body: formData
-                    });
-
-                    const data = await response.json();
-
-                    if (response.ok && data.success) {
-                        let firstNewImage = null;
-                        for (const newImage of data.images) {
-                            if (!firstNewImage) firstNewImage = newImage;
-                            this.galleryImages.unshift(newImage);
-                        }
-
-                        if (firstNewImage) {
-                            this.selectImage(firstNewImage.id, firstNewImage.url);
-                        }
-                        this.galleryTab = 'select';
-                        form.reset();
-                    } else {
-                        let errorMsg = 'Upload failed. ';
-                        if (data.errors) {
-                            errorMsg += data.errors;
-                        }
-                        alert(errorMsg);
-                    }
-                } catch (err) {
-                    console.error(err);
-                    alert('An error occurred during upload.');
-                } finally {
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Upload Image(s)';
-                }
-            },
-
-            // Delete function for the modal
-            async deleteImage(imageId) {
-                if (!confirm('Are you sure you want to delete this image? This action cannot be undone.')) return;
-
-                const csrfToken = document.querySelector('#blog-edit-form [name=csrfmiddlewaretoken]').value;
-
-                try {
-                    const response = await fetch(`/images/api/delete-image/${imageId}/`, {
-                        method: 'POST',
-                        headers: { 'X-CSRFToken': csrfToken, 'Accept': 'application/json', }
-                    });
-                    const data = await response.json();
-                    if (response.ok && data.success) {
-                        const originalIndex = this.galleryImages.findIndex(img => img.id === imageId);
-                        if (originalIndex > -1) {
-                            this.galleryImages.splice(originalIndex, 1);
-                        }
-                        if (this.selectedImageId === imageId) {
-                            this.selectImage(null, '');
-                        }
-                        alert(data.message);
-                    } else {
-                        alert(data.error || 'Failed to delete image.');
-                    }
-                } catch (err) {
-                    console.error('Delete image error:', err);
-                    alert('An error occurred.');
-                }
             }
         }
     }
 </script>
 
 
-{# --- START MODIFICATION: Removed data-* attributes --- #}
 <div class="w-full"
      x-data="manageBlogFormData()"
      x-init="init()">
-{# --- END MODIFICATION --- #}
 
     {% include 'core/partials/manage_tabs.html' %}
 
@@ -200,7 +73,6 @@
 
                 {% csrf_token %}
                 <div class="space-y-6">
-                    {# ... (rest of the form fields are unchanged) ... #}
                     {{ form.non_field_errors }}
 
                     <div>
@@ -224,38 +96,77 @@
 
                             <div class="mt-1">
                                 <template x-if="selectedImageUrl">
-                                    <div class="mb-2 rounded-md overflow-hidden border border-gray-200">
+                                    <div class="block mb-2 rounded-md overflow-hidden border border-gray-200">
                                         <img :src="selectedImageUrl" alt="Selected image preview" class="w-full h-48 object-cover">
                                     </div>
                                 </template>
 
-                                <button type="button"
-                                        @click="showGalleryModal = true; loadGallery()"
-                                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                                    <span x-show="!selectedImageId">Select from Gallery</span>
-                                    <span x-show="selectedImageId">Change Image</span>
-                                </button>
-
-                                <template x-if="selectedImageId">
-                                    <button type="button"
-                                            @click="selectImage(null, '')"
-                                            class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800">
-                                        Remove Image
-                                    </button>
+                                <template x-if="!selectedImageUrl">
+                                    <div class="w-full h-48 bg-gray-100 rounded-md border border-dashed border-gray-300 flex items-center justify-center text-gray-500">
+                                        (No image selected)
+                                    </div>
                                 </template>
                             </div>
+
+                            <template x-if="selectedImageId">
+                                <div class="flex justify-end mt-1">
+                                    <button type="button" @click.prevent="removeImage()" class="text-sm font-medium text-red-600 hover:text-red-800">
+                                        Remove Image
+                                    </button>
+                                </div>
+                            </template>
+
+                            <p class="text-xs text-gray-500 mt-2">
+                                To set or change the featured image, please use the "Assign to Post" button in the main <strong>Images</strong> tab.
+                            </p>
                             {% for error in form.featured_image.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
                         </div>
 
+                        {# --- START MODIFICATION (Moved Gallery Up) --- #}
+                        <div>
+                            <label for="{{ form.gallery_images.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Image Gallery</label>
+
+                            <div class="h-40 overflow-y-scroll p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                                <div class="space-y-2">
+
+                                    {% for checkbox in form.gallery_images %}
+                                        <div x-data="{ isChecked: {{ checkbox.data.selected|yesno:'true,false' }} }">
+                                            <div class="hidden">
+                                                {{ checkbox.tag }}
+                                            </div>
+
+                                            <div x-show="isChecked" class="flex items-center justify-between p-2 rounded-md bg-gray-50 hover:bg-gray-100">
+                                                <span class="ml-3 text-sm font-medium text-gray-700">{{ checkbox.choice_label }}</span>
+                                                <button type="button"
+                                                        @click.prevent="document.getElementById('{{ checkbox.id_for_label }}').checked = false; isChecked = false; hasUnsavedChanges = true"
+                                                        class="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1">
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+
+                                </div>
+                            </div>
+
+                            <p class="text-xs text-gray-500 mt-2">To add new images, please use the "Bulk Assign" button in the main <strong>Images</strong> tab.</p>
+                            {% for error in form.gallery_images.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
+                        </div>
+                        {# --- END MODIFICATION --- #}
+
+                    </div>
+
+                    <div class="border-t pt-6 space-y-4">
+                        <h3 class="text-lg font-medium text-gray-900">Visibility, Access, & URL</h3>
+
+                        {# --- START MODIFICATION (Moved Status Down) --- #}
                         <div>
                             <label for="{{ form.status.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Status</label>
                             {{ form.status }}
                             {% for error in form.status.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
                         </div>
-                    </div>
+                        {# --- END MODIFICATION --- #}
 
-                    <div class="border-t pt-6 space-y-4">
-                        <h3 class="text-lg font-medium text-gray-900">Visibility, Access, & URL</h3>
                         <div>
                             <label for="{{ form.user_groups.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Restrict to User Groups</label>
 
@@ -274,23 +185,7 @@
                             {% for error in form.user_groups.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
                         </div>
 
-                        <div>
-                            <label for="{{ form.gallery_images.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Image Gallery</label>
-
-                            <div class="h-40 overflow-y-scroll p-3 border border-gray-300 rounded-md shadow-sm bg-white">
-                                <div class="space-y-2">
-                                    {% for checkbox in form.gallery_images %}
-                                    <label for="{{ checkbox.id_for_label }}" class="flex items-center p-2 rounded-md hover:bg-gray-50">
-                                        {{ checkbox.tag }}
-                                        <span class="ml-3 text-sm font-medium text-gray-700">{{ checkbox.choice_label }}</span>
-                                    </label>
-                                    {% endfor %}
-                                </div>
-                            </div>
-
-                            <p class="text-xs text-gray-500 mt-1">Select images to include in the post's gallery.</p>
-                            {% for error in form.gallery_images.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
-                        </div>
+                        {# --- This block was removed from here and moved up --- #}
 
                         <div>
                             <label for="{{ form.slug.id_for_label }}" class="font-semibold text-gray-700 block mb-1">URL Slug</label>
@@ -315,100 +210,5 @@
             </form>
         </div>
     </div>
-
-    {# --- The Modal (HTML is unchanged) --- #}
-    <div x-show="showGalleryModal"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
-         @keydown.escape.window="showGalleryModal = false"
-         style="display: none;">
-
-        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-6xl m-4 h-[80vh] flex flex-col"
-             @click.away="showGalleryModal = false">
-
-            <button @click="showGalleryModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-            <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">Image Gallery</h3>
-
-            <div class="p-4 border-b flex justify-between items-center">
-                <nav class="flex space-x-4">
-                    <button @click="galleryTab = 'select'"
-                            :class="galleryTab === 'select' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
-                            class="px-3 py-2 font-medium text-sm rounded-md border-b-2">
-                        Select from Gallery
-                    </button>
-                    <button @click="galleryTab = 'upload'"
-                            :class="galleryTab === 'upload' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
-                            class="px-3 py-2 font-medium text-sm rounded-md border-b-2">
-                        Upload New Image
-                    </button>
-                </nav>
-                 <div x-show="galleryTab === 'select'">
-                     <select x-model="selectedCategoryId" class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option :value="null">All Categories</option>
-                        <template x-for="category in allCategories" :key="category.id">
-                            <option :value="category.id" x-text="category.name"></option>
-                        </template>
-                    </select>
-                </div>
-            </div>
-
-            <div x-show="galleryTab === 'select'" class="flex-1 overflow-y-auto p-6">
-                <div x-show="galleryIsLoading" class="text-center text-gray-500">Loading images...</div>
-                <div x-show="!galleryIsLoading && filteredImages.length === 0" class="text-center text-gray-500">
-                    No images found. Try uploading one!
-                </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-                    <template x-for="(image, index) in filteredImages" :key="image.id">
-                         <div class="relative group">
-                            <button @click="selectImage(image.id, image.url)"
-                                    :class="{ 'ring-4 ring-indigo-500 ring-offset-2': selectedImageId === image.id }"
-                                    class="relative rounded-md overflow-hidden aspect-square border focus:outline-none w-full">
-                                <img :src="image.url" :alt="image.alt_text" class="w-full h-full object-cover">
-                                <div class="absolute bottom-0 left-0 right-0 p-2 bg-black bg-opacity-50">
-                                    <p class="text-xs text-white truncate" x-text="image.title"></p>
-                                </div>
-                            </button>
-                            <button @click="deleteImage(image.id)" class="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            </button>
-                        </div>
-                    </template>
-                </div>
-            </div>
-
-            <div x-show="galleryTab === 'upload'" class="flex-1 overflow-y-auto p-6">
-                <form @submit.prevent="handleImageUpload($event)" class="max-w-md mx-auto space-y-4">
-                    {% csrf_token %}
-                    <div>
-                        <label for="modal_blog_{{ image_upload_form.title.id_for_label }}" class="font-semibold text-gray-700 block mb-1">{{ image_upload_form.title.label }}</label>
-                        {{ image_upload_form.title|add_class:"w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" }}
-                    </div>
-                    <div>
-                        <label for="modal_blog_{{ image_upload_form.images.id_for_label }}" class="font-semibold text-gray-700 block mb-1">{{ image_upload_form.images.label }}</label>
-                        <input type="file"
-                               name="{{ image_upload_form.images.name }}"
-                               id="modal_blog_{{ image_upload_form.images.id_for_label }}"
-                               multiple
-                               required
-                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
-                    </div>
-                    <div>
-                        <label for="modal_blog_{{ image_upload_form.alt_text.id_for_label }}" class="font-semibold text-gray-700 block mb-1">{{ image_upload_form.alt_text.label }}</Dlabel>
-                        {{ image_upload_form.alt_text|add_class:"w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" }}
-                    </div>
-                     <div>
-                        <label for="modal_blog_{{ image_upload_form.category.id_for_label }}" class="font-semibold text-gray-700 block mb-1">{{ image_upload_form.category.label }}</label>
-                        {{ image_upload_form.category|add_class:"w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" }}
-                    </div>
-                    <div class="pt-4">
-                        <button type="submit" class="w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                            Upload Image(s)
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    </div>
+</div>
 {% endblock %}

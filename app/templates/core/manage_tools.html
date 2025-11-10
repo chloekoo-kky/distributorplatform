@@ -14,6 +14,7 @@
 {{ all_categories_list|json_script:"all-categories-list-data" }}
 {{ all_suppliers_list|json_script:"all-suppliers-list-data" }}
 {{ all_image_categories_json|json_script:"all-image-categories-data" }}
+{{ all_user_groups_list|json_script:"all-user-groups-data" }}
 
 <script>
     document.addEventListener('alpine:init', () => {
@@ -25,6 +26,7 @@
             allCategoriesList: JSON.parse(document.getElementById('all-categories-list-data').textContent),
             allSuppliersList: JSON.parse(document.getElementById('all-suppliers-list-data').textContent),
             allImageCategories: JSON.parse(document.getElementById('all-image-categories-data').textContent),
+            allUserGroupsList: JSON.parse(document.getElementById('all-user-groups-data').textContent),
             csrfToken: '',
             selectedCategoryId: null, // For image filter
             invoiceToOpen: null // <-- ADD THIS
@@ -35,6 +37,8 @@
         try {
             const cats = Alpine.store('globals').allCategoriesList;
             const sups = Alpine.store('globals').allSuppliersList;
+            const groups = Alpine.store('globals').allUserGroupsList;
+            console.log(`[DEBUG] allUserGroupsList loaded: ${groups.length} items. First item:`, JSON.stringify(groups[0]));
             console.log(`[DEBUG] allCategoriesList loaded: ${cats.length} items. First item:`, JSON.stringify(cats[0]), `Type of first ID: ${typeof cats[0]?.id}`);
             console.log(`[DEBUG] allSuppliersList loaded: ${sups.length} items. First item:`, JSON.stringify(sups[0]), `Type of first ID: ${typeof sups[0]?.id}`);
         } catch(e) {
@@ -66,6 +70,10 @@
             bulkAssignSearchTerm: '',
             bulkAssignTargetId: null,
             bulkAssignIsSubmitting: false,
+
+            showImageEditModal: false,
+            isSubmittingImageEdit: false,
+            currentImageToEdit: { id: null, title: '', alt_text: '', category_id: null, url: '' },
 
             // --- Getters ---
             get filteredImages() {
@@ -183,7 +191,7 @@
             updatePostModalSelections() {
                 if (!this.selectedImageToAssign) return;
                 const imageId = this.selectedImageToAssign.id;
-                if (this.assignProductModalAssignmentType === 'featured') {
+                if (this.assignPostModalAssignmentType === 'featured') {
                     this.assignPostModalSelectedPosts = this.allPosts
                         .filter(p => p.featured_image_id === imageId).map(p => p.id);
                 } else {
@@ -247,6 +255,54 @@
                     } else { throw new Error(data.error || 'Failed to save'); }
                 } catch (err) { alert('Error: ' + err.message); }
                 finally { this.bulkAssignIsSubmitting = false; }
+            },
+
+            openImageEditModal(image) {
+                // We clone the object to avoid mutating the store directly
+                // in case the user hits "Cancel"
+                this.currentImageToEdit = { ...image };
+                this.isSubmittingImageEdit = false;
+                this.showImageEditModal = true;
+            },
+
+            async submitImageEdit() {
+                if (this.isSubmittingImageEdit) return;
+                this.isSubmittingImageEdit = true;
+
+                const payload = {
+                    title: this.currentImageToEdit.title,
+                    alt_text: this.currentImageToEdit.alt_text,
+                    category_id: this.currentImageToEdit.category_id
+                };
+
+                try {
+                    const response = await fetch(`/images/api/edit-image/${this.currentImageToEdit.id}/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        // Find the image in the global store and update it
+                        const index = this.galleryImages.findIndex(img => img.id === data.image.id);
+                        if (index > -1) {
+                            this.galleryImages[index] = data.image;
+                        }
+                        this.showImageEditModal = false;
+                        alert('Image updated successfully!');
+                    } else {
+                        throw new Error(data.error || 'Failed to update image.');
+                    }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                } finally {
+                    this.isSubmittingImageEdit = false;
+                }
             }
         });
 
@@ -516,6 +572,8 @@
                     Alpine.store('images').allProducts = productsData.items;
                     Alpine.store('images').allPosts = postsData.items;
 
+                    Alpine.store('globals').allImageCategories = imagesData.categories;
+
                 } catch (error) {
                     console.error('Failed to load initial image data:', error);
                     alert('Could not load image gallery data.');
@@ -538,6 +596,7 @@
     editModalOpen: false,
     uploadBatchModalOpen: false,
     receiveStockModalOpen: false,
+    uploadProductModalOpen: false,
 
     showPricingModal: false,
     pricingIsSubmitting: false,
@@ -576,11 +635,26 @@
     },
     productEditErrors: {},
 
+
     get selectedGalleryImages() {
+        // --- START DEBUG LOG ---
+        console.log('[GETTER] Re-evaluating selectedGalleryImages...');
+        // --- END DEBUG LOG ---
         if (!this.productEditData.id) return [];
         return Alpine.store('images').galleryImages.filter(image =>
             this.productEditData.gallery_images.includes(image.id)
         );
+    },
+
+    get pricingProfit() {
+        const cost = this.pricingData.base_cost;
+        const price = this.pricingData.selling_price;
+        if (cost === null || cost === undefined || price === null || price === undefined) {
+            return null;
+        }
+        const profit = parseFloat(price) - parseFloat(cost);
+        // Only return profit if it's a positive number
+        return profit > 0 ? profit : null;
     },
 
     // --- INIT ---
@@ -685,10 +759,15 @@
         if (baseCost !== null) {
             if (sellingPrice !== null && profitMargin === null) {
                 // Calculate margin from price
-                profitMargin = ((sellingPrice / baseCost) - 1) * 100;
+                if (sellingPrice > 0) {
+                    profitMargin = ((parseFloat(sellingPrice) - parseFloat(baseCost)) / parseFloat(sellingPrice)) * 100;
+                }
             } else if (sellingPrice === null && profitMargin !== null) {
                 // Calculate price from margin
-                sellingPrice = baseCost * (1 + (profitMargin / 100));
+                const marginDecimal = parseFloat(profitMargin) / 100;
+                if (marginDecimal < 1) {
+                    sellingPrice = baseCost / (1 - marginDecimal);
+                }
             }
         }
 
@@ -696,7 +775,7 @@
             id: product.id,
             name: product.name,
             base_cost: baseCost,
-            profit_margin: profitMargin ? parseFloat(profitMargin.toFixed(2)) : null,
+            profit_margin: profitMargin !== null ? Math.round(profitMargin) : null,
             selling_price: sellingPrice ? parseFloat(sellingPrice.toFixed(2)) : null,
             update_url: `/api/manage-pricing/${product.id}/`
         };
@@ -710,41 +789,24 @@
             this.pricingData.selling_price = null;
             return;
         }
-
-        // --- START MODIFICATION ---
-        // New logic: Selling Price = Base Cost / (1 - (Margin / 100))
         const marginDecimal = parseFloat(margin) / 100;
-
-        // Prevent division by zero if margin is 100% or more
         if (marginDecimal >= 1) {
-            this.pricingData.selling_price = null; // Or some indicator of error
+            this.pricingData.selling_price = null;
             return;
         }
-
         const price = parseFloat(cost) / (1 - marginDecimal);
-        // --- END MODIFICATION ---
-
         this.pricingData.selling_price = parseFloat(price.toFixed(2));
     },
 
     calculateMarginFromPrice() {
         const cost = this.pricingData.base_cost;
         const price = this.pricingData.selling_price;
-
-        // --- START MODIFICATION ---
-        // Check for valid numbers. Price cannot be 0 for this calculation.
         if (cost === null || cost === undefined || price === null || price === undefined || price === 0) {
-        // --- END MODIFICATION ---
             this.pricingData.profit_margin = null;
             return;
         }
-
-        // --- START MODIFICATION ---
-        // New logic: Margin = ((Price - Cost) / Price) * 100
         const margin = ((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100;
-        // --- END MODIFICATION ---
-
-        this.pricingData.profit_margin = parseFloat(margin.toFixed(2));
+        this.pricingData.profit_margin = Math.round(margin);
     },
 
     async submitPricingUpdate() {
@@ -850,6 +912,27 @@
         }
     },
 
+    removeImageFromProductGallery(imageId) {
+        // Log 1: Function entry
+        console.log('[ROOT] removeImageFromProductGallery() called with imageId:', imageId);
+
+        if (!this.productEditData || !this.productEditData.gallery_images) {
+            // Log 2: Error case
+            console.error('[ROOT] ERROR: productEditData.gallery_images is not available.');
+            return;
+        }
+
+        // Log 3: State before change
+        console.log('[ROOT] gallery_images BEFORE filter:', JSON.stringify(this.productEditData.gallery_images));
+
+        // The fix: Re-assign the array to trigger reactivity
+        this.productEditData.gallery_images = this.productEditData.gallery_images.filter(id => id !== imageId);
+
+        // Log 4: State after change
+        console.log('[ROOT] gallery_images AFTER filter:', JSON.stringify(this.productEditData.gallery_images));
+    },
+
+
     // --- Image Gallery Modal Functions (Passthrough to store) ---
     // These properties are now bound to the store in the template
     handleImageUpload(event) { Alpine.store('images').handleImageUpload(event); },
@@ -876,8 +959,11 @@
 @open-create-quotation-modal.window="createQuotationModalOpen = true"
 @open-upload-batch-modal.window="uploadBatchModalOpen = true"
 @open-pricing-modal.window="openPricingModal($event.detail)"
+@open-upload-product-modal.window="uploadProductModalOpen = true"
 
 @close-receive-modal.window="closeReceiveStockModal()"
+@images-open-edit.window="Alpine.store('images').openImageEditModal($event.detail)"
+
 {# --- Bind image store modal events --- #}
 @images-handle-upload.window="Alpine.store('images').handleImageUpload($event)"
 @images-delete.window="Alpine.store('images').deleteImage($event.detail)"
@@ -938,6 +1024,10 @@
         <div x-show="tab === '#images'" id="images" x-cloak>
              {% include 'images/manage_images_tab.html' %}
         </div>
+
+        <div x-show="tab === '#agents'" id="agents" x-cloak>
+             {% include 'user/manage_agents_tab.html' %}
+        </div>
     </div>
 
     {# --- All Modals --- #}
@@ -956,8 +1046,11 @@
         {% include 'images/partials/bulk_assign_modal.html' %}
     </div>
     {% include 'product/partials/product_edit_modal.html' %}
-
     {% include 'product/product_pricing_modal.html' %}
+    {% include 'product/partials/upload_product_modal.html' %}
+    <div x-show="$store.images.showImageEditModal">
+        {% include 'images/partials/edit_image_modal.html' %}
+    </div>
 </div>
 
 {# --- JavaScript for Receive Stock AJAX Submission (Unchanged) --- #}

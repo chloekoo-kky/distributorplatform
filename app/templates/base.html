@@ -31,7 +31,111 @@
         }
     </style>
 </head>
+
 <body class="bg-gray-100 text-gray-800 flex flex-col min-h-screen">
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('cartStore', {
+                items: JSON.parse(localStorage.getItem('distributorCart') || '[]'),
+                showProductModal: false,
+                isLoadingModal: false,
+                modalProduct: {},
+                modalQuantity: 1,
+
+                init() {
+                    // This runs when the store is initialized
+                    console.log('Cart store initialized.');
+                },
+
+                // --- Cart Management ---
+                saveCart() {
+                    localStorage.setItem('distributorCart', JSON.stringify(this.items));
+                    // Dispatch an event so other components (like the cart icon) can update
+                    window.dispatchEvent(new CustomEvent('cart-updated'));
+                },
+                addToCart() {
+                    if (!this.modalProduct.id || this.isInCart(this.modalProduct.id)) return;
+
+                    const cartItem = {
+                        id: this.modalProduct.id,
+                        name: this.modalProduct.name,
+                        sku: this.modalProduct.sku,
+                        selling_price: this.modalProduct.selling_price,
+                        base_cost: this.modalProduct.base_cost,
+                        profit: this.modalProduct.profit,
+                        img_url: this.modalProduct.featured_image_url,
+                        quantity: this.modalQuantity
+                    };
+                    this.items.push(cartItem);
+                    this.saveCart();
+                    this.closeProductModal();
+
+                    Swal.fire({
+                        title: 'Added to Cart!',
+                        text: `${cartItem.name} has been added to your cart.`,
+                        icon: 'success',
+                        toast: true,
+                        position: 'top-end',
+                        showConfirmButton: false,
+                        timer: 3000,
+                        timerProgressBar: true
+                    });
+                },
+                isInCart(productId) {
+                    return this.items.some(item => item.id === productId);
+                },
+                get cartCount() {
+                    return this.items.reduce((total, item) => total + item.quantity, 0);
+                },
+                get cartTotal() {
+                    return this.items.reduce((total, item) => total + (item.selling_price * item.quantity), 0);
+                },
+                formatPrice(value) {
+                    if (value === null || value === undefined) return 'N/A';
+                    return `RM ${Number(value).toFixed(2)}`;
+                },
+
+                // --- Modal Management ---
+                async openProductModal(sku) {
+                    if (!sku) return;
+                    this.showProductModal = true;
+                    this.isLoadingModal = true;
+                    this.modalProduct = {};
+                    this.modalQuantity = 1;
+
+                    try {
+                        const response = await fetch(`/api/product-details/${sku}/`, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                        });
+
+                        if (!response.ok) {
+                            if (response.status === 403) {
+                                // This happens if a public user clicks
+                                // We still show the modal, but the API fails, which is fine
+                                // The template will show the "Login" message
+                            }
+                            // Handle other errors if necessary
+                            this.modalProduct = { name: 'Error', description: 'Could not load product details.' };
+                        } else {
+                            this.modalProduct = await response.json();
+                        }
+
+                    } catch (error) {
+                        console.error('Failed to fetch product details:', error);
+                        this.modalProduct = { name: 'Error', description: 'Could not load product details.' };
+                    } finally {
+                        this.isLoadingModal = false;
+                    }
+                },
+                closeProductModal() {
+                    this.showProductModal = false;
+                    this.modalProduct = {};
+                    this.modalQuantity = 1;
+                }
+            });
+        });
+    </script>
 
     <nav class="bg-white shadow-md sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -40,11 +144,15 @@
                     <a href="{% url 'product:home' %}" class="text-2xl font-bold text-indigo-600">Distributor Platform</a>
 
                     <div class="hidden md:flex space-x-8">
-                        <a href="#" class="text-gray-500 hover:text-gray-900">About Us</a>
-                        <a href="#" class="text-gray-500 hover:text-gray-900">Services</a>
-                        <a href="#" class="text-gray-500 hover:text-gray-900">Contact</a>
 
+                        {# --- START MODIFICATION --- #}
+                        <a href="{% url 'product:product_list' %}" class="text-gray-500 hover:text-gray-900">Products</a>
+                        {% if user.is_authenticated and not user.is_staff %}
+                        <a href="{% url 'order:place_order' %}" class="text-gray-500 hover:text-gray-900">Place Order</a>
+                        {% endif %}
+                        <a href="{% url 'blog:post_list' %}" class="text-gray-500 hover:text-gray-900">Blog</a>
                         {% comment %} 'Manage' link was REMOVED from here {% endcomment %}
+                        {# --- END MODIFICATION --- #}
                     </div>
                 </div>
 
@@ -162,19 +270,30 @@
     <nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 shadow-lg bottom-nav z-40">
         <div class="max-w-7xl mx-auto px-4 h-full">
             <div class="flex justify-around items-center h-full">
-                <a href="{% url 'product:product_list' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.url_name == 'product_list' %}active{% endif %}">
+                <a href="{% url 'product:product_list' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.view_name == 'product:product_list' or request.resolver_match.view_name == 'product:home' %}active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9.75l-9-5.25M12 17.25v-9.75" />
                     </svg>
                     <span class="text-xs mt-1">Products</span>
                 </a>
+
+                {# --- START MODIFICATION --- #}
                 {% if user.is_authenticated %}
-                <a href="#" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {# Add active class logic if needed #}">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <span class="text-xs mt-1">Account</span>
-                </a>
+                    {% if not user.is_staff %}
+                    <a href="{% url 'order:place_order' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.view_name == 'order:place_order' %}active{% endif %}">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                        </svg>
+                        <span class="text-xs mt-1">Order</span>
+                    </a>
+                    {% endif %}
+
+                    <a href="#" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {# Add active class logic if needed #}">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span class="text-xs mt-1">Account</span>
+                    </a>
                  {% else %}
                  <a href="{% url 'user:login' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.url_name == 'login' %}active{% endif %}">
                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
@@ -183,6 +302,7 @@
                     <span class="text-xs mt-1">Login</span>
                  </a>
                  {% endif %}
+                 {# --- END MODIFICATION --- #}
             </div>
         </div>
     </nav>
@@ -228,5 +348,13 @@
         });
     </script>
 
+    <script>
+        console.log("DEBUG: base.html v3 LOADED. Modal include should be next.");
+    </script>
+
+    <div x-data="{}">
+        {% include 'product/partials/product_quick_view_modal.html' %}
+    </div>
+    
 </body>
 </html>

@@ -1,7 +1,7 @@
 # distributorplatform/app/blog/forms.py
 from django import forms
 from .models import Post, UserGroup
-
+from images.models import MediaImage
 
 class PostForm(forms.ModelForm):
     user_groups = forms.ModelMultipleChoiceField(
@@ -9,6 +9,14 @@ class PostForm(forms.ModelForm):
         required=False,
         widget=forms.CheckboxSelectMultiple(),
         help_text="Select groups to restrict this post to. Leave blank for a public post."
+    )
+
+    # --- START MODIFICATION ---
+    # Explicitly define gallery_images here
+    gallery_images = forms.ModelMultipleChoiceField(
+        queryset=MediaImage.objects.all().order_by('title'),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(),
     )
 
     class Meta:

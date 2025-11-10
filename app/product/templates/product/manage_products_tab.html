@@ -5,6 +5,14 @@
 >
     <div class="flex justify-between items-center mb-6">
         <h3 class="text-2xl font-semibold text-gray-700">Manage Products</h3>
+        <div class="flex space-x-2">
+            <button @click="$dispatch('open-upload-product-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                Upload Products
+            </button>
+            <a href="{% url 'product:export_products_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700">
+                Export All Products
+            </a>
+        </div>
     </div>
 
     <div class="p-4 bg-gray-50 border-b border-gray-200">

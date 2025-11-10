@@ -14,6 +14,11 @@ urlpatterns = [
 
     path('', include('product.urls', namespace='product')),
     path('manage/', core_views.manage_dashboard, name='manage_dashboard'),
+
+    # --- START MODIFICATION ---
+    path('order/', include('order.urls', namespace='order')),
+    # --- END MODIFICATION ---
+
     # Your application URLs
     path('accounts/', include('user.urls', namespace='user')),
     path('inventory/', include('inventory.urls', namespace='inventory')),
@@ -21,7 +26,6 @@ urlpatterns = [
     path('blog/', include('blog.urls', namespace='blog')),
     path('seo/', include('seo.urls', namespace='seo')),
     path('images/', include('images.urls', namespace='images')),
-    path('', include('product.urls', namespace='product')),
     path('tinymce/', include('tinymce.urls')),
 ]
 

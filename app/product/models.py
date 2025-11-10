@@ -1,5 +1,6 @@
 # distributorplatform/app/product/models.py
 from django.db import models
+from django.urls import reverse
 
 class CategoryGroup(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -112,6 +113,15 @@ class Product(models.Model):
 
         return None # Return None if no quotation has been logged
     # --- END MODIFIED PROPERTY ---
+
+    def get_absolute_url(self):
+        """
+        Returns the public URL for the product.
+        """
+        # Note: This requires a product_detail view and URL pattern
+        if self.sku:
+            return reverse('product:product_detail', kwargs={'sku': self.sku})
+        return reverse('product:product_list') # Fallback
 
     def __str__(self):
         return self.name

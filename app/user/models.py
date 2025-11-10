@@ -11,6 +11,15 @@ class UserGroup(models.Model):
     product_categories = models.ManyToManyField('product.Category', blank=True, related_name="user_groups")
     is_default = models.BooleanField(default=False, help_text="Set this as the default group for new users.")
 
+    # --- START ADDITION ---
+    commission_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0.00,
+        help_text="The percentage of the *profit* this group earns as commission (e.g., 50.00 for 50%)."
+    )
+    # --- END ADDITION ---
+    
     def __str__(self):
         return self.name
 
