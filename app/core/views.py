@@ -16,12 +16,16 @@ import json
 from django.core.serializers.json import DjangoJSONEncoder
 
 from sales.forms import InvoiceUpdateForm
-from product.forms import ProductForm
+from product.forms import ProductForm, ProductUploadForm
 from images.forms import ImageUploadForm
 from sales.models import Invoice
 from blog.models import Post
 from seo.models import PageMetadata
 from sales.models import Invoice
+
+# --- START MODIFICATION ---
+from user.models import UserGroup # Import UserGroup
+# --- END MODIFICATION ---
 
 # --- Make sure logging is imported ---
 import logging
@@ -94,6 +98,16 @@ def manage_dashboard(request):
     ]
     all_image_categories = list(ImageCategory.objects.all().values('id', 'name'))
 
+    # --- START MODIFICATION ---
+    # 4. Get User Groups for commission calculation
+    all_user_groups = UserGroup.objects.all().order_by('name')
+    all_user_groups_list = [
+        {'id': g.id, 'name': g.name, 'commission_percentage': g.commission_percentage}
+        for g in all_user_groups
+    ]
+    # --- END MODIFICATION ---
+
+
     # 1. For Invoices Tab
     all_invoices = Invoice.objects.select_related(
         'supplier', 'quotation'
@@ -129,11 +143,16 @@ def manage_dashboard(request):
         'image_upload_form': ImageUploadForm(),
         'today_date': datetime.date.today(),
 
+        'product_upload_form': ProductUploadForm(),
         # --- MODIFICATION: Pass raw lists (not json strings) ---
         'all_categories_list': all_categories_list,
         'all_suppliers_list': all_suppliers_list,
         # --- END MODIFICATION ---
         'all_image_categories_json': json.dumps(all_image_categories),
+
+        # --- START MODIFICATION ---
+        'all_user_groups_list': all_user_groups_list, # Pass the new list
+        # --- END MODIFICATION ---
 
         'invoices': all_invoices,
         'blog_posts': all_blog_posts,

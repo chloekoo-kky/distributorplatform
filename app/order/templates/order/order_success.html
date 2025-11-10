@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Order Successful{% endblock %}
+{% block full_width_sticky_nav %}{% endblock %}
+
+{% block content %}
+<div class="py-12">
+    <div class="w-full max-w-2xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden p-8 text-center">
+
+        <div class="w-16 h-16 bg-green-100 rounded-full p-3 flex items-center justify-center mx-auto">
+            <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        </div>
+
+        <h1 class="text-3xl font-bold text-gray-800 mt-6 mb-2">Thank You, {{ request.user.username }}!</h1>
+        <p class="text-lg text-gray-600">Your order has been placed successfully.</p>
+
+        <div class="text-lg text-gray-700 font-semibold my-4">
+            Order ID: <span class="text-indigo-600">{{ order.id }}</span>
+        </div>
+
+        <div class="my-6 text-left border-t border-b py-4">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Order Summary</h2>
+            <div class="space-y-2">
+                {% for item in order_items %}
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-600">
+                        <span class="font-medium text-gray-800">{{ item.quantity }} x</span> {{ item.product.name }}
+                    </span>
+                    <span class="font-medium text-gray-800">RM {{ item.total_price|floatformat:2 }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="flex justify-between items-center text-lg font-bold border-t pt-3 mt-3">
+                <span class="text-gray-900">Total Price:</span>
+                <span class="text-indigo-600">RM {{ subtotal|floatformat:2 }}</span>
+            </div>
+            <div class="flex justify-between items-center text-sm font-medium border-t pt-2 mt-2">
+                <span class="text-green-700">Your Estimated Profit:</span>
+                <span class="text-green-700">RM {{ total_profit|floatformat:2 }}</span>
+            </div>
+            <div class="flex justify-between items-center text-sm font-medium">
+                <span class="text-blue-700">Your Estimated Commission:</span>
+                <span class="text-blue-700">RM {{ total_commission|floatformat:2 }}</span>
+            </div>
+        </div>
+
+        <a href="{% url 'product:home' %}" class="px-6 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+            Back to Home
+        </a>
+
+    </div>
+</div>
+{% endblock %}

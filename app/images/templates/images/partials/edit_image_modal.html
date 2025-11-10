@@ -1,0 +1,72 @@
+{# distributorplatform/app/images/templates/images/partials/edit_image_modal.html #}
+
+{# 1. FIX: Change x-show to $store.images.showImageEditModal #}
+<div x-show="$store.images.showImageEditModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     {# 2. FIX: Change keydown to $store.images.showImageEditModal = false #}
+     @keydown.escape.window="$store.images.showImageEditModal = false"
+     style="display: none;">
+
+    {# 3. FIX: Change click.away to $store.images.showImageEditModal = false #}
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg m-4 flex flex-col"
+         @click.away="$store.images.showImageEditModal = false">
+
+        <button @click="$store.images.showImageEditModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">
+            Edit Image Details
+        </h3>
+
+        {# 4. FIX: Change submit to call $store.images.submitImageEdit() #}
+        <form @submit.prevent="$store.images.submitImageEdit()">
+            <div class="p-6 space-y-4">
+                <div class="block mb-2 rounded-md overflow-hidden border border-gray-200">
+                    <img :src="$store.images.currentImageToEdit.url" :alt="$store.images.currentImageToEdit.alt_text" class="w-full h-48 object-cover">
+                </div>
+
+                <div>
+                    <label for="edit_image_title" class="font-semibold text-gray-700 block mb-1">Title</label>
+                    <input type="text" id="edit_image_title"
+                        x-model="$store.images.currentImageToEdit.title"
+                        required
+                        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div>
+                    <label for="edit_image_alt_text" class="font-semibold text-gray-700 block mb-1">Alt Text</label>
+                    <input type="text" id="edit_image_alt_text"
+                        x-model="$store.images.currentImageToEdit.alt_text"
+                        placeholder="A brief description for accessibility"
+                        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div>
+                    <label for="edit_image_category" class="font-semibold text-gray-700 block mb-1">Category</label>
+                    <select id="edit_image_category"
+                            x-model.number="$store.images.currentImageToEdit.category_id"
+                            class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option :value="null">Uncategorized</option>
+                        <template x-for="category in $store.globals.allImageCategories" :key="category.id">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+            <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
+                {# This cancel button was already correct #}
+                <button type="button" @click="$store.images.showImageEditModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="submit"
+                        :disabled="$store.images.isSubmittingImageEdit"
+                        class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!$store.images.isSubmittingImageEdit">Save Changes</span>
+                    <span x-show="$store.images.isSubmittingImageEdit">Saving...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

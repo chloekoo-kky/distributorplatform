@@ -1,0 +1,101 @@
+{# distributorplatform/app/product/templates/product/partials/product_quick_view_modal.html #}
+
+<div x-show="$store.cartStore.showProductModal"
+     x-effect="console.log('MODAL x-effect: $store.cartStore.showProductModal is now:', $store.cartStore.showProductModal)"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="$store.cartStore.closeProductModal()"
+     style="display: none;">
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 h-[80vh] flex flex-col"
+         @click.away="$store.cartStore.closeProductModal()">
+
+        <button @click="$store.cartStore.closeProductModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <div x-show="$store.cartStore.isLoadingModal" class="flex-1 flex items-center justify-center">
+            <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <div x-show="!$store.cartStore.isLoadingModal && $store.cartStore.modalProduct.id" class="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-y-auto">
+
+            <div class="p-4">
+                <div class="aspect-square bg-gray-100 rounded-lg">
+                    <img x-if="$store.cartStore.modalProduct.featured_image_url"
+                         :src="$store.cartStore.modalProduct.featured_image_url"
+                         :alt="$store.cartStore.modalProduct.name"
+                         class="w-full h-full object-cover rounded-lg">
+                    <div x-if="!$store.cartStore.modalProduct.featured_image_url" class="w-full h-full flex items-center justify-center">
+                        <svg class="w-24 h-24 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                </div>
+                <div class="p-2 grid grid-cols-5 gap-2 mt-2">
+                    <template x-for="image in $store.cartStore.modalProduct.gallery_images" :key="image.id">
+                        <a :href="image.url" target="_blank">
+                            <img :src="image.url" :alt="image.alt_text" class="rounded-lg shadow-md object-cover aspect-square">
+                        </a>
+                    </template>
+                </div>
+            </div>
+
+            <div class="p-8 flex flex-col">
+                <h3 class="text-3xl font-bold text-gray-900 mb-2" x-text="$store.cartStore.modalProduct.name"></h3>
+                <p class="text-sm text-gray-500 mb-4">SKU: <span x-text="$store.cartStore.modalProduct.sku"></span></p>
+
+                <div class_=""prose max-w-none mb-6">
+                    <p x-text="$store.cartStore.modalProduct.description"></p>
+                </div>
+
+                <div class="mt-auto">
+                    {# --- START MODIFICATION --- #}
+
+                    <div x-show="$store.cartStore.modalProduct.selling_price !== null">
+
+                        <div x-show="$store.cartStore.modalProduct.is_orderable">
+                            <div class="bg-indigo-50 p-4 rounded-lg mb-4">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-lg font-medium text-gray-700">Selling Price:</span>
+                                    <span class="text-3xl font-bold text-indigo-600" x-text="$store.cartStore.formatPrice($store.cartStore.modalProduct.selling_price)"></span>
+                                </div>
+                                <div class="flex justify-between items-center mt-2">
+                                    <span class="text-sm font-medium text-green-700">Your Estimated Profit:</span>
+                                    <span class="text-lg font-bold text-green-700" x-text="$store.cartStore.formatPrice($store.cartStore.modalProduct.profit)"></span>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-4">
+                                <div class="flex items-center border border-gray-300 rounded">
+                                    <button @click="$store.cartStore.modalQuantity > 1 ? $store.cartStore.modalQuantity-- : 1" class="px-3 py-2 text-gray-600 hover:bg-gray-100">-</button>
+                                    <input type="text" x-model.number="$store.cartStore.modalQuantity" class="w-12 text-center border-l border-r p-2 text-sm">
+                                    <button @click="$store.cartStore.modalQuantity++" class="px-3 py-2 text-gray-600 hover:bg-gray-100">+</button>
+                                </div>
+                                <button @click="$store.cartStore.addToCart()"
+                                        :disabled="$store.cartStore.isInCart($store.cartStore.modalProduct.id)"
+                                        class="flex-1 px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                    <span x-show="!$store.cartStore.isInCart($store.cartStore.modalProduct.id)">Add to Cart</span>
+                                    <span x-show="$store.cartStore.isInCart($store.cartStore.modalProduct.id)">Added to Cart</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div x-show="!$store.cartStore.modalProduct.is_orderable" class="p-4 bg-yellow-100 text-yellow-800 rounded-lg">
+                            This product is not currently available for ordering (it may be missing a selling price or cost).
+                        </div>
+                    </div>
+
+                    <div x-show="$store.cartStore.modalProduct.selling_price === null">
+                        <div class="p-4 bg-gray-100 rounded-lg text-center">
+                            <a href="{% url 'user:login' %}" class="font-medium text-indigo-600 hover:text-indigo-500">
+                                Please log in as an agent to view pricing and place an order.
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>

@@ -15,7 +15,7 @@ from django.core.files.base import ContentFile
 
 from images.forms import ImageUploadForm
 
-
+# ... (get_accessible_posts, post_list, post_detail views are unchanged) ...
 def get_accessible_posts(user):
     """
     Helper function to get all posts accessible by a specific user.
@@ -63,6 +63,7 @@ def post_detail(request, slug):
     }
     return render(request, 'blog/post_detail.html', context)
 
+
 @staff_required
 def manage_post_create(request):
     if request.method == 'POST':
@@ -73,7 +74,10 @@ def manage_post_create(request):
             post.save()
             form.save_m2m()
             messages.success(request, f"Blog post '{post.title}' created successfully.")
-            return redirect(reverse('core:manage_dashboard') + '#blog')
+
+            # --- START MODIFICATION ---
+            return redirect(reverse('manage_dashboard') + '#blog')
+            # --- END MODIFICATION ---
     else:
         form = PostForm()
 
@@ -94,7 +98,10 @@ def manage_post_edit(request, post_id):
         if form.is_valid():
             form.save()
             messages.success(request, f"Blog post '{post.title}' updated successfully.")
-            return redirect(reverse('core:manage_dashboard') + '#blog')
+
+            # --- START MODIFICATION ---
+            return redirect(reverse('manage_dashboard') + '#blog')
+            # --- END MODIFICATION ---
     else:
         form = PostForm(instance=post)
 
@@ -115,7 +122,10 @@ def manage_post_delete(request, post_id):
         title = post.title
         post.delete()
         messages.success(request, f"Blog post '{title}' has been deleted.")
-    return redirect(reverse('core:manage_dashboard') + '#blog')
+
+    # --- START MODIFICATION ---
+    return redirect(reverse('manage_dashboard') + '#blog')
+    # --- END MODIFICATION ---
 
 @staff_required
 def api_manage_posts(request):

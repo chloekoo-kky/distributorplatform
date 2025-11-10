@@ -111,7 +111,12 @@
                                         <span class="ml-3 text-sm font-medium text-gray-700" x-text="image.title"></span>
 
                                         <button type="button"
-                                                @click.prevent="productEditData.gallery_images = productEditData.gallery_images.filter(id => id !== image.id)"
+                                                {# --- START DEBUG MODIFICATION --- #}
+                                                @click.prevent="
+                                                    console.log('[MODAL CLICK] Remove button clicked for image.id:', image.id);
+                                                    removeImageFromProductGallery(image.id)
+                                                "
+                                                {# --- END DEBUG MODIFICATION --- #}
                                                 class="text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1">
                                             Remove
                                         </button>

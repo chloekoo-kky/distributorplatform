@@ -1,0 +1,282 @@
+{# distributorplatform/app/user/templates/user/manage_agents_tab.html #}
+
+<div x-data="agentManagerData()" x-init="init()">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        <div>
+            <h3 class="text-2xl font-semibold text-gray-700 mb-6">Agent Groups</h3>
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission (%)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-if="groups.length === 0">
+                                <tr><td colspan="3" class="px-6 py-4 text-center text-gray-500">No agent groups found.</td></tr>
+                            </template>
+                            <template x-for="group in groups" :key="group.id">
+                                <tr>
+                                    <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="group.name"></td>
+                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="`${group.commission_percentage}%`"></td>
+                                    <td class="px-6 py-4 text-sm font-medium">
+                                        <button @click="openGroupModal(group)" class="text-indigo-600 hover:text-indigo-900">Edit</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h3 class="text-2xl font-semibold text-gray-700 mb-6">Users</h3>
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                <div class="p-4 border-b">
+                    <input type="text" x-model.debounce.500ms="filterText" @keydown.enter.prevent="fetchUsers(1)" placeholder="Search by username or email..."
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent Groups</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-if="isLoadingUsers">
+                                <tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">Loading users...</td></tr>
+                            </template>
+                            <template x-if="!isLoadingUsers && users.length === 0">
+                                <tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">No users found.</td></tr>
+                            </template>
+                            <template x-for="user in users" :key="user.id">
+                                <tr>
+                                    <td class="px-6 py-4 text-sm font-medium text-gray-900">
+                                        <span x-text="user.username"></span>
+                                        <span x-show="user.is_staff" class="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Staff</span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="user.email"></td>
+                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="user.group_names || '-'"></td>
+                                    <td class="px-6 py-4 text-sm font-medium">
+                                        <button @click="openUserModal(user)" class="text-indigo-600 hover:text-indigo-900">Assign Groups</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                    <button @click="fetchUsers(pagination.current_page - 1)" :disabled="!pagination.has_previous"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">
+                        Previous
+                    </button>
+                    <span class="text-sm text-gray-700" x-show="pagination.total_pages > 0">
+                        Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span>
+                    </span>
+                    <button @click="fetchUsers(pagination.current_page + 1)" :disabled="!pagination.has_next"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showGroupModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75" style="display: none;">
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg m-4 flex flex-col" @click.away="showGroupModal = false">
+            <button @click="showGroupModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">Edit Group: <span x-text="currentGroup.name" class="text-indigo-600"></span></h3>
+
+            <form @submit.prevent="submitGroupEdit()">
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label for="commission_percentage" class="font-semibold text-gray-700 block mb-1">Commission Percentage</label>
+                        <input type="number" id="commission_percentage" x-model.number="currentGroup.commission_percentage"
+                               step="0.01" min="0" max="100"
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="text-xs text-gray-500 mt-1">Enter a value (e.g., 30 for 30%).</p>
+                    </div>
+                </div>
+                <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
+                    <button type="button" @click="showGroupModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                    <button type="submit" :disabled="isSubmitting" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                        <span x-show="!isSubmitting">Save Commission</span>
+                        <span x-show="isSubmitting">Saving...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showUserModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75" style="display: none;">
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg m-4 flex flex-col" @click.away="showUserModal = false">
+            <button @click="showUserModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">Assign Groups for: <span x-text="currentUser.username" class="text-indigo-600"></span></h3>
+
+            <form @submit.prevent="submitUserGroups()">
+                <div class="p-6 h-64 overflow-y-auto">
+                    <div class="space-y-2">
+                        <template x-for="group in groups" :key="group.id">
+                            <label class="flex items-center p-2 rounded-md hover:bg-gray-50">
+                                <input type="checkbox" :value="group.id" x-model="currentUser.groups"
+                                       class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                <span class="ml-3 text-sm font-medium text-gray-700" x-text="group.name"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+                <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
+                    <button type="button" @click="showUserModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                    <button type="submit" :disabled="isSubmitting" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                        <span x-show="!isSubmitting">Save Assignments</span>
+                        <span x-show="isSubmitting">Saving...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function agentManagerData() {
+    return {
+        groups: [],
+        users: [],
+        pagination: {},
+        filterText: '',
+        isLoadingGroups: true,
+        isLoadingUsers: true,
+        isSubmitting: false,
+
+        showGroupModal: false,
+        currentGroup: { id: null, name: '', commission_percentage: 0 },
+
+        showUserModal: false,
+        currentUser: { id: null, username: '', groups: [] },
+
+        init() {
+            this.fetchGroups();
+            this.fetchUsers(1);
+        },
+
+        async fetchGroups() {
+            this.isLoadingGroups = true;
+            try {
+                const response = await fetch(`{% url 'user:api_manage_user_groups' %}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                const data = await response.json();
+                this.groups = data.groups;
+            } catch (error) {
+                console.error('Failed to fetch groups:', error);
+                alert('Could not load agent groups.');
+            } finally {
+                this.isLoadingGroups = false;
+            }
+        },
+
+        async fetchUsers(page = 1) {
+            this.isLoadingUsers = true;
+            const params = new URLSearchParams({ page, search: this.filterText });
+            try {
+                const response = await fetch(`{% url 'user:api_manage_users' %}?${params.toString()}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                const data = await response.json();
+                this.users = data.users;
+                this.pagination = data.pagination;
+            } catch (error) {
+                console.error('Failed to fetch users:', error);
+                alert('Could not load users.');
+            } finally {
+                this.isLoadingUsers = false;
+            }
+        },
+
+        openGroupModal(group) {
+            this.currentGroup = { ...group }; // Clone the group object
+            this.showGroupModal = true;
+        },
+
+        async submitGroupEdit() {
+            this.isSubmitting = true;
+            try {
+                const response = await fetch(`{% url 'user:api_manage_user_groups' %}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.currentGroup)
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    // Update the group in the local list
+                    const index = this.groups.findIndex(g => g.id === data.group.id);
+                    if (index !== -1) {
+                        this.groups[index] = data.group;
+                    }
+                    this.showGroupModal = false;
+                    alert('Commission updated!');
+                } else {
+                    throw new Error(data.error || 'Failed to update group.');
+                }
+            } catch (error) {
+                console.error('Failed to submit group edit:', error);
+                alert('Error: ' + error.message);
+            } finally {
+                this.isSubmitting = false;
+            }
+        },
+
+        openUserModal(user) {
+            this.currentUser = { ...user }; // Clone the user object
+            this.showUserModal = true;
+        },
+
+        async submitUserGroups() {
+            this.isSubmitting = true;
+            try {
+                const response = await fetch(`/api/update-user-groups/${this.currentUser.id}/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ group_ids: this.currentUser.groups })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    this.showUserModal = false;
+                    alert('User groups updated!');
+                    this.fetchUsers(this.pagination.current_page || 1); // Refresh the user list
+                } else {
+                    throw new Error(data.error || 'Failed to update user groups.');
+                }
+            } catch (error) {
+                console.error('Failed to submit user groups:', error);
+                alert('Error: ' + error.message);
+            } finally {
+                this.isSubmitting = false;
+            }
+        }
+    }
+}
+</script>

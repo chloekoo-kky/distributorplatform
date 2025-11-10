@@ -58,11 +58,7 @@ class ProductResource(resources.ModelResource):
     class Meta:
         model = Product
         import_id_fields = ['sku']
-        # --- START MODIFICATION ---
-        # Add 'base_cost' to the fields list
-        fields = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost')
-        # --- END MODIFICATION ---
-        # export_order already includes base_cost
-        export_order = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost', 'created_at')
+        fields = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost', 'selling_price', 'profit_margin')
+        export_order = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost', 'selling_price', 'profit_margin', 'created_at')
         skip_unchanged = True
         report_skipped = True

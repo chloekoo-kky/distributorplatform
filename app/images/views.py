@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.db.models import ProtectedError
 from django.http import JsonResponse
 from django.urls import reverse
+
 import json
 import os
 from PIL import Image
@@ -341,4 +342,56 @@ def ajax_bulk_assign(request):
         return JsonResponse({'success': False, 'error': 'Invalid JSON.'}, status=400)
     except Exception as e:
         logger.error(f"Error in ajax_bulk_assign: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@staff_required
+def ajax_edit_image(request, image_id):
+    """
+    Handles POST request to update an image's details (title, alt_text, category).
+    """
+    if request.method != 'POST' or not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
+
+    image = get_object_or_404(MediaImage, pk=image_id)
+
+    try:
+        data = json.loads(request.body)
+
+        # Get data from the payload
+        title = data.get('title', '').strip()
+        alt_text = data.get('alt_text', '').strip()
+        category_id = data.get('category_id') # Can be null/None
+
+        if not title:
+            return JsonResponse({'success': False, 'error': 'Title is required.'}, status=400)
+
+        # Update the instance
+        image.title = title
+        image.alt_text = alt_text
+
+        # Handle category (it's a ForeignKey)
+        if category_id:
+            # Ensure the category exists before assigning
+            image.category = get_object_or_404(ImageCategory, pk=category_id)
+        else:
+            image.category = None
+
+        image.save()
+
+        # Return the updated object, serialized
+        serialized_image = {
+            'id': image.id,
+            'title': image.title,
+            'url': image.image.url,
+            'alt_text': image.alt_text,
+            'category_id': image.category_id,
+            'category_name': image.category.name if image.category else 'Uncategorized',
+        }
+
+        return JsonResponse({'success': True, 'image': serialized_image})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON.'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in ajax_edit_image for image {image_id}: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

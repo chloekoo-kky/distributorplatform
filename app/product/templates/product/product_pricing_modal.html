@@ -1,4 +1,4 @@
-{# distributorplatform/app/product/templates/product/partials/product_pricing_modal.html #}
+{# distributorplatform/app/product/templates/product/product_pricing_modal.html #}
 
 <div x-show="showPricingModal"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
@@ -54,6 +54,38 @@
                            :disabled="!pricingData.base_cost"
                            step="0.01" min="0"
                            class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
+                </div>
+
+                <hr class="my-4">
+
+                <div>
+                    <span class="font-semibold text-gray-700 block mb-2">Commission Estimates</span>
+
+                    <div x-show="pricingProfit === null" class="text-xs text-gray-500">
+                        Enter a valid Selling Price (higher than Base Cost) to calculate commissions.
+                    </div>
+
+                    {# --- START MODIFICATION --- #}
+                    <div x-show="pricingProfit !== null" class="space-y-2 max-h-32 overflow-y-auto pr-2">
+                        <template x-for="group in $store.globals.allUserGroupsList" :key="group.id">
+                            <div x-show="group.commission_percentage > 0" class="flex justify-between items-center text-sm p-2 bg-gray-50 rounded">
+
+                                <span class="text-gray-600" x-text="`${group.name} (${group.commission_percentage}% of profit)`"></span>
+
+                                <div class="flex flex-col items-end">
+                                    <span class="font-medium text-green-700"
+                                          x-text="`RM ${(pricingProfit * (group.commission_percentage / 100)).toFixed(2)}`">
+                                    </span>
+
+                                    <span class="text-xs text-gray-500"
+                                          x-text="`(${( ( (pricingProfit * (group.commission_percentage / 100)) / pricingData.selling_price ) * 100 ).toFixed(1)}% of SP)`">
+                                    </span>
+                                </div>
+
+                            </div>
+                        </template>
+                    </div>
+                    {# --- END MODIFICATION --- #}
                 </div>
 
             </div>

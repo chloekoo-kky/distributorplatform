@@ -2,13 +2,23 @@
 import json
 import logging
 import time
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404 # Add get_object_or_404
 from django.contrib.auth import login
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404 # Add Http404
 from django.urls import reverse
 from django_ratelimit.decorators import ratelimit
 from django_ratelimit.exceptions import Ratelimited
+from .forms import CustomUserCreationForm
+from .models import UserGroup, CustomUser
+from .utils import generate_verification_code, send_verification_code
+from django.core.paginator import Paginator, EmptyPage # Add Paginator
+from django.db.models import Q # Add Q
+from inventory.views import staff_required # Add staff_required
+from decimal import Decimal # Add Decimal
+
+
+
 from .forms import CustomUserCreationForm
 from .models import UserGroup, CustomUser
 from .utils import generate_verification_code, send_verification_code
@@ -141,3 +151,98 @@ def handler403(request, exception=None):
     messages.error(request, 'Permission denied.')
     # --- FIXED REDIRECT ---
     return redirect('product:product_list')
+
+
+@staff_required
+def api_manage_user_groups(request):
+    """
+    GET: Returns a list of all UserGroups.
+    POST: Updates the commission_percentage for a UserGroup.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            group_id = data.get('id')
+            commission_str = data.get('commission_percentage')
+
+            if commission_str is None:
+                 raise ValueError("Commission percentage is required.")
+
+            group = get_object_or_404(UserGroup, pk=group_id)
+            group.commission_percentage = Decimal(commission_str)
+            group.save(update_fields=['commission_percentage'])
+
+            return JsonResponse({'success': True, 'group': {
+                'id': group.id,
+                'name': group.name,
+                'commission_percentage': group.commission_percentage
+            }})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    # Handle GET
+    groups = UserGroup.objects.all().order_by('name')
+    data = [{
+        'id': g.id,
+        'name': g.name,
+        'commission_percentage': g.commission_percentage
+    } for g in groups]
+    return JsonResponse({'groups': data})
+
+@staff_required
+def api_manage_users(request):
+    """
+    GET: Returns a paginated list of all users.
+    """
+    search = request.GET.get('search', '')
+    page_number = request.GET.get('page', 1)
+
+    queryset = CustomUser.objects.prefetch_related('user_groups').order_by('username')
+    if search:
+        queryset = queryset.filter(Q(username__icontains=search) | Q(email__icontains=search))
+
+    paginator = Paginator(queryset, 25) # 25 users per page
+    try:
+        page_obj = paginator.page(page_number)
+    except EmptyPage:
+        return JsonResponse({'users': [], 'pagination': {}})
+
+    serialized_users = [{
+        'id': u.id,
+        'username': u.username,
+        'email': u.email,
+        'phone_number': str(u.phone_number),
+        'is_staff': u.is_staff,
+        'groups': list(u.user_groups.values_list('id', flat=True)),
+        'group_names': ", ".join(list(u.user_groups.values_list('name', flat=True)))
+    } for u in page_obj.object_list]
+
+    return JsonResponse({
+        'users': serialized_users,
+        'pagination': {
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        }
+    })
+
+@staff_required
+def api_update_user_groups(request, user_id):
+    """
+    POST: Updates the list of groups a specific user belongs to.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
+
+    user = get_object_or_404(CustomUser, pk=user_id)
+    try:
+        data = json.loads(request.body)
+        group_ids = data.get('group_ids', [])
+
+        # .set() is the most efficient way to handle this
+        user.user_groups.set(group_ids)
+
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)

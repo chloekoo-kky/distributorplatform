@@ -20,9 +20,9 @@
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for meta in seo_settings %}
                 <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ meta.page_name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{{ meta.page_path }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ meta.meta_title }}</td>
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ meta.page_name }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500 font-mono">{{ meta.page_path }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">{{ meta.meta_title }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <a href="{% url 'seo:manage_seo_edit' meta.id %}" class="text-indigo-600 hover:text-indigo-900">Edit</a>
                     </td>

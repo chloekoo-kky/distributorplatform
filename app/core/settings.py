@@ -47,6 +47,9 @@ INSTALLED_APPS = [
     'seo.apps.SeoConfig',
     'images.apps.ImagesConfig',
 
+    'order.apps.OrderConfig',
+    'commission.apps.CommissionConfig',
+
     # Third-party Apps
     'phonenumber_field',
     'django_ratelimit',
