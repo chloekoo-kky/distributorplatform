@@ -1,101 +1,267 @@
 {# distributorplatform/app/product/templates/product/partials/product_quick_view_modal.html #}
 
-<div x-show="$store.cartStore.showProductModal"
-     x-effect="console.log('MODAL x-effect: $store.cartStore.showProductModal is now:', $store.cartStore.showProductModal)"
-     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
-     @keydown.escape.window="$store.cartStore.closeProductModal()"
+<div x-data="productQuickView()"
+     x-show="show"
+     @open-quick-view.window="openModal($event.detail.sku)"
+     @keydown.escape.window="closeModal()"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
      style="display: none;">
 
-    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 h-[80vh] flex flex-col"
-         @click.away="$store.cartStore.closeProductModal()">
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 max-h-[90vh] flex flex-col"
+         @click.away="closeModal()">
 
-        <button @click="$store.cartStore.closeProductModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+        <button @click="closeModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
 
-        <div x-show="$store.cartStore.isLoadingModal" class="flex-1 flex items-center justify-center">
+        <div x-show="isLoading" class="flex-1 flex items-center justify-center min-h-[400px]">
             <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
         </div>
 
-        <div x-show="!$store.cartStore.isLoadingModal && $store.cartStore.modalProduct.id" class="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-y-auto">
+        <div x-show="!isLoading && product.id" class="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-y-auto">
 
-            <div class="p-4">
-                <div class="aspect-square bg-gray-100 rounded-lg">
-                    <img x-if="$store.cartStore.modalProduct.featured_image_url"
-                         :src="$store.cartStore.modalProduct.featured_image_url"
-                         :alt="$store.cartStore.modalProduct.name"
-                         class="w-full h-full object-cover rounded-lg">
-                    <div x-if="!$store.cartStore.modalProduct.featured_image_url" class="w-full h-full flex items-center justify-center">
+            <div class="p-6">
+                {# Image Section #}
+                <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                    <img x-if="currentImageUrl"
+                         :src="currentImageUrl"
+                         :alt="product.name"
+                         class="w-full h-full object-cover">
+                    <div x-if="!currentImageUrl" class="w-full h-full flex items-center justify-center">
                         <svg class="w-24 h-24 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     </div>
                 </div>
-                <div class="p-2 grid grid-cols-5 gap-2 mt-2">
-                    <template x-for="image in $store.cartStore.modalProduct.gallery_images" :key="image.id">
-                        <a :href="image.url" target="_blank">
-                            <img :src="image.url" :alt="image.alt_text" class="rounded-lg shadow-md object-cover aspect-square">
-                        </a>
-                    </template>
+
+                {# Thumbnails #}
+                <div x-show="product.featured_image_url || (product.gallery_images && product.gallery_images.length > 0)" class="mt-4">
+                    <div class="flex space-x-2 overflow-x-auto pb-2">
+                        <button type="button" x-if="product.featured_image_url"
+                                @click="setCurrentImage(product.featured_image_url)"
+                                :class="{ 'border-indigo-500': currentImageUrl === product.featured_image_url, 'border-gray-200': currentImageUrl !== product.featured_image_url }"
+                                class="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 hover:border-indigo-500 focus:outline-none transition-colors">
+                            <img :src="product.featured_image_url" :alt="product.name" class="w-full h-full object-cover">
+                        </button>
+                        <template x-for="image in product.gallery_images" :key="image.id">
+                            <button type="button"
+                                    @click="setCurrentImage(image.url)"
+                                    :class="{ 'border-indigo-500': currentImageUrl === image.url, 'border-gray-200': currentImageUrl !== image.url }"
+                                    class="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 hover:border-indigo-500 focus:outline-none transition-colors">
+                                <img :src="image.url" :alt="image.alt_text" class="w-full h-full object-cover">
+                            </button>
+                        </template>
+                    </div>
                 </div>
             </div>
 
-            <div class="p-8 flex flex-col">
-                <h3 class="text-3xl font-bold text-gray-900 mb-2" x-text="$store.cartStore.modalProduct.name"></h3>
-                <p class="text-sm text-gray-500 mb-4">SKU: <span x-text="$store.cartStore.modalProduct.sku"></span></p>
-
-                <div class_=""prose max-w-none mb-6">
-                    <p x-text="$store.cartStore.modalProduct.description"></p>
+            <div class="p-6 flex flex-col">
+                <div>
+                    <h3 class="text-3xl font-bold text-gray-900 mb-2" x-text="product.name"></h3>
+                    <p class="text-sm text-gray-500 mb-4">SKU: <span x-text="product.sku"></span></p>
                 </div>
 
-                <div class="mt-auto">
-                    {# --- START MODIFICATION --- #}
+                <div class="flex-1 overflow-y-auto my-4 prose max-w-none" x-text="product.description"></div>
 
-                    <div x-show="$store.cartStore.modalProduct.selling_price !== null">
+                {# --- Icon Row (Enquiry, Share, & View Details) --- #}
+                <div class="flex items-center space-x-6 mb-6 pt-2 border-t border-gray-100">
+                    <a :href="getWhatsAppEnquiryLink()" target="_blank"
+                       class="group flex items-center text-gray-500 hover:text-green-600 transition-colors"
+                       title="Enquire about this product">
+                        <div class="p-2 rounded-full bg-gray-100 group-hover:bg-green-100 transition-colors">
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                            </svg>
+                        </div>
+                        <span class="ml-2 text-sm font-medium">Enquire</span>
+                    </a>
 
-                        <div x-show="$store.cartStore.modalProduct.is_orderable">
-                            <div class="bg-indigo-50 p-4 rounded-lg mb-4">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-lg font-medium text-gray-700">Selling Price:</span>
-                                    <span class="text-3xl font-bold text-indigo-600" x-text="$store.cartStore.formatPrice($store.cartStore.modalProduct.selling_price)"></span>
-                                </div>
-                                <div class="flex justify-between items-center mt-2">
-                                    <span class="text-sm font-medium text-green-700">Your Estimated Profit:</span>
-                                    <span class="text-lg font-bold text-green-700" x-text="$store.cartStore.formatPrice($store.cartStore.modalProduct.profit)"></span>
-                                </div>
+                    <a :href="getWhatsAppShareLink()" target="_blank"
+                       class="group flex items-center text-gray-500 hover:text-indigo-600 transition-colors"
+                       title="Share product link">
+                        <div class="p-2 rounded-full bg-gray-100 group-hover:bg-indigo-100 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                            </svg>
+                        </div>
+                        <span class="ml-2 text-sm font-medium">Share</span>
+                    </a>
+
+                    <a :href="getProductDetailLink()"
+                       class="group flex items-center text-gray-500 hover:text-blue-600 transition-colors"
+                       title="View full product details">
+                        <div class="p-2 rounded-full bg-gray-100 group-hover:bg-blue-100 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                            </svg>
+                        </div>
+                        <span class="ml-2 text-sm font-medium">Details</span>
+                    </a>
+                </div>
+
+                <div class="mt-auto space-y-4">
+
+                    {# --- Case 1: Product has a price --- #}
+                    <div x-show="product.selling_price !== null">
+                        <div class="bg-indigo-50 p-4 rounded-lg mb-4">
+                            <div class="flex justify-between items-center">
+                                <span class="text-lg font-medium text-gray-700">Selling Price:</span>
+                                <span class="text-3xl font-bold text-indigo-600" x-text="$store.cartStore.formatPrice(product.selling_price)"></span>
                             </div>
 
-                            <div class="flex items-center space-x-4">
-                                <div class="flex items-center border border-gray-300 rounded">
-                                    <button @click="$store.cartStore.modalQuantity > 1 ? $store.cartStore.modalQuantity-- : 1" class="px-3 py-2 text-gray-600 hover:bg-gray-100">-</button>
-                                    <input type="text" x-model.number="$store.cartStore.modalQuantity" class="w-12 text-center border-l border-r p-2 text-sm">
-                                    <button @click="$store.cartStore.modalQuantity++" class="px-3 py-2 text-gray-600 hover:bg-gray-100">+</button>
-                                </div>
-                                <button @click="$store.cartStore.addToCart()"
-                                        :disabled="$store.cartStore.isInCart($store.cartStore.modalProduct.id)"
-                                        class="flex-1 px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed">
-                                    <span x-show="!$store.cartStore.isInCart($store.cartStore.modalProduct.id)">Add to Cart</span>
-                                    <span x-show="$store.cartStore.isInCart($store.cartStore.modalProduct.id)">Added to Cart</span>
-                                </button>
+                            {# Show Profit only to Agents #}
+                            <div class="flex justify-between items-center mt-2" x-show="product.user_role === 'agent' && product.agent_commission !== null">
+                                <span class="text-sm font-medium text-green-700">Agent Estimated Profit:</span>
+                                <span class="text-lg font-bold text-green-700" x-text="$store.cartStore.formatPrice(product.agent_commission)"></span>
                             </div>
                         </div>
 
-                        <div x-show="!$store.cartStore.modalProduct.is_orderable" class="p-4 bg-yellow-100 text-yellow-800 rounded-lg">
-                            This product is not currently available for ordering (it may be missing a selling price or cost).
+                        {# --- Sub-Case 1A: Logged In User (Customer or Agent) --- #}
+                        <div x-show="product.is_authenticated">
+                             <div x-show="product.is_orderable">
+                                <div class="flex flex-col space-y-3">
+                                    <div class="flex items-center space-x-4">
+                                        <div class="flex items-center border border-gray-300 rounded">
+                                            <button @click="quantity > 1 ? quantity-- : 1" class="px-3 py-2 text-gray-600 hover:bg-gray-100">-</button>
+                                            <input type="text" x-model.number="quantity" class="w-12 text-center border-l border-r p-2 text-sm">
+                                            <button @click="quantity++" class="px-3 py-2 text-gray-600 hover:bg-gray-100">+</button>
+                                        </div>
+                                        <button @click="addItemToCart()"
+                                                :disabled="$store.cartStore.isInCart(product.id)"
+                                                class="flex-1 px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                            <span x-show="!$store.cartStore.isInCart(product.id)">Add to Cart</span>
+                                            <span x-show="$store.cartStore.isInCart(product.id)">Added to Cart</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div x-show="!product.is_orderable" class="p-4 bg-yellow-100 text-yellow-800 rounded-lg text-sm">
+                                This product is currently unavailable for ordering.
+                            </div>
                         </div>
-                    </div>
 
-                    <div x-show="$store.cartStore.modalProduct.selling_price === null">
-                        <div class="p-4 bg-gray-100 rounded-lg text-center">
-                            <a href="{% url 'user:login' %}" class="font-medium text-indigo-600 hover:text-indigo-500">
-                                Please log in as an agent to view pricing and place an order.
+                        {# --- Sub-Case 1B: Guest User --- #}
+                        <div x-show="!product.is_authenticated">
+                            <a href="{% url 'user:login' %}" class="block w-full text-center px-6 py-3 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
+                                Log in to Place Order
                             </a>
+                            <p class="text-xs text-gray-500 text-center mt-2">
+                                Don't have an account? <a href="{% url 'user:register' %}" class="text-indigo-600 hover:underline">Register here</a>.
+                            </p>
+                        </div>
+
+                    </div>
+
+                    {# --- Case 2: No Price Set --- #}
+                    <div x-show="product.selling_price === null">
+                        <div class="p-4 bg-gray-100 rounded-lg text-center text-gray-500">
+                            Price available upon request.
                         </div>
                     </div>
+
                 </div>
             </div>
 
         </div>
     </div>
 </div>
+
+<script>
+function productQuickView() {
+    return {
+        show: false,
+        isLoading: false,
+        product: {},
+        quantity: 1,
+        sku: null,
+        currentImageUrl: null,
+
+        // --- 1. Enquiry Link: Chat with Support ---
+        getWhatsAppEnquiryLink() {
+            // ------------------------------------------------------
+            // TODO: Replace with your actual support number
+            const phoneNumber = '60123456789';
+            // ------------------------------------------------------
+
+            const productName = this.product.name || 'Product';
+            const productSku = this.product.sku || 'N/A';
+            const message = `Hi, I am interested in ${productName} (SKU: ${productSku}). Could you please provide more information?`;
+
+            return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+        },
+
+        // --- 2. Share Link: Share Product URL ---
+        getWhatsAppShareLink() {
+            const productSku = this.product.sku || '';
+            const productUrl = `${window.location.origin}/product/${productSku}/`;
+            const message = `Check out this product: ${this.product.name}\n${productUrl}`;
+            return `https://wa.me/?text=${encodeURIComponent(message)}`;
+        },
+
+        // --- 3. Detail Link: Go to Product Page ---
+        getProductDetailLink() {
+            const productSku = this.product.sku || '';
+            // Return relative URL
+            return `/product/${productSku}/`;
+        },
+
+        async openModal(sku) {
+            if (!sku) return;
+            this.sku = sku;
+            this.show = true;
+            this.isLoading = true;
+            this.product = { gallery_images: [] };
+            this.quantity = 1;
+            this.currentImageUrl = null;
+
+            try {
+                const response = await fetch(`/api/product-details/${sku}/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                if (!response.ok) {
+                    this.product = { name: 'Error', description: 'Could not load product details.', gallery_images: [] };
+                } else {
+                    this.product = await response.json();
+                    if (!this.product.gallery_images) this.product.gallery_images = [];
+                    this.currentImageUrl = this.product.featured_image_url;
+                }
+            } catch (error) {
+                console.error('Failed to fetch product details:', error);
+                this.product = { name: 'Error', description: 'Could not load product details.', gallery_images: [] };
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        closeModal() {
+            this.show = false;
+            this.currentImageUrl = null;
+        },
+
+        setCurrentImage(url) {
+            if (url) this.currentImageUrl = url;
+        },
+
+        addItemToCart() {
+            const cartStore = Alpine.store('cartStore');
+            if (!this.product.id || cartStore.isInCart(this.product.id)) return;
+
+            const cartItem = {
+                id: this.product.id,
+                name: this.product.name,
+                sku: this.product.sku,
+                selling_price: this.product.selling_price,
+                base_cost: this.product.base_cost,
+                profit: this.product.profit,
+                img_url: this.product.featured_image_url,
+                quantity: this.quantity
+            };
+
+            cartStore.addItem(cartItem);
+            this.closeModal();
+        }
+    }
+}
+</script>

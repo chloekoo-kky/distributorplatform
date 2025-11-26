@@ -630,8 +630,8 @@
     productEditIsSubmitting: false,
     productEditData: {
         id: null, name: '', sku: '', description: '', members_only: false,
-        categories: [], suppliers: [], featured_image: null, gallery_images: [],
-        update_url: '', selectedImageUrl: ''
+        is_featured: false, categories: [], suppliers: [], featured_image: null,
+        gallery_images: [], update_url: '', selectedImageUrl: ''
     },
     productEditErrors: {},
 
@@ -850,8 +850,6 @@
         this.showProductEditModal = true;
         this.productEditErrors = {};
 
-        console.log(`[DEBUG] openProductEditModal: Fetching data for product ID: ${productId}`);
-
         try {
             const url = `/manage/edit/${productId}/`;
             const response = await fetch(url, {
@@ -860,14 +858,14 @@
             if (!response.ok) { throw new Error('Failed to load product data.'); }
 
             const data = await response.json();
-
-            this.productEditData = data;
+            this.productEditData = data; // This now includes is_featured from views.py
         } catch (err) {
             this.productEditErrors = { '__all__': [err.message || 'Could not load data.'] };
         } finally {
             this.productEditIsLoading = false;
         }
     },
+
     async submitProductEdit() {
         this.productEditIsSubmitting = true;
         this.productEditErrors = {};
@@ -875,14 +873,23 @@
         formData.append('name', this.productEditData.name);
         formData.append('sku', this.productEditData.sku || '');
         formData.append('description', this.productEditData.description || '');
+
         if (this.productEditData.members_only) {
             formData.append('members_only', 'on');
         }
+
+        // --- START MODIFICATION ---
+        if (this.productEditData.is_featured) {
+            formData.append('is_featured', 'on');
+        }
+        // --- END MODIFICATION ---
+
         if (this.productEditData.featured_image) {
             formData.append('featured_image', this.productEditData.featured_image);
         } else {
             formData.append('featured_image', '');
         }
+
         this.productEditData.categories.forEach(id => formData.append('categories', id));
         this.productEditData.suppliers.forEach(id => formData.append('suppliers', id));
         this.productEditData.gallery_images.forEach(id => formData.append('gallery_images', id));
@@ -901,7 +908,6 @@
                 this.showProductEditModal = false;
                 alert('Product updated successfully!');
                 window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
-                window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'inventory' } }));
             } else {
                 this.productEditErrors = data.errors || { '__all__': ['An unknown error occurred.'] };
             }

@@ -6,8 +6,9 @@
 
 {% block content %}
 {{ products_json|json_script:"products-data" }}
-
-{% csrf_token %}
+{# --- START MODIFICATION: Pass the is_agent flag to JS --- #}
+{{ is_agent|yesno:"true,false"|json_script:"is-agent-flag" }}
+{# --- END MODIFICATION --- #}
 
 <div class="py-8"
      x-data="orderForm()"
@@ -17,6 +18,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
+        {# Product List #}
         <div class="lg:col-span-2 bg-white shadow-lg rounded-lg overflow-hidden">
             <div class="p-4 border-b">
                 <input type="text" x-model="filterText" placeholder="Search products by name or SKU..."
@@ -25,25 +27,34 @@
 
             <div class="max-h-[70vh] overflow-y-auto">
                 <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                    <thead class="bg-gray-50 sticky top-0 z-10">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selling Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Your Profit</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Product</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">SKU</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Selling Price</th>
+                            {# --- START MODIFICATION: Conditionally show header --- #}
+                            <th x-show="isAgent" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Your Profit</th>
+                            {# --- END MODIFICATION --- #}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50"></th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
+
+                        {# Product Rows #}
                         <template x-for="product in filteredProducts" :key="product.id">
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="flex items-center">
                                         <div class="flex-shrink-0 h-10 w-10">
-                                            <img x-if="product.img_url" class="h-10 w-10 rounded-md object-cover" :src="product.img_url" :alt="product.name">
-                                            <div x-if="!product.img_url" class="h-10 w-10 rounded-md bg-gray-200 flex items-center justify-center">
-                                                <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                            </div>
+                                            {# FIX: x-if must be on a <template> tag #}
+                                            <template x-if="product.img_url">
+                                                <img class="h-10 w-10 rounded-md object-cover" :src="product.img_url" :alt="product.name">
+                                            </template>
+                                            <template x-if="!product.img_url">
+                                                <div class="h-10 w-10 rounded-md bg-gray-200 flex items-center justify-center">
+                                                    <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                                </div>
+                                            </template>
                                         </div>
                                         <div class="ml-4">
                                             <div class="text-sm font-medium text-gray-900" x-text="product.name"></div>
@@ -52,20 +63,26 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.sku"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.profit)"></td>
+                                {# --- START MODIFICATION: Conditionally show profit --- #}
+                                <td x-show="isAgent" class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.profit)"></td>
+                                {# --- END MODIFICATION --- #}
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <button @click="addToCart(product)"
-                                            :disabled="isInCart(product.id)"
+                                            :disabled="$store.cartStore.isInCart(product.id)"
                                             class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
-                                        <span x-show="!isInCart(product.id)">Add to Cart</span>
-                                        <span x-show="isInCart(product.id)">In Cart</span>
+                                        <span x-show="!$store.cartStore.isInCart(product.id)">Add to Cart</span>
+                                        <span x-show="$store.cartStore.isInCart(product.id)">In Cart</span>
                                     </button>
                                 </td>
                             </tr>
                         </template>
-                        <template x-if="filteredProducts.length === 0">
+
+                        {# Empty State #}
+                        <template x-if="isLoaded && filteredProducts.length === 0">
                             <tr>
-                                <td colspan="5" class="px-6 py-4 text-center text-gray-500">No products found.</td>
+                                <td colspan="5" class="px-6 py-10 text-center text-gray-500">
+                                    No products found matching your search.
+                                </td>
                             </tr>
                         </template>
                     </tbody>
@@ -73,23 +90,26 @@
             </div>
         </div>
 
+        {# Order Summary Sidebar #}
         <div class="lg:col-span-1">
             <div class="bg-white shadow-lg rounded-lg sticky top-20">
                 <h2 class="text-xl font-bold text-gray-800 p-4 border-b">Order Summary</h2>
                 <div class="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
-                    <template x-if="cart.length === 0">
+
+                    <template x-if="$store.cartStore.items.length === 0">
                         <p class="text-gray-500 text-center py-4">
                             Your cart is empty.
                             <br>
                             <a href="{% url 'product:product_list' %}" class="text-indigo-600 hover:underline">Browse products</a> to add items.
                         </p>
                     </template>
-                    <template x-for="item in cart" :key="item.id">
-                        <div class="flex items-center space-x-3">
+
+                    <template x-for="item in $store.cartStore.items" :key="item.id">
+                        <div class="flex items-center space-x-3 pb-3 border-b last:border-0">
                             <div class="flex items-center border border-gray-300 rounded">
-                                <button @click="decrement(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50" :disabled="item.quantity <= 1">-</button>
-                                <input type="text" :value="item.quantity" @change="updateQuantity(item.id, $event.target.value)" class="w-10 text-center border-l border-r p-1 text-sm">
-                                <button @click="increment(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100">+</button>
+                                <button @click="$store.cartStore.decrement(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50" :disabled="item.quantity <= 1">-</button>
+                                <input type="text" :value="item.quantity" @change="$store.cartStore.updateQuantity(item.id, $event.target.value)" class="w-10 text-center border-l border-r p-1 text-sm focus:outline-none">
+                                <button @click="$store.cartStore.increment(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100">+</button>
                             </div>
                             <div class="flex-1">
                                 <p class="text-sm font-medium text-gray-900" x-text="item.name"></p>
@@ -97,7 +117,7 @@
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-semibold" x-text="formatPrice(item.quantity * item.selling_price)"></p>
-                                <button @click="removeFromCart(item.id)" class="text-xs text-red-500 hover:underline">Remove</button>
+                                <button @click="$store.cartStore.removeItem(item.id)" class="text-xs text-red-500 hover:underline hover:text-red-700">Remove</button>
                             </div>
                         </div>
                     </template>
@@ -106,17 +126,19 @@
                 <div class="p-4 border-t bg-gray-50 space-y-2">
                     <div class="flex justify-between text-lg font-semibold">
                         <span>Total Price:</span>
-                        <span x-text="formatPrice(cartSubtotal)"></span>
+                        <span x-text="formatPrice($store.cartStore.cartTotal)"></span>
                     </div>
-                    <div class="flex justify-between text-sm text-green-700">
+                    {# --- START MODIFICATION: Conditionally show estimated profit --- #}
+                    <div x-show="isAgent" class="flex justify-between text-sm text-green-700">
                         <span>Estimated Profit:</span>
-                        <span x-text="formatPrice(cartProfit)"></span>
+                        <span x-text="formatPrice($store.cartStore.cartProfit)"></span>
                     </div>
+                    {# --- END MODIFICATION --- #}
                 </div>
 
                 <div class="p-4 border-t">
                     <button @click="submitOrder()"
-                            :disabled="cart.length === 0 || isSubmitting"
+                            :disabled="$store.cartStore.items.length === 0 || isSubmitting"
                             class="w-full px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center">
                         <span x-show="!isSubmitting">Place Order</span>
                         <svg x-show="isSubmitting" class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -136,44 +158,27 @@ function orderForm() {
     return {
         allProducts: [],
         filterText: '',
-        cart: [], // Stores { id, name, sku, quantity, selling_price, base_cost, profit }
         isSubmitting: false,
-        csrfToken: '', // <-- CHANGE 2: Add a property to store the token
+        isLoaded: false,
+        csrfToken: '',
+        isAgent: false, // --- ADDED PROPERTY ---
 
         init() {
-            this.allProducts = JSON.parse(document.getElementById('products-data').textContent);
-
-            // --- START MODIFICATION ---
-            // Load the cart from localStorage, which was populated by the global store
-            const globalCart = JSON.parse(localStorage.getItem('distributorCart') || '[]');
-            if (globalCart.length > 0) {
-                // We sync this page's cart with the global cart
-                this.cart = globalCart;
+            try {
+                this.allProducts = JSON.parse(document.getElementById('products-data').textContent);
+                // --- START MODIFICATION: Load the agent flag ---
+                this.isAgent = JSON.parse(document.getElementById('is-agent-flag').textContent);
+                // --- END MODIFICATION ---
+                this.isLoaded = true;
+                console.log(`[Place Order] Loaded ${this.allProducts.length} products.`);
+            } catch (e) {
+                console.error('[Place Order] Error loading data:', e);
             }
 
-            // --- CHANGE 2 (continued): Find the token on the page and store it ---
             const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
             if (tokenInput) {
                 this.csrfToken = tokenInput.value;
-            } else {
-                console.error('CSRF token input not found on page!');
             }
-            // --- END CHANGE 2 ---
-
-            console.log(`Loaded ${this.allProducts.length} products.`);
-            console.log(`Loaded ${this.cart.length} items from global cart.`);
-        },
-
-        // --- Helpers to keep localStorage in sync ---
-        saveCart() {
-            // Keep localStorage in sync with this page's cart
-            localStorage.setItem('distributorCart', JSON.stringify(this.cart));
-            window.dispatchEvent(new CustomEvent('cart-updated'));
-        },
-        clearCart() {
-            this.cart = [];
-            localStorage.removeItem('distributorCart');
-            window.dispatchEvent(new CustomEvent('cart-updated'));
         },
 
         get filteredProducts() {
@@ -183,16 +188,8 @@ function orderForm() {
             const search = this.filterText.toLowerCase();
             return this.allProducts.filter(p =>
                 p.name.toLowerCase().includes(search) ||
-                p.sku.toLowerCase().includes(search)
+                (p.sku && p.sku.toLowerCase().includes(search))
             );
-        },
-
-        get cartSubtotal() {
-            return this.cart.reduce((total, item) => total + (item.selling_price * item.quantity), 0);
-        },
-
-        get cartProfit() {
-            return this.cart.reduce((total, item) => total + (item.profit * item.quantity), 0);
         },
 
         formatPrice(value) {
@@ -200,64 +197,35 @@ function orderForm() {
             return `RM ${Number(value).toFixed(2)}`;
         },
 
-        isInCart(productId) {
-            return this.cart.some(item => item.id === productId);
-        },
-
         addToCart(product) {
-            if (this.isInCart(product.id)) return;
-            this.cart.push({ ...product, quantity: 1 });
-            this.saveCart();
-        },
-
-        removeFromCart(productId) {
-            this.cart = this.cart.filter(item => item.id !== productId);
-            this.saveCart();
-        },
-
-        increment(productId) {
-            const item = this.cart.find(item => item.id === productId);
-            if (item) item.quantity++;
-            this.saveCart();
-        },
-
-        decrement(productId) {
-            const item = this.cart.find(item => item.id === productId);
-            if (item && item.quantity > 1) {
-                item.quantity--;
-            }
-            this.saveCart();
-        },
-
-        updateQuantity(productId, newQuantity) {
-            const item = this.cart.find(item => item.id === productId);
-            let qty = parseInt(newQuantity, 10);
-            if (item && !isNaN(qty) && qty > 0) {
-                item.quantity = qty;
-            } else if (item) {
-                // Reset to 1 if input is invalid
-                item.quantity = 1;
-                // We need to force update the input value
-                this.$nextTick(() => {
-                    const input = this.$el.querySelector(`input[value='${newQuantity}']`);
-                    if (input) input.value = 1;
-                });
-            }
-            this.saveCart();
+             Alpine.store('cartStore').addItem({
+                id: product.id,
+                name: product.name,
+                sku: product.sku,
+                selling_price: product.selling_price,
+                base_cost: product.base_cost,
+                profit: product.profit,
+                img_url: product.img_url,
+                quantity: 1
+            });
         },
 
         async submitOrder() {
-            if (this.cart.length === 0 || this.isSubmitting) return;
+            const cartItems = Alpine.store('cartStore').items;
 
-            if (!confirm(`You are about to place an order for ${this.cart.length} item(s).\nTotal: ${this.formatPrice(this.cartSubtotal)}\n\nProceed?`)) {
+            if (cartItems.length === 0 || this.isSubmitting) return;
+
+            const total = Alpine.store('cartStore').cartTotal;
+
+            if (!confirm(`You are about to place an order for ${cartItems.length} item(s).\nTotal: ${this.formatPrice(total)}\n\nProceed?`)) {
                 return;
             }
 
             this.isSubmitting = true;
 
-            // Prepare cart data (only send ID and quantity)
+            // Prepare cart data
             const payload = {
-                cart: this.cart.map(item => ({
+                cart: cartItems.map(item => ({
                     id: item.id,
                     quantity: item.quantity
                 }))
@@ -268,7 +236,7 @@ function orderForm() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': this.csrfToken, // <-- CHANGE 3: Use the stored token
+                        'X-CSRFToken': this.csrfToken,
                         'X-Requested-With': 'XMLHttpRequest'
                     },
                     body: JSON.stringify(payload)
@@ -277,7 +245,7 @@ function orderForm() {
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    this.clearCart(); // Clear cart on success
+                    Alpine.store('cartStore').clearCart();
                     Swal.fire({
                         title: 'Order Placed!',
                         text: 'Your order has been submitted successfully.',
@@ -289,7 +257,7 @@ function orderForm() {
                 } else {
                     Swal.fire({
                         title: 'Error',
-                        text: data.error || 'An unknown error occurred while submitting your order.',
+                        text: data.error || 'An unknown error occurred.',
                         icon: 'error'
                     });
                 }

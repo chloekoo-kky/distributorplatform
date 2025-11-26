@@ -4,6 +4,8 @@ import logging
 import time
 from django.shortcuts import render, redirect, get_object_or_404 # Add get_object_or_404
 from django.contrib.auth import login
+from django.db.models import Sum
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, Http404 # Add Http404
 from django.urls import reverse
@@ -22,6 +24,9 @@ from decimal import Decimal # Add Decimal
 from .forms import CustomUserCreationForm
 from .models import UserGroup, CustomUser
 from .utils import generate_verification_code, send_verification_code
+from order.models import Order
+from commission.models import CommissionLedger
+
 
 logger = logging.getLogger(__name__)
 
@@ -246,3 +251,44 @@ def api_update_user_groups(request, user_id):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def profile_view(request):
+    user = request.user
+
+    # 1. Check if user is an Agent (has a group with > 0% commission)
+    is_agent = user.user_groups.filter(commission_percentage__gt=0).exists()
+
+    # 2. Get Order History (For everyone)
+    # Optimize query by pre-fetching items and products
+    orders = Order.objects.filter(agent=user).prefetch_related('items__product').order_by('-created_at')
+
+    # Calculate order totals on the fly for display (or add a property to Order model)
+    for order in orders:
+        # Calculate total per order for the template
+        total = sum(item.selling_price * item.quantity for item in order.items.all())
+        order.calculated_total = total
+
+    context = {
+        'is_agent': is_agent,
+        'orders': orders,
+    }
+
+    # 3. Get Commission Data (Agent Only)
+    if is_agent:
+        commissions = CommissionLedger.objects.filter(agent=user).select_related('order_item__product').order_by('-created_at')
+
+        # Aggregates
+        total_earnings = commissions.exclude(status='CANCELLED').aggregate(sum=Sum('amount'))['sum'] or 0
+        pending_payout = commissions.filter(status='PENDING').aggregate(sum=Sum('amount'))['sum'] or 0
+        paid_payout = commissions.filter(status='PAID').aggregate(sum=Sum('amount'))['sum'] or 0
+
+        context.update({
+            'commissions': commissions,
+            'total_earnings': total_earnings,
+            'pending_payout': pending_payout,
+            'paid_payout': paid_payout,
+        })
+
+    return render(request, 'user/profile.html', context)

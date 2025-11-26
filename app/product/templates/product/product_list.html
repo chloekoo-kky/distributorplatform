@@ -35,7 +35,7 @@
             {% for product in products %}
             <a href="{{ product.get_absolute_url }}"
                <a href="{{ product.get_absolute_url }}"
-               @click.prevent="$store.cartStore.openProductModal('{{ product.sku }}')"
+               @click.prevent="$dispatch('open-quick-view', { sku: '{{ product.sku }}' })"
                class="block bg-white rounded-lg shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300">
                 {% if product.featured_image %}
                     <img class="w-full h-48 object-cover" src="{{ product.featured_image.image.url }}" alt="{{ product.featured_image.alt_text|default:product.name }}">
@@ -46,7 +46,6 @@
                 {% endif %}
                 <div class="p-6">
                     <h3 class="text-xl font-semibold text-gray-800 mb-2">{{ product.name }}</h3>
-                    <p class="text-gray-600 text-sm mb-4">{{ product.description|truncatewords:20 }}</p>
                     {% if product.selling_price %}
                         <p class="text-lg font-bold text-indigo-600">RM {{ product.selling_price|floatformat:2 }}</p>
                     {% else %}

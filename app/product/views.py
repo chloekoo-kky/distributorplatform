@@ -34,25 +34,66 @@ logger = logging.getLogger(__name__)
 
 def home(request):
     """
-    Renders the new site home page.
+    Renders the new site home page with a sidebar layout.
     """
-    # --- START MODIFICATION ---
-    # Query changed from 'image__isnull' to 'featured_image__isnull'
-    featured_products = Product.objects.filter(
-        featured_image__isnull=False,
-    ).select_related('featured_image').order_by('-created_at')[:4]
-    # --- END MODIFICATION ---
+    # 1. Featured Products Logic (Unchanged)
+    products_query = Product.objects.filter(is_featured=True).select_related('featured_image').order_by('-created_at')
 
-    # Get 3 most recent PUBLISHED posts
-    latest_posts = Post.objects.filter(
-        status=Post.PostStatus.PUBLISHED
+    if request.user.is_authenticated and not request.user.is_anonymous:
+        allowed_categories = Category.objects.filter(user_groups__users=request.user)
+        products_query = products_query.filter(categories__in=allowed_categories).distinct()
+    else:
+        products_query = products_query.filter(members_only=False).distinct()
+
+    featured_products = products_query[:6]
+
+    # --- 2. SIDEBAR DATA (Unchanged) ---
+    accessible_posts = get_accessible_posts(request.user).select_related('featured_image', 'author')
+
+    announcements = accessible_posts.filter(
+        post_type=Post.PostType.ANNOUNCEMENT
     ).order_by('-created_at')[:3]
 
-    latest_posts = get_accessible_posts(request.user).order_by('-created_at')[:3]
+    latest_news = accessible_posts.filter(
+        featured_image__isnull=False,
+        post_type=Post.PostType.NEWS
+    ).order_by('-created_at')[:5]
+
+    # --- NEW: FAQ DATA ---
+    # Fetch posts specifically marked as FAQ
+    faq_posts = accessible_posts.filter(
+        post_type=Post.PostType.FAQ
+    ).order_by('created_at') # Oldest first (logical flow) or use '-created_at' for newest
+    # ---------------------
+
+    # 3. Categories Products Logic (Unchanged)
+    categories_with_products = []
+    if request.user.is_authenticated and not request.user.is_anonymous:
+        cats_qs = Category.objects.filter(
+            user_groups__users=request.user
+        ).distinct().order_by('name')
+        product_prefetch = Prefetch(
+            'products',
+            queryset=Product.objects.select_related('featured_image').order_by('-created_at')
+        )
+        categories_with_products = cats_qs.prefetch_related(product_prefetch)
+    else:
+        cats_qs = Category.objects.filter(
+            products__members_only=False
+        ).distinct().order_by('name')
+        public_products_qs = Product.objects.filter(
+            members_only=False
+        ).select_related('featured_image').order_by('-created_at')
+        categories_with_products = cats_qs.prefetch_related(
+            Prefetch('products', queryset=public_products_qs)
+        )
 
     context = {
         'featured_products': featured_products,
-        'latest_posts': latest_posts, # <-- ADD THIS
+        'announcements': announcements,
+        'sidebar_posts': latest_news,
+        'categories_with_products': categories_with_products,
+        'faq_posts': faq_posts, # Pass FAQs to template
     }
     return render(request, 'product/home.html', context)
 
@@ -74,13 +115,10 @@ def staff_required(view_func):
 # The controls for upload/export will be hidden in the template.
 def product_list(request):
     """
-    This view retrieves and displays products based on the user's group permissions.
-    - The category list for navigation is now provided by a context processor.
-    - This view just filters the products shown on the page.
+    This view retrieves and displays products based on permissions and search/filter params.
     """
-    # --- START MODIFICATIONS ---
-    # We still need the code to filter the product queryset
     selected_category_code = request.GET.get('category')
+    search_query = request.GET.get('q')  # <--- NEW: Get search query
 
     # This logic determines which products to show
     products_query = None
@@ -94,26 +132,30 @@ def product_list(request):
         # For anonymous users, start with non-members-only products
         products_query = Product.objects.filter(members_only=False)
 
-    # Apply filtering based on GET parameters
+    # Apply Category filtering
     if selected_category_code:
         products_query = products_query.filter(categories__code=selected_category_code)
 
-    # --- Updated query to prefetch featured_image ---
+    # --- NEW: Apply Search Filtering ---
+    if search_query:
+        products_query = products_query.filter(
+            Q(name__icontains=search_query) |
+            Q(sku__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    # Prefetch featured_image
     products = products_query.select_related(
         'featured_image'
-    ).distinct().order_by('name') # Get the final product list
-    # --- END MODIFICATION ---
+    ).distinct().order_by('name')
 
     product_upload_form = ProductUploadForm()
 
     context = {
         'products': products,
         'product_upload_form': product_upload_form,
-        # The context processor now handles these:
-        # 'allowed_categories_list': allowed_categories_list,
-        # 'selected_category_code': selected_category_code,
+        'search_query': search_query, # Pass back to template to show in input
     }
-    # --- END MODIFICATIONS ---
     return render(request, 'product/product_list.html', context)
 
 
@@ -222,19 +264,11 @@ def export_products_csv(request):
 def manage_product_edit(request, product_id):
     """
     Handles fetching product data (GET) and updating product data (POST)
-    for the product edit modal via AJAX.
+    via AJAX.
     """
     product = get_object_or_404(Product.objects.prefetch_related('featured_image'), pk=product_id)
 
-    # Handle AJAX POST request (form submission)
     if request.method == 'POST':
-
-        # --- ADD THIS LOG ---
-        logger.info(f"--- [SERVER] manage_product_edit POST received for product {product_id} ---")
-        logger.info(f"[SERVER] request.POST data: {request.POST.dict()}")
-        logger.info(f"[SERVER] request.FILES data: {request.FILES.dict()}")
-        # --- END ADD ---
-
         if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
              messages.error(request, "Invalid request type.")
              return redirect('core:manage_dashboard')
@@ -250,35 +284,28 @@ def manage_product_edit(request, product_id):
                 logger.error(f"Error saving product {product.sku}: {e}")
                 return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
         else:
-            # --- THIS IS THE CRITICAL LOG ---
             logger.error(f"[SERVER] Product form is INVALID. Errors: {form.errors.as_json(escape_html=True)}")
-            # --- END ADD ---
             return JsonResponse({'success': False, 'errors': json.loads(form.errors.as_json())}, status=400)
 
-    # Handle AJAX GET request (populating the modal)
     elif request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        # ... (rest of GET logic is fine)
         data = {
             'id': product.id,
             'name': product.name,
             'sku': product.sku,
             'description': product.description,
             'members_only': product.members_only,
+            # --- START MODIFICATION ---
+            'is_featured': product.is_featured,
+            # --- END MODIFICATION ---
             'categories': list(product.categories.all().values_list('id', flat=True)),
             'suppliers': list(product.suppliers.all().values_list('id', flat=True)),
             'gallery_images': list(product.gallery_images.all().values_list('id', flat=True)),
-            'featured_image': product.featured_image_id, # Send just the ID
+            'featured_image': product.featured_image_id,
             'selectedImageUrl': product.featured_image.image.url if product.featured_image else '',
             'update_url': reverse('product:manage_product_edit', kwargs={'product_id': product.id})
         }
-
-        logger.debug(f"--- [DEBUG] manage_product_edit (GET) for product {product_id} ---")
-        logger.debug(f"[DEBUG] Sending categories: {data['categories']} (Type of first item: {type(data['categories'][0]) if data['categories'] else 'N/A'})")
-        logger.debug(f"[DEBUG] Sending suppliers: {data['suppliers']} (Type of first item: {type(data['suppliers'][0]) if data['suppliers'] else 'N/A'})")
-
         return JsonResponse(data)
 
-    # Fallback for non-AJAX GET (though it shouldn't be used anymore)
     messages.error(request, "Invalid request.")
     return redirect('core:manage_dashboard')
 
@@ -412,7 +439,7 @@ def api_manage_pricing(request, product_id):
 def api_get_product_details(request, sku):
     """
     API endpoint for the product quick view modal.
-    Returns detailed product info, including agent-specific pricing.
+    Returns detailed product info.
     """
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'error': 'Invalid request'}, status=400)
@@ -431,28 +458,46 @@ def api_get_product_details(request, sku):
     except Product.DoesNotExist:
         return JsonResponse({'error': 'Product not found'}, status=404)
 
-    # --- START MODIFICATION ---
+    # --- MODIFIED LOGIC ---
 
-    # Default values for public/staff
+    # 1. Basic Info (Visible to everyone)
+    selling_price = product.selling_price
+
+    # 2. Default Sensitive Data (Hidden)
     base_cost = None
-    selling_price = None
-    is_orderable = False
     profit = None
+    agent_commission = None
+    is_orderable = False
+    user_role = 'guest' # guest, customer, agent
 
-    # Check if user is a logged-in agent (authenticated AND not staff)
-    if request.user.is_authenticated and not request.user.is_staff:
-        # Get agent-specific pricing
-        base_cost = product.base_cost
-        selling_price = product.selling_price
+    # 3. User-Specific Logic
+    if request.user.is_authenticated:
+        # User is logged in (Customer or Agent)
 
-        if base_cost is not None and selling_price is not None:
-            profit = selling_price - base_cost
-            if profit > 0:
+        # Check for Agent status (Commission > 0)
+        agent_group = request.user.user_groups.filter(commission_percentage__gt=0).first()
+
+        if agent_group:
+            user_role = 'agent'
+            # Agents see cost/profit/commission
+            base_cost = product.base_cost
+            if base_cost is not None and selling_price is not None:
+                profit = selling_price - base_cost
+                if profit > 0:
+                    is_orderable = True
+                    commission_rate = agent_group.commission_percentage / Decimal('100.00')
+                    agent_commission = profit * commission_rate
+        else:
+            user_role = 'customer'
+            # Customers just need a selling price to order
+            if selling_price is not None:
                 is_orderable = True
 
-    # --- END MODIFICATION ---
+    else:
+        # Guest: Sees price, but cannot order
+        pass
 
-    # Serialize gallery images
+    # Serialize gallery
     gallery = [
         {'id': img.id, 'url': img.image.url, 'alt_text': img.alt_text}
         for img in product.gallery_images.all()
@@ -465,10 +510,17 @@ def api_get_product_details(request, sku):
         'description': product.description,
         'featured_image_url': product.featured_image.image.url if product.featured_image else None,
         'gallery_images': gallery,
-        'is_orderable': is_orderable,
         'selling_price': selling_price,
+
+        # Logic flags
+        'is_orderable': is_orderable,
+        'user_role': user_role,
+        'is_authenticated': request.user.is_authenticated,
+
+        # Sensitive Data (Null for guests/customers)
         'base_cost': base_cost,
         'profit': profit,
+        'agent_commission': agent_commission,
     }
 
     return JsonResponse(data)
@@ -477,16 +529,50 @@ def api_get_product_details(request, sku):
 def product_detail(request, sku):
     """
     Public page showing a single product.
+    Now includes sidebar data AND agent specific calculations.
     """
     # Find the product by its SKU
-    product = get_object_or_404(Product.objects.prefetch_related('gallery_images'), sku=sku)
+    product = get_object_or_404(Product.objects.prefetch_related('gallery_images', 'featured_image'), sku=sku)
 
-    # You can add logic here to check for members_only, just like in your product_list view
+    # Members-only check
     if product.members_only and not request.user.is_authenticated:
         messages.error(request, "This is a members-only product. Please log in to view.")
-        return redirect('user:login') # Or wherever you prefer
+        return redirect('user:login')
+
+    # --- SIDEBAR DATA ---
+    accessible_posts = get_accessible_posts(request.user).select_related('featured_image', 'author')
+
+    # 1. Announcements (Top priority)
+    announcements = accessible_posts.filter(
+        post_type=Post.PostType.ANNOUNCEMENT
+    ).order_by('-created_at')[:3]
+
+    # 2. Latest News (Standard posts)
+    sidebar_posts = accessible_posts.filter(
+        featured_image__isnull=False,
+        post_type=Post.PostType.NEWS
+    ).order_by('-created_at')[:5]
+
+    # --- AGENT LOGIC ---
+    is_agent = False
+    agent_estimated_profit = None
+
+    if request.user.is_authenticated:
+        agent_group = request.user.user_groups.filter(commission_percentage__gt=0).first()
+        if agent_group:
+            is_agent = True
+            # Calculate potential commission
+            if product.selling_price is not None and product.base_cost is not None:
+                profit = product.selling_price - product.base_cost
+                if profit > 0:
+                    commission_rate = agent_group.commission_percentage / Decimal('100.00')
+                    agent_estimated_profit = profit * commission_rate
 
     context = {
         'product': product,
+        'announcements': announcements,
+        'sidebar_posts': sidebar_posts,
+        'is_agent': is_agent,
+        'agent_estimated_profit': agent_estimated_profit,
     }
     return render(request, 'product/product_detail.html', context)
