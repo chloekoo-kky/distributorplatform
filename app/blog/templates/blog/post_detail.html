@@ -3,35 +3,154 @@
 {# The meta_title and meta_description are set by the context processor #}
 
 {% block content %}
-<div class="max-w-3xl mx-auto bg-white shadow-lg rounded-lg my-12 overflow-hidden">
-    {% if post.featured_image %}
-    <img src="{{ post.featured_image.image.url }}" alt="{{ post.featured_image.alt_text|default:post.title }}" class="w-full h-auto object-cover">
-    {% endif %}
-    <article class_="p-8 md:p-12">
-        <div class="p-8 md:p-12">
-            <h1 class="text-4xl font-bold text-gray-900 mb-4">{{ post.title }}</h1>
-            <p class="text-sm text-gray-500 mb-6">
-                Published by {{ post.author.username|default:"Admin" }} on {{ post.created_at|date:"F d, Y" }}
-            </p>
+{# --- UPDATED: Added x-data to enable Alpine.js functionality --- #}
+<div class="py-8" x-data="{}">
 
-            <div class="prose prose-lg max-w-none">
-                {# The 'safe' filter trusts the content; use 'linebreaks' if you don't allow HTML #}
-                {{ post.content|safe }}
+    {# --- Grid Layout --- #}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto px-4">
+
+        {# --- LEFT COLUMN: Article Content (2/3 Width) --- #}
+        <div class="lg:col-span-2">
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                {% if post.featured_image %}
+                <img src="{{ post.featured_image.image.url }}" alt="{{ post.featured_image.alt_text|default:post.title }}" class="w-full h-auto object-cover">
+                {% endif %}
+                <article class="p-8 md:p-12">
+                    <h1 class="text-4xl font-bold text-gray-900 mb-4">{{ post.title }}</h1>
+                    <p class="text-sm text-gray-500 mb-6">
+                        Published by {{ post.author.username|default:"Admin" }} on {{ post.created_at|date:"F d, Y" }}
+                    </p>
+
+                    <div class="prose prose-lg max-w-none">
+                        {{ post.content|safe }}
+                    </div>
+
+                    {# --- Related Products Section --- #}
+                    {% if post.related_products.all %}
+                        <div class="my-12 pt-8 border-t border-gray-200">
+                            <h3 class="text-2xl font-bold text-gray-800 mb-6">{{ post.related_products_title|default:"Related Products" }}</h3>
+
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {% for product in post.related_products.all %}
+                                    {# --- UPDATED: Added click handler for Quick View --- #}
+                                    <a href="{{ product.get_absolute_url }}"
+                                       @click.prevent="$dispatch('open-quick-view', { sku: '{{ product.sku }}' })"
+                                       class="block group">
+                                        <div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200 flex flex-col h-full">
+                                            {% if product.featured_image %}
+                                                <img src="{{ product.featured_image.image.url }}" alt="{{ product.name }}" class="w-full h-32 object-cover">
+                                            {% else %}
+                                                <div class="w-full h-32 bg-gray-100 flex items-center justify-center text-gray-400">
+                                                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                                </div>
+                                            {% endif %}
+                                            <div class="p-3 flex-1 flex flex-col">
+                                                <h4 class="text-sm font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors line-clamp-2 leading-snug">{{ product.name }}</h4>
+                                                {% if product.selling_price %}
+                                                    <p class="text-sm font-bold text-indigo-600 mt-auto pt-2">RM {{ product.selling_price|floatformat:2 }}</p>
+                                                {% else %}
+                                                    <p class="text-xs text-gray-500 mt-auto pt-2">Log in for price</p>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
+                    {# --- END Related Products --- #}
+
+                </article>
             </div>
+        </div>
 
-            {% if post.gallery_images.all %}
-                <div class="my-8">
-                    <h3 class="text-2xl font-bold text-gray-800 mb-4">Gallery</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {% for image in post.gallery_images.all %}
-                            <a href="{{ image.image.url }}" target="_blank">
-                                <img src="{{ image.image.url }}" alt="{{ image.alt_text }}" class="rounded-lg shadow-md object-cover aspect-square">
-                            </a>
+        {# --- RIGHT COLUMN: Sidebar (Unchanged) --- #}
+        <div class="lg:col-span-1">
+            <div class="sticky top-24 space-y-6">
+
+                {# --- WIDGET 1: SEARCH BAR --- #}
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200 p-5">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Search Products
+                    </h3>
+                    <form action="{% url 'product:product_list' %}" method="GET">
+                        <div class="relative">
+                            <input type="text" name="q" placeholder="Search by keyword..."
+                                   class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors outline-none">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">
+                            Search
+                        </button>
+                    </form>
+                </div>
+
+                {# --- WIDGET 2: LATEST NEWS --- #}
+                {% if sidebar_posts %}
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                    <div class="bg-gray-50 p-4 border-b border-gray-200">
+                        <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6M7 8h6"></path></svg>
+                            Latest News
+                        </h3>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        {% for side_post in sidebar_posts %}
+                        <a href="{{ side_post.get_absolute_url }}" class="block hover:bg-gray-50 transition duration-150 ease-in-out p-4">
+                            <div class="flex gap-4 items-start">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-sm font-bold text-gray-900 leading-snug mb-1 line-clamp-2">
+                                        {{ side_post.title }}
+                                    </h4>
+                                    <p class="text-xs text-gray-600 line-clamp-2 mb-1">
+                                        {{ side_post.content|striptags }}
+                                    </p>
+                                    <p class="text-[10px] text-gray-400">
+                                        {{ side_post.created_at|date:"M d, Y" }}
+                                    </p>
+                                </div>
+                                <div class="flex-shrink-0">
+                                    {% if side_post.featured_image %}
+                                        <img src="{{ side_post.featured_image.image.url }}"
+                                             alt="{{ side_post.featured_image.alt_text|default:side_post.title }}"
+                                             class="w-20 h-20 object-cover rounded-md bg-gray-100 border border-gray-100">
+                                    {% else %}
+                                        <div class="w-20 h-20 bg-gray-100 rounded-md border border-gray-100 flex items-center justify-center text-gray-400">
+                                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </a>
                         {% endfor %}
                     </div>
                 </div>
-            {% endif %}
+                {% endif %}
+
+                {# --- WIDGET 3: ANNOUNCEMENTS --- #}
+                {% if announcements %}
+                <div class="bg-yellow-50 rounded-lg shadow-sm border border-yellow-200 p-4">
+                    <h3 class="text-md font-bold text-yellow-800 mb-3 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                        Announcements
+                    </h3>
+                    <div class="space-y-3">
+                        {% for ann in announcements %}
+                        <a href="{{ ann.get_absolute_url }}" class="block group">
+                            <h4 class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">{{ ann.title }}</h4>
+                            <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ ann.content|striptags }}</p>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
         </div>
-    </article>
+
+    </div>
 </div>
 {% endblock %}

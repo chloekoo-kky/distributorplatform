@@ -21,12 +21,16 @@ from django.db.models import Q, Prefetch
 def agent_required(view_func):
     """
     Decorator to ensure the user is logged in AND is NOT a staff member.
+    (MODIFIED to allow staff)
     """
     @login_required
     def _wrapped_view(request, *args, **kwargs):
-        if request.user.is_staff:
-            messages.error(request, "Staff accounts cannot place orders.")
-            return redirect('product:home')
+        # --- START MODIFICATION ---
+        # The following 'if' block has been removed to allow staff access
+        # if request.user.is_staff:
+        #     messages.error(request, "Staff accounts cannot place orders.")
+        #     return redirect('product:home')
+        # --- END MODIFICATION ---
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 
@@ -35,7 +39,7 @@ def agent_required(view_func):
 def place_order_view(request):
     """
     Displays the main "Place Order" interface.
-    This view fetches all products the agent is allowed to see.
+    Accessible by any logged-in user (Customer or Agent).
     """
 
     # 1. Get all categories this user has access to
@@ -44,7 +48,6 @@ def place_order_view(request):
     )
 
     # 2. Get all products in those categories
-    # We prefetch everything needed to calculate price and profit
     products_query = Product.objects.filter(
         categories__in=allowed_categories
     ).select_related('featured_image').prefetch_related(
@@ -57,34 +60,49 @@ def place_order_view(request):
         )
     ).distinct().order_by('name')
 
-    # 3. Serialize product data for Alpine.js
-    # We only include products that have both a cost and a selling price
+    # --- Check User Role ---
+    is_agent = request.user.user_groups.filter(commission_percentage__gt=0).exists()
+
+    # 3. Serialize product data
     product_list_json = []
     for p in products_query:
-        base_cost = p.base_cost
         selling_price = p.selling_price
+        base_cost = p.base_cost
 
-        # Agents can only order items with a valid cost and price
-        if base_cost is not None and selling_price is not None:
-            profit = selling_price - base_cost
-            if profit > 0:
-                product_list_json.append({
-                    'id': p.id,
-                    'name': p.name,
-                    'sku': p.sku or '-',
-                    'selling_price': selling_price,
-                    'base_cost': base_cost,
-                    'profit': profit,
-                    'img_url': p.featured_image.image.url if p.featured_image else None,
-                })
+        # Logic for including product in the list
+        if selling_price is not None:
+            item_data = {
+                'id': p.id,
+                'name': p.name,
+                'sku': p.sku or '-',
+                'selling_price': selling_price,
+                'img_url': p.featured_image.image.url if p.featured_image else None,
+                # Default sensitive fields to None
+                'base_cost': None,
+                'profit': None,
+            }
+
+            if is_agent:
+                # Agents need base_cost to calculate profit
+                if base_cost is not None:
+                    profit = selling_price - base_cost
+                    if profit > 0:
+                        item_data['base_cost'] = base_cost
+                        item_data['profit'] = profit
+                        product_list_json.append(item_data)
+            else:
+                # Customers just need selling_price
+                # We purposefully DO NOT include base_cost/profit in JSON for customers
+                product_list_json.append(item_data)
 
     context = {
-        'products_json': json.dumps(product_list_json, default=str),
+        'products_json': product_list_json, # Passed raw, template uses |json_script
+        'is_agent': is_agent,
     }
     return render(request, 'order/place_order.html', context)
 
 
-@agent_required
+@login_required
 @transaction.atomic
 def api_submit_order(request):
     """
@@ -109,8 +127,7 @@ def api_submit_order(request):
         items_to_create = []
         product_ids = [item.get('id') for item in cart_items]
 
-        # 2. Re-fetch all product data from the DB to ensure price integrity
-        # This is a critical security step.
+        # 2. Re-fetch products to get current prices (Security)
         products_in_cart = Product.objects.filter(id__in=product_ids).prefetch_related(
              Prefetch(
                 'quotationitem_set',
@@ -121,47 +138,41 @@ def api_submit_order(request):
             )
         )
 
-        product_price_map = {}
-        for p in products_in_cart:
-            if p.selling_price is not None and p.base_cost is not None:
-                product_price_map[p.id] = {
-                    'selling_price': p.selling_price,
-                    'landed_cost': p.base_cost, # base_cost is the landed_cost
-                }
+        product_map = {p.id: p for p in products_in_cart}
 
-        # 3. Validate cart and create OrderItems
+        # 3. Validate cart
         for item in cart_items:
             product_id = item.get('id')
             quantity = int(item.get('quantity', 0))
 
-            if quantity <= 0:
-                continue # Skip items with no quantity
+            if quantity <= 0: continue
 
-            if product_id not in product_price_map:
-                # This product was invalid (no price) or didn't exist
-                raise IntegrityError(f"Product {product_id} is not orderable or does not exist.")
+            if product_id not in product_map:
+                raise IntegrityError(f"Product {product_id} unavailable.")
 
-            price_data = product_price_map[product_id]
+            product = product_map[product_id]
+
+            # Validate Price exists
+            if product.selling_price is None:
+                raise IntegrityError(f"Product {product.name} has no selling price.")
+
+            # For landed_cost, use base_cost if exists, else 0 (for profit calc)
+            landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
 
             items_to_create.append(
                 OrderItem(
                     order=new_order,
                     product_id=product_id,
                     quantity=quantity,
-                    selling_price=price_data['selling_price'],
-                    landed_cost=price_data['landed_cost']
-                    # The 'profit' field will be calculated on save()
+                    selling_price=product.selling_price,
+                    landed_cost=landed_cost
                 )
             )
 
         if not items_to_create:
             raise IntegrityError("No valid items were found in the cart.")
 
-        # 4. Bulk create all items
         OrderItem.objects.bulk_create(items_to_create)
-
-        # Note: The order/signals.py receiver will now fire for each
-        # OrderItem created, generating the commission records.
 
         success_url = reverse('order:order_success', kwargs={'order_id': new_order.id})
         return JsonResponse({'success': True, 'redirect_url': success_url})
@@ -174,20 +185,21 @@ def api_submit_order(request):
         return JsonResponse({'success': False, 'error': f'An unexpected error occurred: {e}'}, status=500)
 
 
-@agent_required
+@login_required
 def order_success_view(request, order_id):
     """
-    Displays a "Thank You" page after a successful order.
+    Displays a "Thank You" page.
     """
     order = get_object_or_404(Order, id=order_id, agent=request.user)
-
-    # Prefetch related items for display
     order_items = OrderItem.objects.filter(order=order).select_related('product')
 
-    # Calculate totals
     subtotal = sum(item.selling_price * item.quantity for item in order_items)
-    total_profit = order.total_profit # This uses the @property
-    total_commission = order.total_commission # This uses the @property
+
+    # Only calculate profit/commission for display if they are an Agent
+    is_agent = request.user.user_groups.filter(commission_percentage__gt=0).exists()
+
+    total_profit = order.total_profit if is_agent else None
+    total_commission = order.total_commission if is_agent else None
 
     context = {
         'order': order,
@@ -195,5 +207,6 @@ def order_success_view(request, order_id):
         'subtotal': subtotal,
         'total_profit': total_profit,
         'total_commission': total_commission,
+        'is_agent': is_agent,
     }
     return render(request, 'order/order_success.html', context)

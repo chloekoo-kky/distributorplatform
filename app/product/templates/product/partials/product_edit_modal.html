@@ -167,13 +167,21 @@
                     </div>
 
                     <div>
-                        <label class="font-semibold text-gray-700 block mb-1">Access</label>
-                        <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white">
-                            <input type="checkbox" name="members_only" id="id_edit_product_members_only" x-model="productEditData.members_only"
-                                   class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-                            <label for="id_edit_product_members_only" class="ml-3 text-sm font-medium text-gray-700">Members Only</label>
+                        <label class="font-semibold text-gray-700 block mb-2">Visibility & Access</label>
+                        <div class="space-y-3">
+                            {# Access #}
+                            <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                                <input type="checkbox" name="members_only" id="id_edit_product_members_only" x-model="productEditData.members_only" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                <label for="id_edit_product_members_only" class="ml-3 text-sm font-medium text-gray-700">Members Only</label>
+                            </div>
+
+                            {# --- START MODIFICATION: Featured Checkbox --- #}
+                            <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white">
+                                <input type="checkbox" name="is_featured" id="id_edit_product_is_featured" x-model="productEditData.is_featured" class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                <label for="id_edit_product_is_featured" class="ml-3 text-sm font-medium text-gray-700">Featured on Home Page</label>
+                            </div>
+                            {# --- END MODIFICATION --- #}
                         </div>
-                        <template x-if="productEditErrors.members_only"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.members_only.join(', ')"></p></template>
                     </div>
                     </div>
 

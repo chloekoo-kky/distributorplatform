@@ -44,7 +44,14 @@ class Product(models.Model):
         db_index=True,
         help_text="Stock Keeping Unit"
     )
+    description_title = models.CharField(
+        max_length=255,
+        default="Product Description",
+        blank=True,
+        help_text="Header for the main description section."
+    )
     description = models.TextField(null=True, blank=True)
+
     selling_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -60,6 +67,10 @@ class Product(models.Model):
         help_text="Profit margin percentage (e.g., 20.00 for 20%)"
     )
     members_only = models.BooleanField(default=False)
+    is_featured = models.BooleanField(
+        default=False,
+        help_text="If checked, this product will appear on the Home page (subject to user permissions)."
+    )
     categories = models.ManyToManyField(Category, related_name='products', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     featured_image = models.ForeignKey(
@@ -125,3 +136,15 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+
+class ProductContentSection(models.Model):
+    product = models.ForeignKey(Product, related_name='content_sections', on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"{self.title} for {self.product.name}"

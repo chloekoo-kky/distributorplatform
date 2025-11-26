@@ -8,43 +8,305 @@
 {% block full_width_sticky_nav %}{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto bg-white shadow-lg rounded-lg my-12 overflow-hidden">
-    <div class="grid grid-cols-1 md:grid-cols-2">
-        <div>
-            {% if product.featured_image %}
-                <img src="{{ product.featured_image.image.url }}" alt="{{ product.featured_image.alt_text|default:product.name }}" class="w-full h-auto object-cover">
-            {% else %}
-                <div class="w-full h-96 bg-gray-200 flex items-center justify-center">
-                    <svg class="w-24 h-24 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                </div>
-            {% endif %}
+<div class="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+     x-data="productDetail()"
+     x-init="init()">
 
-            {% if product.gallery_images.all %}
-                <div class="p-4 grid grid-cols-4 gap-2">
-                    {% for image in product.gallery_images.all %}
-                        <a href="{{ image.image.url }}" target="_blank">
-                            <img src="{{ image.image.url }}" alt="{{ image.alt_text }}" class="rounded-lg shadow-md object-cover aspect-square">
-                        </a>
-                    {% endfor %}
+    {# --- Grid Layout --- #}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        {# --- LEFT COLUMN: Product Details (2/3 Width) --- #}
+        <div class="lg:col-span-2">
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+
+                {# --- TOP SECTION: Images & Key Info (2 Columns) --- #}
+                <div class="grid grid-cols-1 md:grid-cols-2">
+                    {# Column 1: Images #}
+                    <div>
+                        <div class="w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden relative group">
+                            <template x-if="currentImage">
+                                <img :src="currentImage"
+                                     alt="{{ product.name }}"
+                                     class="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105">
+                            </template>
+                            <template x-if="!currentImage">
+                                <div class="text-gray-400">
+                                    <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                </div>
+                            </template>
+                        </div>
+
+                        {# Thumbnail Gallery #}
+                        {% if product.gallery_images.all or product.featured_image %}
+                            <div class="p-4 grid grid-cols-4 gap-2">
+                                {% if product.featured_image %}
+                                    <button type="button"
+                                            @click="currentImage = '{{ product.featured_image.image.url }}'"
+                                            class="rounded-lg overflow-hidden border-2 transition-all duration-200 focus:outline-none"
+                                            :class="currentImage === '{{ product.featured_image.image.url }}' ? 'border-indigo-600 ring-2 ring-indigo-200 ring-opacity-50' : 'border-transparent hover:border-gray-300'">
+                                        <img src="{{ product.featured_image.image.url }}" alt="Featured" class="w-full h-20 object-cover">
+                                    </button>
+                                {% endif %}
+                                {% for image in product.gallery_images.all %}
+                                    <button type="button"
+                                            @click="currentImage = '{{ image.image.url }}'"
+                                            class="rounded-lg overflow-hidden border-2 transition-all duration-200 focus:outline-none"
+                                            :class="currentImage === '{{ image.image.url }}' ? 'border-indigo-600 ring-2 ring-indigo-200 ring-opacity-50' : 'border-transparent hover:border-gray-300'">
+                                        <img src="{{ image.image.url }}" alt="{{ image.alt_text|default:product.name }}" class="w-full h-20 object-cover">
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {# Column 2: Key Info & Actions #}
+                    <div class="p-8 flex flex-col h-full">
+                        <div>
+                            <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ product.name }}</h1>
+                            <p class="text-sm text-gray-500 mb-6">SKU: {{ product.sku }}</p>
+
+                            {# Pricing Section #}
+                            {% if product.selling_price %}
+                                <div class="bg-indigo-50 p-4 rounded-lg mb-6">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-lg font-medium text-gray-700">Selling Price:</span>
+                                        <span class="text-3xl font-bold text-indigo-600">RM {{ product.selling_price|floatformat:2 }}</span>
+                                    </div>
+                                    {% if is_agent and agent_estimated_profit %}
+                                    <div class="flex justify-between items-center mt-2">
+                                        <span class="text-sm font-medium text-green-700">Agent Estimated Profit:</span>
+                                        <span class="text-lg font-bold text-green-700">RM {{ agent_estimated_profit|floatformat:2 }}</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <p class="text-lg text-gray-600 mb-6 bg-gray-100 p-3 rounded-md inline-block">Price available upon request.</p>
+                            {% endif %}
+                        </div>
+
+                        <div class="mt-auto space-y-6">
+                            {% if product.selling_price %}
+                                {% if user.is_authenticated %}
+                                    <div class="flex flex-col space-y-3">
+                                        <div class="flex items-center space-x-4">
+                                            <div class="flex items-center border border-gray-300 rounded">
+                                                <button @click="quantity > 1 ? quantity-- : 1" class="px-3 py-2 text-gray-600 hover:bg-gray-100">-</button>
+                                                <input type="text" x-model.number="quantity" class="w-12 text-center border-l border-r p-2 text-sm">
+                                                <button @click="quantity++" class="px-3 py-2 text-gray-600 hover:bg-gray-100">+</button>
+                                            </div>
+                                            <button @click="addItemToCart()"
+                                                    :disabled="$store.cartStore.isInCart(product.id)"
+                                                    class="flex-1 px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                                                <span x-show="!$store.cartStore.isInCart(product.id)">Add to Cart</span>
+                                                <span x-show="$store.cartStore.isInCart(product.id)">Added to Cart</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <a href="{% url 'user:login' %}" class="block w-full text-center px-6 py-3 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 font-medium">
+                                        Log in to Place Order
+                                    </a>
+                                    <p class="text-xs text-gray-500 text-center mt-2">
+                                        Don't have an account? <a href="{% url 'user:register' %}" class="text-indigo-600 hover:underline">Register here</a>.
+                                    </p>
+                                {% endif %}
+                            {% endif %}
+
+                            {# Icon Row #}
+                            <div class="flex items-center space-x-6 pt-4 border-t border-gray-100">
+                                <a :href="getWhatsAppEnquiryLink()" target="_blank"
+                                   class="group flex items-center text-gray-500 hover:text-green-600 transition-colors"
+                                   title="Enquire about this product">
+                                    <div class="p-2 rounded-full bg-gray-100 group-hover:bg-green-100 transition-colors">
+                                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                                        </svg>
+                                    </div>
+                                    <span class="ml-2 text-sm font-medium">Enquire</span>
+                                </a>
+
+                                <a :href="getWhatsAppShareLink()" target="_blank"
+                                   class="group flex items-center text-gray-500 hover:text-indigo-600 transition-colors"
+                                   title="Share product link">
+                                    <div class="p-2 rounded-full bg-gray-100 group-hover:bg-indigo-100 transition-colors">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                                        </svg>
+                                    </div>
+                                    <span class="ml-2 text-sm font-medium">Share</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            {% endif %}
+
+                {# --- BOTTOM SECTION: Full Width Description --- #}
+                <div class="p-8 border-t border-gray-200">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Product Description</h3>
+                    <div class="prose max-w-none text-gray-700">
+                        {{ product.description|linebreaks }}
+                    </div>
+                </div>
+
+            </div>
         </div>
 
-        <div class="p-8">
-            <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ product.name }}</h1>
-            <p class="text-sm text-gray-500 mb-4">SKU: {{ product.sku }}</p>
+        {# --- RIGHT COLUMN: Sidebar (1/3 Width) --- #}
+        <div class="lg:col-span-1">
+            <div class="sticky top-24 space-y-6">
 
-            {% if product.selling_price %}
-                <p class="text-4xl font-bold text-indigo-600 mb-6">RM {{ product.selling_price|floatformat:2 }}</p>
-            {% else %}
-                <p class="text-lg text-gray-600 mb-6">Price available upon request.</p>
-            {% endif %}
+                {# --- WIDGET 1: SEARCH BAR --- #}
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200 p-5">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Search Products
+                    </h3>
+                    <form action="{% url 'product:product_list' %}" method="GET">
+                        <div class="relative">
+                            <input type="text" name="q" placeholder="Search by keyword..."
+                                   class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors outline-none">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">
+                            Search
+                        </button>
+                    </form>
+                </div>
 
-            <div class="prose max-w-none">
-                <p>{{ product.description|linebreaks }}</p>
+                {# --- WIDGET 2: LATEST NEWS --- #}
+                {% if sidebar_posts %}
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                    <div class="bg-gray-50 p-4 border-b border-gray-200">
+                        <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6M7 8h6"></path></svg>
+                            Latest News
+                        </h3>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        {% for side_post in sidebar_posts %}
+                        <a href="{{ side_post.get_absolute_url }}" class="block hover:bg-gray-50 transition duration-150 ease-in-out p-4">
+                            <div class="flex gap-4 items-start">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-sm font-bold text-gray-900 leading-snug mb-1 line-clamp-2">
+                                        {{ side_post.title }}
+                                    </h4>
+                                    <p class="text-xs text-gray-600 line-clamp-2 mb-1">
+                                        {{ side_post.content|striptags }}
+                                    </p>
+                                    <p class="text-[10px] text-gray-400">
+                                        {{ side_post.created_at|date:"M d, Y" }}
+                                    </p>
+                                </div>
+                                <div class="flex-shrink-0">
+                                    {% if side_post.featured_image %}
+                                        <img src="{{ side_post.featured_image.image.url }}"
+                                             alt="{{ side_post.featured_image.alt_text|default:side_post.title }}"
+                                             class="w-20 h-20 object-cover rounded-md bg-gray-100 border border-gray-100">
+                                    {% else %}
+                                        <div class="w-20 h-20 bg-gray-100 rounded-md border border-gray-100 flex items-center justify-center text-gray-400">
+                                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {# --- WIDGET 3: ANNOUNCEMENTS --- #}
+                {% if announcements %}
+                <div class="bg-yellow-50 rounded-lg shadow-sm border border-yellow-200 p-4">
+                    <h3 class="text-md font-bold text-yellow-800 mb-3 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                        Announcements
+                    </h3>
+                    <div class="space-y-3">
+                        {% for ann in announcements %}
+                        <a href="{{ ann.get_absolute_url }}" class="block group">
+                            <h4 class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">{{ ann.title }}</h4>
+                            <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ ann.content|striptags }}</p>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
             </div>
+        </div>
 
-            </div>
     </div>
 </div>
+
+<script>
+function productDetail() {
+    // 1. Capture values as strings first
+    const idStr = "{{ product.id|default:'' }}";
+    const sellingPriceStr = "{{ product.selling_price|default:'0' }}";
+    const baseCostStr = "{{ product.base_cost|default:'0' }}";
+
+    // 2. Handle Image URL Logic - Simplified
+    const imgUrl = "{{ product.featured_image.image.url|default:'' }}";
+
+    // 3. Convert strings to numbers in JavaScript
+    const sellingPrice = parseFloat(sellingPriceStr) || 0;
+    const baseCost = parseFloat(baseCostStr) || 0;
+    const profit = sellingPrice - baseCost;
+
+    return {
+        quantity: 1,
+        currentImage: imgUrl,
+
+        product: {
+            id: parseInt(idStr) || null,
+            name: "{{ product.name|escapejs }}",
+            sku: "{{ product.sku|escapejs }}",
+            selling_price: sellingPrice,
+            base_cost: baseCost,
+            profit: profit,
+            img_url: imgUrl
+        },
+
+        init() {
+            console.log('Product detail initialized');
+        },
+
+        // --- WhatsApp Links ---
+        getWhatsAppEnquiryLink() {
+            const phoneNumber = '60123456789'; // Replace with your actual number
+            const productName = this.product.name || 'Product';
+            const productSku = this.product.sku || 'N/A';
+            const message = `Hi, I am interested in ${productName} (SKU: ${productSku}). Could you please provide more information?`;
+            return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+        },
+
+        getWhatsAppShareLink() {
+            const productUrl = window.location.href;
+            const message = `Check out this product: ${this.product.name}\n${productUrl}`;
+            return `https://wa.me/?text=${encodeURIComponent(message)}`;
+        },
+
+        addItemToCart() {
+            const cartStore = Alpine.store('cartStore');
+            if (!this.product.id || cartStore.isInCart(this.product.id)) return;
+
+            const cartItem = {
+                id: this.product.id,
+                name: this.product.name,
+                sku: this.product.sku,
+                selling_price: this.product.selling_price,
+                base_cost: this.product.base_cost,
+                profit: this.product.profit,
+                img_url: this.product.img_url,
+                quantity: this.quantity
+            };
+
+            cartStore.addItem(cartItem);
+        }
+    }
+}
+</script>
 {% endblock %}

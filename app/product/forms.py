@@ -54,7 +54,7 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = [
-            'name', 'sku', 'description', 'members_only',
+            'name', 'sku', 'description', 'members_only', 'is_featured',
             'categories', 'suppliers', 'featured_image', 'gallery_images'
         ]
         widgets = {
@@ -62,6 +62,7 @@ class ProductForm(forms.ModelForm):
             'sku': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'description': forms.Textarea(attrs={'rows': 5, 'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'members_only': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500'}),
+            'is_featured': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500'}),
             'featured_image': forms.HiddenInput(), # This widget is fine, but the field definition above is key
         }
 # --- END NEW FORM ---

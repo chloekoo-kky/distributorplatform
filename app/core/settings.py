@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     # Local Apps
+    'core',
     'user.apps.UserConfig',
     'product.apps.ProductConfig',
     'inventory.apps.InventoryConfig',
@@ -83,7 +84,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'product.context_processors.category_nav_context', # <-- ADD THIS LINE
+                'product.context_processors.category_nav_context',
+                'core.context_processors.site_settings_context',
             ],
         },
     },
