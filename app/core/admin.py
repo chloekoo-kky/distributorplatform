@@ -1,15 +1,17 @@
 # distributorplatform/app/core/admin.py
 from django.contrib import admin
-from .models import SiteSetting
+from .models import SiteSetting, ProductFeature # <-- Import new model
 
 @admin.register(SiteSetting)
 class SiteSettingAdmin(admin.ModelAdmin):
-    # Prevent adding new rows if one already exists
     def has_add_permission(self, request):
-        if SiteSetting.objects.exists():
-            return False
-        return True
+        return not SiteSetting.objects.exists()
 
-    # Prevent deleting the settings
     def has_delete_permission(self, request, obj=None):
         return False
+
+# --- NEW: Register ProductFeature ---
+@admin.register(ProductFeature)
+class ProductFeatureAdmin(admin.ModelAdmin):
+    list_display = ('title', 'subtitle', 'order')
+    list_editable = ('order',)

@@ -1,5 +1,5 @@
 # distributorplatform/app/core/context_processors.py
-from .models import SiteSetting
+from .models import SiteSetting, ProductFeature
 from blog.models import Post
 
 def site_settings_context(request):
@@ -32,8 +32,14 @@ def site_settings_context(request):
     except Exception:
         main_menu_links = []
 
+    try:
+        global_product_features = ProductFeature.objects.all().order_by('order')
+    except Exception:
+        global_product_features = []
+
     return {
         'site_settings': settings_obj,
         'footer_quick_links': footer_quick_links,
         'main_menu_links': main_menu_links,
+        'global_product_features': global_product_features,
     }

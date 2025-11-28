@@ -3,6 +3,7 @@ from django import forms
 from .models import Post, UserGroup
 from images.models import MediaImage
 from product.models import Product
+from tinymce.widgets import TinyMCE # Import TinyMCE
 
 class PostForm(forms.ModelForm):
     user_groups = forms.ModelMultipleChoiceField(
@@ -38,14 +39,16 @@ class PostForm(forms.ModelForm):
         model = Post
         fields = [
             'title', 'post_type', 'content', 'featured_image',
-            'gallery_images', 'related_products_title', 'related_products', # <-- Added title here
+            'gallery_images', 'related_products_title', 'related_products',
             'user_groups', 'slug'
         ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'post_type': forms.Select(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
+            # --- START UPDATED WIDGET ---
+            'content': TinyMCE(attrs={'cols': 80, 'rows': 20, 'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm'}),
+            # --- END UPDATED WIDGET ---
             'featured_image': forms.HiddenInput(),
-            # --- NEW: Styling for Title Input ---
             'related_products_title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500', 'placeholder': 'Default: Related Products'}),
             'slug': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
         }

@@ -35,3 +35,15 @@ class SiteSetting(models.Model):
     class Meta:
         verbose_name = "Site Configuration"
         verbose_name_plural = "Site Configuration"
+
+class ProductFeature(models.Model):
+    title = models.CharField(max_length=50, help_text="Top line (e.g., 'Free Shipping')")
+    subtitle = models.CharField(max_length=50, blank=True, help_text="Bottom line (e.g., 'Orders over $100')")
+    order = models.PositiveIntegerField(default=0, help_text="Order of display (1-4 recommended)")
+
+    class Meta:
+        ordering = ['order']
+        verbose_name = "Global Product Feature"
+
+    def __str__(self):
+        return self.title

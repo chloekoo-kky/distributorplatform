@@ -1,11 +1,11 @@
 # distributorplatform/app/product/forms.py
 from django import forms
-# --- START MODIFICATION ---
 from .models import Product
 from images.models import MediaImage
 from inventory.models import Supplier
 from .models import Category
-# --- END MODIFICATION ---
+from tinymce.widgets import TinyMCE
+
 
 class ProductUploadForm(forms.Form):
     """
@@ -23,9 +23,6 @@ class ProductUploadForm(forms.Form):
 
 # --- START NEW FORM ---
 class ProductForm(forms.ModelForm):
-    """
-    Form for editing a Product from the manage_tools UI.
-    """
     categories = forms.ModelMultipleChoiceField(
         queryset=Category.objects.all().select_related('group').order_by('group__name', 'name'),
         required=False,
@@ -42,27 +39,36 @@ class ProductForm(forms.ModelForm):
         widget=forms.CheckboxSelectMultiple(),
     )
 
-    # --- START MODIFICATION ---
-    # Explicitly define featured_image to ensure it's not required
     featured_image = forms.ModelChoiceField(
         queryset=MediaImage.objects.all(),
         required=False,
         widget=forms.HiddenInput()
     )
-    # --- END MODIFICATION ---
 
     class Meta:
         model = Product
         fields = [
-            'name', 'sku', 'description', 'members_only', 'is_featured',
+            'name', 'sku', 'description_title', 'description', 'members_only', 'is_featured', # Added description_title
             'categories', 'suppliers', 'featured_image', 'gallery_images'
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'sku': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
+            'description_title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold', 'placeholder': 'Section Title (e.g. Description)'}),
             'description': forms.Textarea(attrs={'rows': 5, 'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'members_only': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500'}),
             'is_featured': forms.CheckboxInput(attrs={'class': 'h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500'}),
-            'featured_image': forms.HiddenInput(), # This widget is fine, but the field definition above is key
+            'featured_image': forms.HiddenInput(),
         }
-# --- END NEW FORM ---
+
+
+class CategoryForm(forms.ModelForm):
+    class Meta:
+        model = Category
+        fields = ['name', 'page_title', 'description']
+        widgets = {
+            # Added w-full and styling classes here:
+            'name': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
+            'page_title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
+            'description': TinyMCE(attrs={'cols': 80, 'rows': 10}),
+        }
