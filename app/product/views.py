@@ -17,12 +17,13 @@ from django.core.paginator import Paginator, EmptyPage
 from inventory.models import QuotationItem
 from inventory.views import staff_required
 
-from .models import Product, Category, CategoryGroup
-from .forms import ProductUploadForm, ProductForm # Import new ProductForm
+from .models import Product, Category, CategoryGroup, ProductContentSection
+from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
+
 from blog.models import Post
 from blog.views import get_accessible_posts
-from product.models import Product, Category, CategoryGroup
+from product.models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection
 from images.models import MediaImage, ImageCategory
 from images.forms import ImageUploadForm
 from order.views import agent_required
@@ -116,11 +117,12 @@ def staff_required(view_func):
 def product_list(request):
     """
     This view retrieves and displays products based on permissions and search/filter params.
+    Now includes Sidebar widgets (Announcements, Latest News).
     """
     selected_category_code = request.GET.get('category')
-    search_query = request.GET.get('q')  # <--- NEW: Get search query
+    search_query = request.GET.get('q')
 
-    # This logic determines which products to show
+    # --- 1. Product Filtering Logic ---
     products_query = None
     if request.user.is_authenticated and not request.user.is_anonymous:
         # User must have access to the category to see products in it.
@@ -136,7 +138,7 @@ def product_list(request):
     if selected_category_code:
         products_query = products_query.filter(categories__code=selected_category_code)
 
-    # --- NEW: Apply Search Filtering ---
+    # Apply Search Filtering
     if search_query:
         products_query = products_query.filter(
             Q(name__icontains=search_query) |
@@ -144,19 +146,149 @@ def product_list(request):
             Q(description__icontains=search_query)
         )
 
-    # Prefetch featured_image
+    # Prefetch featured_image and order
     products = products_query.select_related(
         'featured_image'
     ).distinct().order_by('name')
 
+    # --- 2. Sidebar Data ---
+    accessible_posts = get_accessible_posts(request.user).select_related('featured_image', 'author')
+
+    # Announcements (Top priority)
+    announcements = accessible_posts.filter(
+        post_type=Post.PostType.ANNOUNCEMENT
+    ).order_by('-created_at')[:3]
+
+    # Latest News (Standard posts)
+    sidebar_posts = accessible_posts.filter(
+        featured_image__isnull=False,
+        post_type=Post.PostType.NEWS
+    ).order_by('-created_at')[:5]
+
     product_upload_form = ProductUploadForm()
+
+    category_obj = None
+    if selected_category_code:
+        # Use first() to avoid 404 errors if code is invalid, just show no description
+        category_obj = Category.objects.filter(code=selected_category_code).first()
 
     context = {
         'products': products,
         'product_upload_form': product_upload_form,
-        'search_query': search_query, # Pass back to template to show in input
+        'search_query': search_query,
+        'announcements': announcements,
+        'sidebar_posts': sidebar_posts,
+        'selected_category_code': selected_category_code, # Ensure this is passed for "No products found" logic
+        'current_category': category_obj,
     }
     return render(request, 'product/product_list.html', context)
+
+@staff_required
+def api_manage_categories(request):
+    """ API to list categories for the management table. """
+    if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    search = request.GET.get('search', '')
+    page = request.GET.get('page', 1)
+
+    queryset = Category.objects.select_related('group').order_by('group__name', 'name')
+
+    if search:
+        queryset = queryset.filter(Q(name__icontains=search) | Q(code__icontains=search))
+
+    paginator = Paginator(queryset, 50)
+    try:
+        page_obj = paginator.page(page)
+    except EmptyPage:
+        return JsonResponse({'categories': [], 'pagination': {}})
+
+    data = [{
+        'id': cat.id,
+        'name': cat.name,
+        'code': cat.code,
+        'group': cat.group.name,
+        'description': cat.description or '',
+        'page_title': cat.page_title or '', # --- NEW: Return page_title ---
+        'edit_url': reverse('product:manage_category_edit', args=[cat.id])
+    } for cat in page_obj.object_list]
+
+    return JsonResponse({
+        'categories': data,
+        'pagination': {
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        }
+    })
+
+
+
+@staff_required
+def manage_category_edit(request, category_id):
+    """
+    Handle editing a category via a standalone page.
+    """
+    category = get_object_or_404(Category.objects.prefetch_related('content_sections'), pk=category_id)
+
+    if request.method == 'POST':
+        form = CategoryForm(request.POST, instance=category)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    saved_cat = form.save()
+
+                    # Handle Extra Sections from JSON field
+                    sections_json = request.POST.get('sections_data')
+                    if sections_json:
+                        try:
+                            sections_data = json.loads(sections_json)
+                            # Clear existing sections to replace them
+                            saved_cat.content_sections.all().delete()
+
+                            new_sections = []
+                            for idx, section in enumerate(sections_data):
+                                title = section.get('title', '').strip()
+                                content = section.get('content', '').strip()
+                                if title or content:
+                                    new_sections.append(CategoryContentSection(
+                                        category=saved_cat,
+                                        title=title,
+                                        content=content,
+                                        order=idx
+                                    ))
+                            if new_sections:
+                                CategoryContentSection.objects.bulk_create(new_sections)
+                        except json.JSONDecodeError:
+                            messages.warning(request, "Could not save additional sections (invalid data).")
+
+                messages.success(request, f"Category '{saved_cat.name}' updated successfully.")
+                # Redirect to dashboard URL (using root namespace if needed, or core if defined)
+                # Assuming 'manage_dashboard' is a top level name or inside 'core' depending on user url conf.
+                # Based on user's core/urls.py it is just 'manage_dashboard'
+                return redirect(reverse('manage_dashboard') + '#categories')
+            except Exception as e:
+                 logger.error(f"Error saving category: {e}", exc_info=True)
+                 messages.error(request, f"Error saving category: {e}")
+        else:
+            messages.error(request, "Please correct the errors below.")
+    else:
+        form = CategoryForm(instance=category)
+
+    # Serialize sections for the frontend Alpine component
+    # FIX: Do not json.dumps here. Pass the raw list.
+    sections = list(category.content_sections.values('title', 'content').order_by('order'))
+
+    context = {
+        'form': form,
+        'category': category,
+        'title': f"Edit Category: {category.name}",
+        'sections_json': sections, # Pass RAW list, let template tag handle serialization
+        'is_subpage': True,
+    }
+    return render(request, 'product/manage_category_form.html', context)
+
 
 
 @staff_required
@@ -264,9 +396,9 @@ def export_products_csv(request):
 def manage_product_edit(request, product_id):
     """
     Handles fetching product data (GET) and updating product data (POST)
-    via AJAX.
+    via AJAX. Now supports extra content sections.
     """
-    product = get_object_or_404(Product.objects.prefetch_related('featured_image'), pk=product_id)
+    product = get_object_or_404(Product.objects.prefetch_related('featured_image', 'content_sections'), pk=product_id)
 
     if request.method == 'POST':
         if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -277,26 +409,53 @@ def manage_product_edit(request, product_id):
 
         if form.is_valid():
             try:
-                form.save()
+                with transaction.atomic():
+                    saved_product = form.save()
+
+                    # --- Handle Extra Sections ---
+                    sections_json = request.POST.get('sections_data')
+                    if sections_json:
+                        sections_data = json.loads(sections_json)
+
+                        # Clear existing sections to replace them (simplest sync strategy)
+                        # Alternatively, you could update by ID if preserving IDs matters.
+                        saved_product.content_sections.all().delete()
+
+                        new_sections = []
+                        for idx, section in enumerate(sections_data):
+                            title = section.get('title', '').strip()
+                            content = section.get('content', '').strip()
+                            if title and content:
+                                new_sections.append(ProductContentSection(
+                                    product=saved_product,
+                                    title=title,
+                                    content=content,
+                                    order=idx
+                                ))
+                        ProductContentSection.objects.bulk_create(new_sections)
+
                 logger.info(f"Product {product.sku} updated successfully via modal.")
                 return JsonResponse({'success': True})
             except Exception as e:
-                logger.error(f"Error saving product {product.sku}: {e}")
+                logger.error(f"Error saving product {product.sku}: {e}", exc_info=True)
                 return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
         else:
             logger.error(f"[SERVER] Product form is INVALID. Errors: {form.errors.as_json(escape_html=True)}")
             return JsonResponse({'success': False, 'errors': json.loads(form.errors.as_json())}, status=400)
 
     elif request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # Serialize sections
+        sections = list(product.content_sections.values('title', 'content').order_by('order'))
+
         data = {
             'id': product.id,
             'name': product.name,
             'sku': product.sku,
+            'description_title': product.description_title, # Send title
             'description': product.description,
+            'sections': sections, # Send sections
             'members_only': product.members_only,
-            # --- START MODIFICATION ---
             'is_featured': product.is_featured,
-            # --- END MODIFICATION ---
             'categories': list(product.categories.all().values_list('id', flat=True)),
             'suppliers': list(product.suppliers.all().values_list('id', flat=True)),
             'gallery_images': list(product.gallery_images.all().values_list('id', flat=True)),

@@ -17,8 +17,10 @@
                 {% endif %}
                 <article class="p-8 md:p-12">
                     <h1 class="text-4xl font-bold text-gray-900 mb-4">{{ post.title }}</h1>
+
+                    {# --- UPDATED: Removed "Published by Author" --- #}
                     <p class="text-sm text-gray-500 mb-6">
-                        Published by {{ post.author.username|default:"Admin" }} on {{ post.created_at|date:"F d, Y" }}
+                        {{ post.created_at|date:"F d, Y" }}
                     </p>
 
                     <div class="prose prose-lg max-w-none">
@@ -32,7 +34,6 @@
 
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {% for product in post.related_products.all %}
-                                    {# --- UPDATED: Added click handler for Quick View --- #}
                                     <a href="{{ product.get_absolute_url }}"
                                        @click.prevent="$dispatch('open-quick-view', { sku: '{{ product.sku }}' })"
                                        class="block group">

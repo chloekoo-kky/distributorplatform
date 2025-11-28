@@ -1,6 +1,7 @@
 # distributorplatform/app/product/models.py
 from django.db import models
 from django.urls import reverse
+from tinymce.models import HTMLField
 
 class CategoryGroup(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -26,12 +27,38 @@ class Category(models.Model):
         help_text="A unique code for this category (e.g., 'NIKE')."
     )
 
+    description = HTMLField(
+        blank=True,
+        null=True,
+        help_text="Description text displayed on the product list page when this category is selected."
+    )
+
+    page_title = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Custom title to display on the product list page (overrides the category name)."
+    )
+
     class Meta:
         unique_together = ('name', 'group')
         verbose_name_plural = "Categories"
 
     def __str__(self):
         return f"{self.group.name} - {self.name}"
+
+# --- NEW MODEL: CategoryContentSection ---
+class CategoryContentSection(models.Model):
+    category = models.ForeignKey(Category, related_name='content_sections', on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    content = HTMLField()
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"{self.title} for {self.category.name}"
 
 
 class Product(models.Model):

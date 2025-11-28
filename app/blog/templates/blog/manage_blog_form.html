@@ -20,17 +20,12 @@
 
             productSearch: '',
 
-            confirmLeave(event) {
-                if (this.hasUnsavedChanges && !this.isSubmitting) {
-                    if (!confirm('You have unsaved changes. Are you sure you want to leave?')) {
-                        event.preventDefault();
-                    }
-                }
-            },
+            // --- Gallery State ---
+            showGalleryModal: false,
+            galleryImages: [],
+            isLoadingGallery: false,
 
-            selectedImageId: null,
-            selectedImageUrl: '',
-
+            // --- Init ---
             init() {
                 try {
                     this.selectedImageId = JSON.parse(document.getElementById('initial-image-id').textContent);
@@ -40,11 +35,56 @@
                 }
             },
 
+            // --- Form Leave Protection ---
+            confirmLeave(event) {
+                if (this.hasUnsavedChanges && !this.isSubmitting) {
+                    if (!confirm('You have unsaved changes. Are you sure you want to leave?')) {
+                        event.preventDefault();
+                    }
+                }
+            },
+
+            // --- Featured Image Logic ---
+            selectedImageId: null,
+            selectedImageUrl: '',
             removeImage() {
                 this.selectedImageId = null;
                 this.selectedImageUrl = '';
                 document.getElementById('id_featured_image').value = '';
                 this.hasUnsavedChanges = true;
+            },
+
+            // --- Gallery Modal Methods ---
+            async openGalleryModal() {
+                this.showGalleryModal = true;
+                if (this.galleryImages.length === 0) {
+                    this.isLoadingGallery = true;
+                    try {
+                        const response = await fetch("{% url 'images:ajax_get_images' %}", {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        });
+                        const data = await response.json();
+                        this.galleryImages = data.images;
+                    } catch (error) {
+                        console.error('Error fetching images:', error);
+                        alert('Failed to load gallery images.');
+                    } finally {
+                        this.isLoadingGallery = false;
+                    }
+                }
+            },
+
+            insertImageIntoContent(imageUrl, altText) {
+                const imgTag = `<img src="${imageUrl}" alt="${altText || ''}" style="max-width: 100%; height: auto;" class="my-4 rounded-lg shadow-sm" />`;
+
+                // Try inserting via TinyMCE if available
+                if (typeof tinymce !== 'undefined' && tinymce.get('id_content')) {
+                    tinymce.get('id_content').insertContent(imgTag);
+                } else {
+                    alert('Content editor not found. Please wait for the page to fully load.');
+                }
+
+                this.showGalleryModal = false;
             }
         }
     }
@@ -85,7 +125,16 @@
                     </div>
 
                     <div>
-                        <label for="{{ form.content.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Content</label>
+                        {# --- Insert Image Button Header --- #}
+                        <div class="flex justify-between items-center mb-1">
+                            <label for="{{ form.content.id_for_label }}" class="font-semibold text-gray-700 block">Content</label>
+                            <button type="button"
+                                    @click="openGalleryModal()"
+                                    class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded border border-gray-300 transition-colors flex items-center">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                Insert Image from Gallery
+                            </button>
+                        </div>
                         {{ form.content }}
                         {% for error in form.content.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
                     </div>
@@ -141,7 +190,6 @@
 
                     {# --- Related Products Section --- #}
                     <div class="border-t pt-6">
-                        {# --- NEW: Title Input --- #}
                         <div class="mb-4">
                              <label for="{{ form.related_products_title.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Related Products Title</label>
                              {{ form.related_products_title }}
@@ -226,5 +274,47 @@
             </form>
         </div>
     </div>
+
+    {# --- IMAGE GALLERY MODAL --- #}
+    <div x-show="showGalleryModal"
+         class="fixed inset-0 z-[60] flex items-center justify-center bg-gray-800 bg-opacity-75"
+         style="display: none;">
+
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 h-[80vh] flex flex-col"
+             @click.away="showGalleryModal = false">
+
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-xl font-bold text-gray-800">Select Image to Insert</h3>
+                <button @click="showGalleryModal = false" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 bg-gray-50">
+                <div x-show="isLoadingGallery" class="flex justify-center items-center h-full">
+                    <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+
+                <div x-show="!isLoadingGallery">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        <template x-for="img in galleryImages" :key="img.id">
+                            <div class="group relative aspect-square bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-indigo-500 transition-all"
+                                 @click="insertImageIntoContent(img.url, img.alt_text)">
+                                <img :src="img.url" :alt="img.alt_text" class="w-full h-full object-cover">
+                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center">
+                                    <span class="opacity-0 group-hover:opacity-100 bg-white text-indigo-600 px-3 py-1 rounded-full text-xs font-bold shadow-sm">Insert</span>
+                                </div>
+                                <div class="absolute bottom-0 left-0 right-0 bg-white bg-opacity-90 p-2 text-xs text-gray-700 truncate" x-text="img.title"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}

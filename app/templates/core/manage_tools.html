@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block full_width_banner %}{% endblock %}
 {% block full_width_sticky_nav %}{% endblock %}
@@ -6,6 +7,8 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+
+<script src="{% static 'tinymce/tinymce.min.js' %}"></script>
 
 {# --- JSON Data for Alpine --- #}
 {{ all_categories_flat_list|json_script:"all-categories-data" }}
@@ -872,17 +875,22 @@
         const formData = new FormData();
         formData.append('name', this.productEditData.name);
         formData.append('sku', this.productEditData.sku || '');
+        formData.append('description_title', this.productEditData.description_title || ''); // New field
         formData.append('description', this.productEditData.description || '');
+
+        // --- START NEW: Send sections as JSON string ---
+        if (this.productEditData.sections) {
+            formData.append('sections_data', JSON.stringify(this.productEditData.sections));
+        }
+        // --- END NEW ---
 
         if (this.productEditData.members_only) {
             formData.append('members_only', 'on');
         }
 
-        // --- START MODIFICATION ---
         if (this.productEditData.is_featured) {
             formData.append('is_featured', 'on');
         }
-        // --- END MODIFICATION ---
 
         if (this.productEditData.featured_image) {
             formData.append('featured_image', this.productEditData.featured_image);
@@ -1017,6 +1025,10 @@
 
         <div x-show="tab === '#products'" id="products" x-cloak>
              {% include 'product/manage_products_tab.html' %}
+        </div>
+
+        <div x-show="tab === '#categories'" id="categories" x-cloak>
+            {% include 'product/manage_categories_tab.html' %}
         </div>
 
         <div x-show="tab === '#blog'" id="blog" x-cloak>
