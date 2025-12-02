@@ -16,6 +16,7 @@ class Post(models.Model):
     class PostType(models.TextChoices):
         NEWS = 'NEWS', 'Latest News'
         ANNOUNCEMENT = 'ANNOUNCEMENT', 'Announcement'
+        MARKET_INSIGHTS = 'MARKET_INSIGHTS', 'Market Insights'
         FAQ = 'FAQ', 'FAQ / Help'
         FOOTER_LINK = 'FOOTER_LINK', 'Footer Quick Link'
         MAIN_MENU = 'MAIN_MENU', 'Main Menu Link'
@@ -92,6 +93,9 @@ class Post(models.Model):
         return self.title
 
     def get_absolute_url(self):
+        # Safety check: If slug is missing, return a placeholder or empty string
+        if not self.slug:
+            return "#"
         return reverse('blog:post_detail', kwargs={'slug': self.slug})
 
     def save(self, *args, **kwargs):

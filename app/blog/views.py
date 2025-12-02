@@ -14,6 +14,7 @@ from django.core.paginator import Paginator, EmptyPage
 from django.core.files.base import ContentFile
 
 from images.forms import ImageUploadForm
+from product.models import Product
 
 # ... (get_accessible_posts helper remains unchanged) ...
 def get_accessible_posts(user):
@@ -39,7 +40,7 @@ def post_list(request):
 
     # Main Content: Latest News
     posts = all_accessible.filter(
-        post_type=Post.PostType.NEWS
+        post_type=Post.PostType.MARKET_INSIGHTS
     ).order_by('-created_at')
 
     # --- SIDEBAR DATA ---
@@ -47,15 +48,14 @@ def post_list(request):
         post_type=Post.PostType.ANNOUNCEMENT
     ).order_by('-created_at')[:3]
 
-    sidebar_posts = all_accessible.filter(
-        featured_image__isnull=False,
-        post_type=Post.PostType.NEWS
-    ).order_by('-created_at')[:5]
+    featured_products = Product.objects.filter(
+        is_featured=True
+    ).select_related('featured_image').order_by('-created_at')[:5]
 
     context = {
         'posts': posts,
         'announcements': announcements,
-        'sidebar_posts': sidebar_posts,
+        'featured_products': featured_products,
     }
     return render(request, 'blog/post_list.html', context)
 

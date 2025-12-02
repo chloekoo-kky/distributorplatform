@@ -105,18 +105,55 @@
 
                     {# --- Case 1: Product has a price --- #}
                     <div x-show="product.selling_price !== null">
+
+                        {# --- UPDATED PRICING BLOCK --- #}
                         <div class="bg-indigo-50 p-4 rounded-lg mb-4">
-                            <div class="flex justify-between items-center">
-                                <span class="text-lg font-medium text-gray-700">Selling Price:</span>
-                                <span class="text-3xl font-bold text-indigo-600" x-text="$store.cartStore.formatPrice(product.selling_price)"></span>
+
+                            {# Flex Container aligned to bottom #}
+                            <div class="flex justify-between items-end">
+
+                                {# --- Icon Section (Left) --- #}
+                                <div class="text-gray-600 pb-1" :title="product.is_promotion ? 'Discounted Price' : 'Selling Price'">
+                                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                    </svg>
+                                </div>
+
+                                {# --- Price Section (Right) --- #}
+                                <div class="text-right">
+                                    {# --- OPTION A: PROMOTIONAL PRICING --- #}
+                                    <template x-if="product.is_promotion && product.promotion_rate > 0">
+                                        <div>
+                                            {# Original Price Crossed Out #}
+                                            <span class="block text-sm text-gray-400 line-through mb-1"
+                                                  x-text="$store.cartStore.formatPrice(product.selling_price)">
+                                            </span>
+                                            {# Discounted Price #}
+                                            <span class="text-3xl font-bold text-red-600 leading-none"
+                                                  x-text="$store.cartStore.formatPrice(product.discounted_price)">
+                                            </span>
+                                        </div>
+                                    </template>
+
+                                    {# --- OPTION B: STANDARD PRICING --- #}
+                                    <template x-if="!product.is_promotion || !product.promotion_rate">
+                                        <span class="text-3xl font-bold text-indigo-600 leading-none"
+                                              x-text="$store.cartStore.formatPrice(product.selling_price)">
+                                        </span>
+                                    </template>
+                                </div>
                             </div>
 
                             {# Show Profit only to Agents #}
-                            <div class="flex justify-between items-center mt-2" x-show="product.user_role === 'agent' && product.agent_commission !== null">
+                            <div class="flex justify-between items-center mt-2 border-t border-indigo-100 pt-2"
+                                 x-show="product.user_role === 'agent' && product.agent_commission !== null">
                                 <span class="text-sm font-medium text-green-700">Agent Estimated Profit:</span>
-                                <span class="text-lg font-bold text-green-700" x-text="$store.cartStore.formatPrice(product.agent_commission)"></span>
+                                <span class="text-lg font-bold text-green-700"
+                                      x-text="$store.cartStore.formatPrice(product.agent_commission)">
+                                </span>
                             </div>
                         </div>
+                        {# -------------------------------- #}
 
                         {# --- Sub-Case 1A: Logged In User (Customer or Agent) --- #}
                         <div x-show="product.is_authenticated">

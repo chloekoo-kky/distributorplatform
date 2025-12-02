@@ -3,7 +3,17 @@ from django.db import models
 
 class SiteSetting(models.Model):
     site_name = models.CharField(max_length=100, default="Distributor Platform")
-
+    site_logo = models.ImageField(
+        upload_to='site_branding/',
+        blank=True,
+        null=True,
+        help_text="Upload a logo to display next to the site name in the navigation bar."
+    )
+    nav_background_color = models.CharField(
+        max_length=7,
+        default="#FFFFFF",
+        help_text="Select the background color for the top navigation bar."
+    )
     # Contact Info
     contact_email = models.EmailField(blank=True)
     contact_phone = models.CharField(max_length=50, blank=True)
