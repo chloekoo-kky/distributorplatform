@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <meta name="description" content="{{ meta_description }}">
-    <title>{% block title %}{{ meta_title }}{% endblock %}</title>    <script src="https://cdn.tailwindcss.com"></script>
+    <title>{% block title %}{{ meta_title }}{% endblock %}</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
@@ -136,18 +138,23 @@
         });
     </script>
 
-    <nav class="bg-white shadow-md sticky top-0 z-50">
+    <nav class="shadow-md sticky top-0 z-50" style="background-color: {{ site_settings.nav_background_color|default:'#FFFFFF' }};">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <div class="flex items-center space-x-8">
-                    <a href="{% url 'product:home' %}" class="text-2xl font-bold text-indigo-600">Distributor Platform</a>
-
+                    <a href="{% url 'product:home' %}" class="flex items-center gap-2">
+                        {% if site_settings.site_logo %}
+                            <img src="{{ site_settings.site_logo.url }}" alt="{{ site_settings.site_name }}" class="h-10 w-auto object-contain">
+                        {% endif %}
+                        <span class="text-2xl font-bold text-indigo-600">
+                            {{ site_settings.site_name|default:"Distributor Platform" }}
+                        </span>
+                    </a>
                     <div class="hidden md:flex space-x-8">
-                        <a href="{% url 'product:product_list' %}" class="text-gray-500 hover:text-gray-900">Products</a>
                         {% for link in main_menu_links %}
                             <a href="{{ link.get_absolute_url }}" class="text-gray-500 hover:text-gray-900">{{ link.title }}</a>
                         {% endfor %}
-                        <a href="{% url 'blog:post_list' %}" class="text-gray-500 hover:text-gray-900">Blog</a>
+                        <a href="{% url 'blog:post_list' %}" class="text-gray-500 hover:text-gray-900">了解市场</a>
                     </div>
                 </div>
 
@@ -239,27 +246,25 @@
     {% if allowed_categories_list %}
     <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
-
-                <a href="{% url 'product:product_list' %}"
-                   class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
-                        {% if not selected_category_code %}
-                            border-indigo-500 text-indigo-600
-                        {% else %}
-                            border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
-                        {% endif %}">
-                    All Products
-                </a>
-
+            <nav class="-mb-px flex space-x-8 overflow-x-auto pb-2" aria-label="Tabs">
                 {% for category in allowed_categories_list %}
                 <a href="{% url 'product:product_list' %}?category={{ category.code }}"
-                   class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                class="flex flex-col justify-center items-center py-2 px-2 border-b-2 font-medium transition-colors duration-200 min-w-max
                         {% if selected_category_code == category.code %}
                             border-indigo-500 text-indigo-600
                         {% else %}
                             border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300
                         {% endif %}">
-                    {{ category.name }}
+
+                    {% with lines=category.display_name_lines %}
+                        {# Primary Language (Line 1) #}
+                        <span class="text-base leading-tight">{{ lines.0 }}</span>
+
+                        {# Secondary Language (Line 2) #}
+                        {% if lines|length > 1 %}
+                            <span class="text-xs leading-tight opacity-80">{{ lines.1 }}</span>
+                        {% endif %}
+                    {% endwith %}
                 </a>
                 {% endfor %}
             </nav>
@@ -348,14 +353,14 @@
 
                 {# Column 2: Quick Links #}
                 <div>
-                    <h3 class="text-sm font-semibold text-gray-400 tracking-wider uppercase mb-4">Quick Links</h3>
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">歡迎來到我們的頁面</h3>
                     <ul class="space-y-3">
                         {# Standard Navigation #}
-                        <li><a href="{% url 'product:home' %}" class="text-base text-gray-500 hover:text-gray-900">Home</a></li>
-                        <li><a href="{% url 'product:product_list' %}" class="text-base text-gray-500 hover:text-gray-900">All Products</a></li>
-                        <li><a href="{% url 'blog:post_list' %}" class="text-base text-gray-500 hover:text-gray-900">Blog</a></li>
+                        <li><a href="{% url 'product:home' %}" class="text-base text-gray-500 hover:text-gray-900">主頁</a></li>
+                        <li><a href="{% url 'product:product_list' %}" class="text-base text-gray-500 hover:text-gray-900">所有產品</a></li>
+                        <li><a href="{% url 'blog:post_list' %}" class="text-base text-gray-500 hover:text-gray-900">市場咨詢</a></li>
                         {% if user.is_authenticated %}
-                            <li><a href="{% url 'user:profile' %}" class="text-base text-gray-500 hover:text-gray-900">My Account</a></li>
+                            <li><a href="{% url 'user:profile' %}" class="text-base text-gray-500 hover:text-gray-900">我的賬戶</a></li>
                         {% endif %}
 
                         {# Dynamic Footer Links #}
@@ -371,7 +376,7 @@
 
                 {# Column 3: Categories (Available to User Group) #}
                 <div>
-                    <h3 class="text-sm font-semibold text-gray-400 tracking-wider uppercase mb-4">Categories</h3>
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">產品分類</h3>
                     <ul class="space-y-3">
                         {# The allowed_categories_list is provided by the product context processor #}
                         {% for category in allowed_categories_list|slice:":6" %}
@@ -391,7 +396,7 @@
 
                 {# Column 4: Contact Info #}
                 <div>
-                    <h3 class="text-sm font-semibold text-gray-400 tracking-wider uppercase mb-4">Contact Us</h3>
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">關注我們</h3>
                     <ul class="space-y-3">
                         {% if site_settings.contact_address %}
                         <li class="flex items-start">

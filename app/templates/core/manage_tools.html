@@ -780,6 +780,8 @@
             base_cost: baseCost,
             profit_margin: profitMargin !== null ? Math.round(profitMargin) : null,
             selling_price: sellingPrice ? parseFloat(sellingPrice.toFixed(2)) : null,
+            is_promotion: product.is_promotion || false,
+            promotion_rate: product.promotion_rate ? parseFloat(product.promotion_rate) : null,
             update_url: `/api/manage-pricing/${product.id}/`
         };
         this.showPricingModal = true;
@@ -818,7 +820,11 @@
 
         const payload = {
             profit_margin: this.pricingData.profit_margin,
-            selling_price: this.pricingData.selling_price
+            selling_price: this.pricingData.selling_price,
+
+            // --- FIX: Include the checkbox state in the payload sent to Django ---
+            is_promotion: this.pricingData.is_promotion,
+            promotion_rate: this.pricingData.promotion_rate
         };
 
         try {

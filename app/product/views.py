@@ -55,10 +55,13 @@ def home(request):
         post_type=Post.PostType.ANNOUNCEMENT
     ).order_by('-created_at')[:3]
 
-    latest_news = accessible_posts.filter(
-        featured_image__isnull=False,
-        post_type=Post.PostType.NEWS
+    market_insights = accessible_posts.filter(
+        post_type=Post.PostType.MARKET_INSIGHTS
     ).order_by('-created_at')[:5]
+
+    latest_news_posts = accessible_posts.filter(
+        post_type=Post.PostType.NEWS
+    ).order_by('-created_at')[:4]
 
     # --- NEW: FAQ DATA ---
     # Fetch posts specifically marked as FAQ
@@ -92,9 +95,10 @@ def home(request):
     context = {
         'featured_products': featured_products,
         'announcements': announcements,
-        'sidebar_posts': latest_news,
+        'sidebar_posts': market_insights,  # Pass insights to sidebar variable
+        'latest_news_posts': latest_news_posts, # Pass news to main area
         'categories_with_products': categories_with_products,
-        'faq_posts': faq_posts, # Pass FAQs to template
+        'faq_posts': faq_posts,
     }
     return render(request, 'product/home.html', context)
 
@@ -111,32 +115,35 @@ def staff_required(view_func):
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 
-# Note: product_list view is no longer staff_required by default,
-# so that anonymous users and non-staff can see it.
-# The controls for upload/export will be hidden in the template.
+
+
 def product_list(request):
     """
-    This view retrieves and displays products based on permissions and search/filter params.
-    Now includes Sidebar widgets (Announcements, Latest News).
+    Product list with DEBUG logging to trace visibility issues.
     """
     selected_category_code = request.GET.get('category')
     search_query = request.GET.get('q')
 
+    logger.info(f"[DEBUG][List] START. User: {request.user}, Authenticated: {request.user.is_authenticated}")
+
     # --- 1. Product Filtering Logic ---
     products_query = None
     if request.user.is_authenticated and not request.user.is_anonymous:
-        # User must have access to the category to see products in it.
-        allowed_categories = Category.objects.filter(
-            user_groups__users=request.user
-        )
+        # Log permissions
+        allowed_categories = Category.objects.filter(user_groups__users=request.user)
+        logger.info(f"[DEBUG][List] User allowed categories count: {allowed_categories.count()}")
+
         products_query = Product.objects.filter(categories__in=allowed_categories).distinct()
     else:
-        # For anonymous users, start with non-members-only products
         products_query = Product.objects.filter(members_only=False)
+
+    # [DEBUG] Count after permissions
+    logger.info(f"[DEBUG][List] Products count after permission filter: {products_query.count()}")
 
     # Apply Category filtering
     if selected_category_code:
         products_query = products_query.filter(categories__code=selected_category_code)
+        logger.info(f"[DEBUG][List] Applied category code filter '{selected_category_code}'. Count: {products_query.count()}")
 
     # Apply Search Filtering
     if search_query:
@@ -146,42 +153,45 @@ def product_list(request):
             Q(description__icontains=search_query)
         )
 
-    # Prefetch featured_image and order
-    products = products_query.select_related(
-        'featured_image'
-    ).distinct().order_by('name')
+    # Prefetch and Convert to List
+    all_products = list(products_query.select_related('featured_image').distinct().order_by('name'))
 
-    # --- 2. Sidebar Data ---
+    # [DEBUG] Log specific flags for the first few items
+    logger.info(f"[DEBUG][List] Total products loaded: {len(all_products)}")
+    for i, p in enumerate(all_products[:5]):
+        logger.info(f"[DEBUG][List] Item {i}: {p.name} | SKU: {p.sku} | is_promotion: {getattr(p, 'is_promotion', 'N/A')}")
+
+    # --- SPLIT LOGIC ---
+    promotional_products = [p for p in all_products if getattr(p, 'is_promotion', False)]
+    regular_products = [p for p in all_products if not getattr(p, 'is_promotion', False)]
+
+    logger.info(f"[DEBUG][List] Final counts -> Regular: {len(regular_products)}, Promotional: {len(promotional_products)}")
+
+    if len(promotional_products) == 0 and len(all_products) > 0:
+        logger.warning("[DEBUG][List] No promotional products found! Check if 'is_promotion' is True in DB or if permissions are hiding them.")
+
+    # --- 2. Sidebar Data (Unchanged) ---
     accessible_posts = get_accessible_posts(request.user).select_related('featured_image', 'author')
-
-    # Announcements (Top priority)
-    announcements = accessible_posts.filter(
-        post_type=Post.PostType.ANNOUNCEMENT
-    ).order_by('-created_at')[:3]
-
-    # Latest News (Standard posts)
-    sidebar_posts = accessible_posts.filter(
-        featured_image__isnull=False,
-        post_type=Post.PostType.NEWS
-    ).order_by('-created_at')[:5]
+    announcements = accessible_posts.filter(post_type=Post.PostType.ANNOUNCEMENT).order_by('-created_at')[:3]
+    sidebar_posts = accessible_posts.filter(featured_image__isnull=False, post_type=Post.PostType.NEWS).order_by('-created_at')[:5]
 
     product_upload_form = ProductUploadForm()
-
     category_obj = None
     if selected_category_code:
-        # Use first() to avoid 404 errors if code is invalid, just show no description
         category_obj = Category.objects.filter(code=selected_category_code).first()
 
     context = {
-        'products': products,
+        'products': regular_products,
+        'promotional_products': promotional_products,
         'product_upload_form': product_upload_form,
         'search_query': search_query,
         'announcements': announcements,
         'sidebar_posts': sidebar_posts,
-        'selected_category_code': selected_category_code, # Ensure this is passed for "No products found" logic
+        'selected_category_code': selected_category_code,
         'current_category': category_obj,
     }
     return render(request, 'product/product_list.html', context)
+
 
 @staff_required
 def api_manage_categories(request):
@@ -532,6 +542,8 @@ def api_manage_products(request):
             'sku': product.sku or '-',
             'name': product.name,
             'selling_price': product.selling_price,
+            'is_promotion': product.is_promotion,
+            'promotion_rate': product.promotion_rate,
 
             # --- START ADDITIONS ---
             'profit_margin': product.profit_margin,
@@ -567,7 +579,7 @@ from decimal import Decimal, InvalidOperation
 @staff_required
 def api_manage_pricing(request, product_id):
     """
-    Handles updating the profit_margin and selling_price for a product.
+    Handles updating pricing with DEBUG logging to trace data saving issues.
     """
     if not (request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
@@ -575,23 +587,43 @@ def api_manage_pricing(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
 
     try:
+        # [DEBUG] Log the raw incoming data
         data = json.loads(request.body)
+        promotion_rate_str = data.get('promotion_rate')
+
         selling_price_str = data.get('selling_price')
         profit_margin_str = data.get('profit_margin')
 
-        # Update fields only if they are provided, allowing null
+        # [DEBUG] Check if 'is_promotion' is in the payload
+        if 'is_promotion' in data:
+            new_promo_status = bool(data['is_promotion'])
+            logger.info(f"[DEBUG][Pricing] Payload contains 'is_promotion': {new_promo_status}. Current DB value: {product.is_promotion}")
+            product.is_promotion = new_promo_status
+        else:
+            logger.warning(f"[DEBUG][Pricing] 'is_promotion' key MISSING from payload. Flag will not change.")
+
         product.selling_price = Decimal(selling_price_str) if selling_price_str is not None else None
         product.profit_margin = Decimal(profit_margin_str) if profit_margin_str is not None else None
+        product.promotion_rate = Decimal(promotion_rate_str) if promotion_rate_str is not None else None
 
-        product.save(update_fields=['selling_price', 'profit_margin'])
+        # [DEBUG] Log the fields intended for update
+        update_fields_list = ['selling_price', 'profit_margin', 'is_promotion']
+        logger.info(f"[DEBUG][Pricing] Attempting to save with update_fields: {update_fields_list}")
 
-        logger.info(f"Updated pricing for Product {product_id}: Price={product.selling_price}, Margin={product.profit_margin}")
+        # --- CRITICAL: Ensure 'is_promotion' is in this list ---
+        product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate'])
+
+        # [DEBUG] Verify the save by reloading from DB
+        product.refresh_from_db()
+        logger.info(f"[DEBUG][Pricing] Post-Save Check -> is_promotion: {product.is_promotion}")
+
         return JsonResponse({'success': True})
 
-    except (json.JSONDecodeError, InvalidOperation):
+    except (json.JSONDecodeError, InvalidOperation) as e:
+        logger.error(f"[DEBUG][Pricing] JSON/Decimal Error: {e}")
         return JsonResponse({'success': False, 'error': 'Invalid data format.'}, status=400)
     except Exception as e:
-        logger.error(f"Error updating pricing for product {product_id}: {e}", exc_info=True)
+        logger.error(f"[DEBUG][Pricing] Critical Error: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
@@ -670,7 +702,9 @@ def api_get_product_details(request, sku):
         'featured_image_url': product.featured_image.image.url if product.featured_image else None,
         'gallery_images': gallery,
         'selling_price': selling_price,
-
+        'is_promotion': product.is_promotion,
+        'promotion_rate': product.promotion_rate,
+        'discounted_price': product.discounted_price,
         # Logic flags
         'is_orderable': is_orderable,
         'user_role': user_role,

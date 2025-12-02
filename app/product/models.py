@@ -2,6 +2,7 @@
 from django.db import models
 from django.urls import reverse
 from tinymce.models import HTMLField
+from decimal import Decimal
 
 class CategoryGroup(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -47,6 +48,16 @@ class Category(models.Model):
     def __str__(self):
         return f"{self.group.name} - {self.name}"
 
+    @property
+    def display_name_lines(self):
+        """
+        Splits the category name by '|' to support dual-language display.
+        Example: "Shoes | 鞋子" -> ["Shoes", "鞋子"]
+        """
+        if '|' in self.name:
+            return [line.strip() for line in self.name.split('|')]
+        return [self.name]
+
 # --- NEW MODEL: CategoryContentSection ---
 class CategoryContentSection(models.Model):
     category = models.ForeignKey(Category, related_name='content_sections', on_delete=models.CASCADE)
@@ -79,6 +90,17 @@ class Product(models.Model):
     )
     description = models.TextField(null=True, blank=True)
 
+    is_promotion = models.BooleanField(
+        default=False,
+        help_text="Check if this product is currently on promotion (triggers promotional styling)."
+    )
+    promotion_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="The rate/percentage defined for this promotion."
+    )
     selling_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -119,6 +141,17 @@ class Product(models.Model):
         blank=True,
         help_text="Suppliers who provide this product."
     )
+
+    @property
+    def discounted_price(self):
+        """
+        Calculates the price after applying the promotion rate.
+        Returns the original selling_price if no promotion is active.
+        """
+        if self.is_promotion and self.promotion_rate and self.selling_price:
+            discount_multiplier = Decimal('1.00') - (self.promotion_rate / Decimal('100.00'))
+            return self.selling_price * discount_multiplier
+        return self.selling_price
 
     @property
     def base_cost(self):
