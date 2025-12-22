@@ -2,51 +2,90 @@
 {% load static %}
 
 {% block title %}Place New Order{% endblock %}
-{% block full_width_sticky_nav %}{% endblock %} {# Hide category nav #}
 
 {% block content %}
 {{ products_json|json_script:"products-data" }}
-{# --- START MODIFICATION: Pass the is_agent flag to JS --- #}
 {{ is_agent|yesno:"true,false"|json_script:"is-agent-flag" }}
-{# --- END MODIFICATION --- #}
 
 <div class="py-8"
      x-data="orderForm()"
      x-init="init()">
 
-    <h1 class="text-3xl font-bold text-gray-800 mb-6">Place a New Order</h1>
+    {# --- 1. Page Title --- #}
+    <h1 class="text-3xl font-bold text-gray-800 mb-6 flex flex-col items-start">
+        {% with lines=site_settings.place_order_title_lines %}
+            <span>{{ lines.0 }}</span>
+            {% if lines|length > 1 %}
+                <span class="text-lg text-gray-500 font-normal">{{ lines.1 }}</span>
+            {% endif %}
+        {% endwith %}
+    </h1>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         {# Product List #}
         <div class="lg:col-span-2 bg-white shadow-lg rounded-lg overflow-hidden">
             <div class="p-4 border-b">
-                <input type="text" x-model="filterText" placeholder="Search products by name or SKU..."
+                {# --- 2. Search Placeholder --- #}
+                {% with lines=site_settings.place_order_search_lines %}
+                <input type="text" x-model="filterText"
+                       placeholder="{{ lines|join:' / ' }}"
                        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {% endwith %}
             </div>
 
             <div class="max-h-[70vh] overflow-y-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50 sticky top-0 z-10">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Product</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">SKU</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Selling Price</th>
-                            {# --- START MODIFICATION: Conditionally show header --- #}
-                            <th x-show="isAgent" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Your Profit</th>
-                            {# --- END MODIFICATION --- #}
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50"></th>
+                            {# --- 3. Table Headers (Dual Line) --- #}
+
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
+                                {% with lines=site_settings.place_order_header_product_lines %}
+                                    <div class="flex flex-col">
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}<span class="text-[10px] opacity-75">{{ lines.1 }}</span>{% endif %}
+                                    </div>
+                                {% endwith %}
+                            </th>
+
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
+                                {% with lines=site_settings.place_order_header_sku_lines %}
+                                    <div class="flex flex-col">
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}<span class="text-[10px] opacity-75">{{ lines.1 }}</span>{% endif %}
+                                    </div>
+                                {% endwith %}
+                            </th>
+
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
+                                {% with lines=site_settings.place_order_header_price_lines %}
+                                    <div class="flex flex-col">
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}<span class="text-[10px] opacity-75">{{ lines.1 }}</span>{% endif %}
+                                    </div>
+                                {% endwith %}
+                            </th>
+
+                            <th x-show="isAgent" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
+                                {% with lines=site_settings.place_order_header_profit_lines %}
+                                    <div class="flex flex-col">
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}<span class="text-[10px] opacity-75">{{ lines.1 }}</span>{% endif %}
+                                    </div>
+                                {% endwith %}
+                            </th>
+
+                            <th class="px-6 py-3 bg-gray-50"></th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
 
-                        {# Product Rows #}
                         <template x-for="product in filteredProducts" :key="product.id">
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="flex items-center">
                                         <div class="flex-shrink-0 h-10 w-10">
-                                            {# FIX: x-if must be on a <template> tag #}
                                             <template x-if="product.img_url">
                                                 <img class="h-10 w-10 rounded-md object-cover" :src="product.img_url" :alt="product.name">
                                             </template>
@@ -57,27 +96,46 @@
                                             </template>
                                         </div>
                                         <div class="ml-4">
-                                            <div class="text-sm font-medium text-gray-900" x-text="product.name"></div>
+                                            {# --- 4. Product Name Splitting (Table) --- #}
+                                            <div class="flex flex-col">
+                                                <span class="text-sm font-medium text-gray-900" x-text="splitName(product.name)[0]"></span>
+                                                <span class="text-xs text-gray-500" x-show="splitName(product.name)[1]" x-text="splitName(product.name)[1]"></span>
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.sku"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
-                                {# --- START MODIFICATION: Conditionally show profit --- #}
                                 <td x-show="isAgent" class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.profit)"></td>
-                                {# --- END MODIFICATION --- #}
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <button @click="addToCart(product)"
                                             :disabled="$store.cartStore.isInCart(product.id)"
-                                            class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
-                                        <span x-show="!$store.cartStore.isInCart(product.id)">Add to Cart</span>
-                                        <span x-show="$store.cartStore.isInCart(product.id)">In Cart</span>
+                                            class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed h-10 min-w-[80px] flex items-center justify-center">
+
+                                        {# --- State 1: Not in Cart (Add) --- #}
+                                        <span x-show="!$store.cartStore.isInCart(product.id)" class="flex flex-col items-center leading-none">
+                                            {% with lines=site_settings.place_order_add_lines %}
+                                                <span class="font-bold">{{ lines.0 }}</span>
+                                                {% if lines|length > 1 %}
+                                                    <span class="text-[10px] font-normal opacity-90 mt-0.5">{{ lines.1 }}</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </span>
+
+                                        {# --- State 2: In Cart (Added) --- #}
+                                        <span x-show="$store.cartStore.isInCart(product.id)" class="flex flex-col items-center leading-none">
+                                            {% with lines=site_settings.place_order_added_lines %}
+                                                <span class="font-bold">{{ lines.0 }}</span>
+                                                {% if lines|length > 1 %}
+                                                    <span class="text-[10px] font-normal opacity-90 mt-0.5">{{ lines.1 }}</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </span>
                                     </button>
                                 </td>
                             </tr>
                         </template>
 
-                        {# Empty State #}
                         <template x-if="isLoaded && filteredProducts.length === 0">
                             <tr>
                                 <td colspan="5" class="px-6 py-10 text-center text-gray-500">
@@ -92,16 +150,32 @@
 
         {# Order Summary Sidebar #}
         <div class="lg:col-span-1">
-            <div class="bg-white shadow-lg rounded-lg sticky top-20">
-                <h2 class="text-xl font-bold text-gray-800 p-4 border-b">Order Summary</h2>
-                <div class="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
+            <div class="bg-green-50 shadow-lg rounded-lg sticky top-20">
+                {# --- 5. Order Summary Title --- #}
+                <h2 class="text-xl font-bold text-gray-800 p-4 border-b flex flex-col">
+                     {% with lines=site_settings.place_order_summary_title_lines %}
+                        <span>{{ lines.0 }}</span>
+                        {% if lines|length > 1 %}<span class="text-sm font-normal text-gray-500">{{ lines.1 }}</span>{% endif %}
+                    {% endwith %}
+                </h2>
 
+                <div class="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
                     <template x-if="$store.cartStore.items.length === 0">
-                        <p class="text-gray-500 text-center py-4">
-                            Your cart is empty.
-                            <br>
-                            <a href="{% url 'product:product_list' %}" class="text-indigo-600 hover:underline">Browse products</a> to add items.
-                        </p>
+                        <div class="text-gray-500 text-center py-8 flex flex-col items-center justify-center">
+
+                            {# CHANGED: Dual Line Empty Message #}
+                            {% with lines=site_settings.place_order_empty_cart_lines %}
+                                <span class="text-base font-medium text-gray-600">{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}
+                                    <span class="text-xs text-gray-400 mt-1">{{ lines.1 }}</span>
+                                {% endif %}
+                            {% endwith %}
+
+                            {# Keep the link below #}
+                            <div class="mt-3 text-sm">
+                                <a href="{% url 'product:product_list' %}" class="text-indigo-600 hover:underline">Browse products</a> to add items.
+                            </div>
+                        </div>
                     </template>
 
                     <template x-for="item in $store.cartStore.items" :key="item.id">
@@ -111,36 +185,57 @@
                                 <input type="text" :value="item.quantity" @change="$store.cartStore.updateQuantity(item.id, $event.target.value)" class="w-10 text-center border-l border-r p-1 text-sm focus:outline-none">
                                 <button @click="$store.cartStore.increment(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100">+</button>
                             </div>
-                            <div class="flex-1">
-                                <p class="text-sm font-medium text-gray-900" x-text="item.name"></p>
+                            <div class="flex-1 min-w-0">
+                                {# --- 6. Product Name Splitting (Sidebar) --- #}
+                                <div class="flex flex-col">
+                                    <p class="text-sm font-medium text-gray-900 truncate" x-text="splitName(item.name)[0]"></p>
+                                    <p class="text-[10px] text-gray-500 truncate" x-show="splitName(item.name)[1]" x-text="splitName(item.name)[1]"></p>
+                                </div>
                                 <p class="text-xs text-gray-500" x-text="formatPrice(item.selling_price)"></p>
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-semibold" x-text="formatPrice(item.quantity * item.selling_price)"></p>
-                                <button @click="$store.cartStore.removeItem(item.id)" class="text-xs text-red-500 hover:underline hover:text-red-700">Remove</button>
+                                <button @click="$store.cartStore.removeItem(item.id)" class="text-xs text-red-500 hover:underline hover:text-red-700">x</button>
                             </div>
                         </div>
                     </template>
                 </div>
 
                 <div class="p-4 border-t bg-gray-50 space-y-2">
-                    <div class="flex justify-between text-lg font-semibold">
-                        <span>Total Price:</span>
+                    <div class="flex justify-between text-lg font-semibold items-center">
+                        {# --- 7. Total Labels --- #}
+                        <div class="flex flex-col">
+                             {% with lines=site_settings.place_order_total_lines %}
+                                <span>{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}<span class="text-xs font-normal text-gray-500">{{ lines.1 }}</span>{% endif %}
+                            {% endwith %}
+                        </div>
                         <span x-text="formatPrice($store.cartStore.cartTotal)"></span>
                     </div>
-                    {# --- START MODIFICATION: Conditionally show estimated profit --- #}
-                    <div x-show="isAgent" class="flex justify-between text-sm text-green-700">
-                        <span>Estimated Profit:</span>
+
+                    <div x-show="isAgent" class="flex justify-between text-sm text-green-700 items-center">
+                        <div class="flex flex-col">
+                             {% with lines=site_settings.place_order_est_profit_lines %}
+                                <span>{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}<span class="text-[10px] opacity-80">{{ lines.1 }}</span>{% endif %}
+                            {% endwith %}
+                        </div>
                         <span x-text="formatPrice($store.cartStore.cartProfit)"></span>
                     </div>
-                    {# --- END MODIFICATION --- #}
                 </div>
 
                 <div class="p-4 border-t">
                     <button @click="submitOrder()"
                             :disabled="$store.cartStore.items.length === 0 || isSubmitting"
-                            class="w-full px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center">
-                        <span x-show="!isSubmitting">Place Order</span>
+                            class="w-full px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center h-12">
+                        {# --- 8. Place Order Button --- #}
+                        <span x-show="!isSubmitting" class="flex flex-col items-center leading-tight">
+                            {% with lines=site_settings.place_order_btn_lines %}
+                                <span class="font-bold">{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}<span class="text-xs font-normal opacity-90">{{ lines.1 }}</span>{% endif %}
+                            {% endwith %}
+                        </span>
+
                         <svg x-show="isSubmitting" class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -161,14 +256,12 @@ function orderForm() {
         isSubmitting: false,
         isLoaded: false,
         csrfToken: '',
-        isAgent: false, // --- ADDED PROPERTY ---
+        isAgent: false,
 
         init() {
             try {
                 this.allProducts = JSON.parse(document.getElementById('products-data').textContent);
-                // --- START MODIFICATION: Load the agent flag ---
                 this.isAgent = JSON.parse(document.getElementById('is-agent-flag').textContent);
-                // --- END MODIFICATION ---
                 this.isLoaded = true;
                 console.log(`[Place Order] Loaded ${this.allProducts.length} products.`);
             } catch (e) {
@@ -192,6 +285,16 @@ function orderForm() {
             );
         },
 
+        // --- NEW: Helper to split names for display ---
+        splitName(name) {
+            if (!name) return [''];
+            // Check if name contains the pipe separator
+            if (name.includes('|')) {
+                return name.split('|').map(s => s.trim());
+            }
+            return [name];
+        },
+
         formatPrice(value) {
             if (value === null || value === undefined) return 'N/A';
             return `RM ${Number(value).toFixed(2)}`;
@@ -200,7 +303,7 @@ function orderForm() {
         addToCart(product) {
              Alpine.store('cartStore').addItem({
                 id: product.id,
-                name: product.name,
+                name: product.name, // Keep original name for cart storage/backend
                 sku: product.sku,
                 selling_price: product.selling_price,
                 base_cost: product.base_cost,
@@ -210,21 +313,20 @@ function orderForm() {
             });
         },
 
+        // ... (submitOrder function remains the same) ...
         async submitOrder() {
+            // FIX: Access the global store instead of 'this.cart'
             const cartItems = Alpine.store('cartStore').items;
 
             if (cartItems.length === 0 || this.isSubmitting) return;
 
-            const total = Alpine.store('cartStore').cartTotal;
-
-            if (!confirm(`You are about to place an order for ${cartItems.length} item(s).\nTotal: ${this.formatPrice(total)}\n\nProceed?`)) {
-                return;
-            }
+            // Remove the confirm dialog here since we are adding a confirmation page
+            // if (!confirm(`Proceed with order?`)) return;
 
             this.isSubmitting = true;
 
-            // Prepare cart data
             const payload = {
+                // FIX: Map over the store items
                 cart: cartItems.map(item => ({
                     id: item.id,
                     quantity: item.quantity
@@ -232,7 +334,8 @@ function orderForm() {
             };
 
             try {
-                const response = await fetch(`{% url 'order:api_submit_order' %}`, {
+                // CHANGED URL: Now points to prepare checkout
+                const response = await fetch(`{% url 'order:api_prepare_checkout' %}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -245,29 +348,22 @@ function orderForm() {
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    Alpine.store('cartStore').clearCart();
-                    Swal.fire({
-                        title: 'Order Placed!',
-                        text: 'Your order has been submitted successfully.',
-                        icon: 'success',
-                        confirmButtonText: 'View Details'
-                    }).then((result) => {
-                        window.location.href = data.redirect_url;
-                    });
+                    // Redirect to the checkout confirmation page
+                    window.location.href = data.redirect_url;
                 } else {
                     Swal.fire({
                         title: 'Error',
-                        text: data.error || 'An unknown error occurred.',
+                        text: data.error || 'Could not proceed to checkout.',
                         icon: 'error'
                     });
+                    this.isSubmitting = false;
                 }
             } catch (error) {
                 Swal.fire({
                     title: 'Network Error',
-                    text: `Could not connect to the server: ${error.message}`,
+                    text: error.message,
                     icon: 'error'
                 });
-            } finally {
                 this.isSubmitting = false;
             }
         }

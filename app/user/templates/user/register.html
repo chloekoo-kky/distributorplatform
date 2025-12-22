@@ -1,142 +1,332 @@
 {% extends 'base.html' %}
 
-{% block title %}Join Our Platform{% endblock %}
+{% block title %}
+    {% with lines=site_settings.register_title_lines %}
+        {{ lines.0 }}
+    {% endwith %}
+{% endblock %}
 
 {% block content %}
-<div class="w-full max-w-4xl mx-auto bg-white shadow-2xl rounded-lg overflow-hidden lg:flex">
+<div class="min-h-[90vh] flex items-start justify-center bg-gray-50 py-4 px-4 sm:px-2 lg:px-8">
+    <div class="max-w-md w-full space-y-2 bg-white p-5 rounded-xl shadow-lg border border-gray-100">
 
-    <div class="w-full lg:w-1/2 bg-indigo-600 text-white p-8 flex flex-col justify-center items-center text-center">
-        <h2 class="text-3xl font-bold mb-4">Welcome Aboard!</h2>
-        <p class="mb-6">
-            Register to unlock exclusive products and member pricing.
-        </p>
-        <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-    </div>
+        {# --- Header Section --- #}
+        <div class="flex flex-col items-center text-center">
+            {# Logo / Icon #}
+            {% if site_settings.site_logo %}
+                <img class="mx-auto h-16 w-auto mb-2 object-contain" src="{{ site_settings.site_logo.url }}" alt="{{ site_settings.site_name }}">
+            {% else %}
+                 <div class="mx-auto h-12 w-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                 </div>
+            {% endif %}
 
-    <div class="w-full lg:w-1/2 p-4">
-        <h2 class="text-2xl font-bold text-gray-800 mb-6">Create Your Account</h2>
-
-        <div id="register-error-container" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <strong class="font-bold">Error!</strong>
-            <span class="block sm:inline" id="register-error-message"></span>
-            <ul id="register-error-list" class="list-disc ml-5 mt-2"></ul>
+            {# Dual Line Heading #}
+            <h2 class="text-3xl font-extrabold text-gray-900 flex flex-col items-center">
+                {% with lines=site_settings.register_heading_lines %}
+                    <span>{{ lines.0 }}</span>
+                    {% if lines|length > 1 %}
+                        <span class="text-lg font-medium text-gray-500 mt-1">{{ lines.1 }}</span>
+                    {% endif %}
+                {% endwith %}
+            </h2>
         </div>
 
-        <form method="POST" id="registration-form">
+        {# Error Container #}
+        <div id="register-error-container" class="hidden bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800" id="register-error-message">Error</h3>
+                    <ul id="register-error-list" class="mt-1 text-sm text-red-700 list-disc list-inside"></ul>
+                </div>
+            </div>
+        </div>
+
+        <form method="POST" id="registration-form" class="mt-8 space-y-2">
             {% csrf_token %}
 
-            <div class="space-y-4">
-                <div>
-                    <label for="{{ form.username.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Username</label>
-                    {{ form.username }}
+            {# --- NEW: Subscription Plan Selection --- #}
+            {% if plans %}
+            <div class="space-y-3 mb-6">
+                <label class="block text-sm font-medium text-gray-700">Select Subscription Package</label>
+                <div class="grid grid-cols-1 gap-4">
+                    {% for plan in plans %}
+                    <label class="relative border rounded-lg p-4 flex cursor-pointer focus:outline-none hover:bg-gray-50 transition-colors
+                                  {% if plan.is_popular %}border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50{% else %}border-gray-200{% endif %}">
+                        <input type="radio" name="plan_id" value="{{ plan.id }}" class="sr-only" {% if forloop.first %}checked{% endif %}>
+                        <div class="flex-1 flex justify-between">
+                            <div class="flex flex-col">
+                                <span class="block text-sm font-medium text-gray-900">{{ plan.name }}</span>
+                                <span class="block text-xs text-gray-500 mt-1">{{ plan.description }}</span>
+
+                                {# Display Features #}
+                                {% if plan.features %}
+                                <ul class="mt-2 space-y-1">
+                                    {% for feature in plan.features %}
+                                    <li class="text-xs text-gray-600 flex items-center">
+                                        <svg class="h-3 w-3 text-green-500 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        {{ feature }}
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+                            </div>
+                            <div class="flex flex-col items-end justify-center">
+                                <span class="text-sm font-bold text-gray-900">
+                                    {% if plan.price > 0 %}
+                                        RM {{ plan.price }}
+                                    {% else %}
+                                        Free
+                                    {% endif %}
+                                </span>
+                                {% if plan.is_popular %}
+                                    <span class="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                        Popular
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {# Radio Circle Indicator #}
+                        <div class="ml-4 flex items-center h-full check-circle">
+                            <svg class="h-5 w-5 text-indigo-600 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4" />
+                            </svg>
+                            <div class="h-4 w-4 rounded-full border border-gray-300 unchecked-circle"></div>
+                        </div>
+                    </label>
+                    {% endfor %}
                 </div>
+            </div>
+
+            <script>
+                // Simple script to handle visual selection state
+                document.querySelectorAll('input[name="plan_id"]').forEach(input => {
+                    input.addEventListener('change', function() {
+                        // Reset all styles
+                        document.querySelectorAll('input[name="plan_id"]').forEach(rb => {
+                            const label = rb.closest('label');
+                            const checkSvg = label.querySelector('.check-circle svg');
+                            const uncheckDiv = label.querySelector('.unchecked-circle');
+
+                            label.classList.remove('border-indigo-500', 'ring-1', 'ring-indigo-500', 'bg-indigo-50');
+                            label.classList.add('border-gray-200');
+                            checkSvg.classList.add('hidden');
+                            uncheckDiv.classList.remove('hidden');
+                        });
+
+                        // Set active style
+                        if(this.checked) {
+                            const label = this.closest('label');
+                            const checkSvg = label.querySelector('.check-circle svg');
+                            const uncheckDiv = label.querySelector('.unchecked-circle');
+
+                            label.classList.remove('border-gray-200');
+                            label.classList.add('border-indigo-500', 'ring-1', 'ring-indigo-500', 'bg-indigo-50');
+                            checkSvg.classList.remove('hidden');
+                            uncheckDiv.classList.add('hidden');
+                        }
+                    });
+
+                    // Trigger change on load to set initial state
+                    if(input.checked) input.dispatchEvent(new Event('change'));
+                });
+            </script>
+            {% endif %}
+
+            <div class="rounded-md shadow-sm space-y-4">
+
+                {# Username #}
                 <div>
-                    <label for="{{ form.email.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Email</label>
-                    {{ form.email }}
+                    <label for="id_username" class="sr-only">Username</label>
+                    {% with lines=site_settings.register_username_lines %}
+                    <input name="username" type="text" id="id_username" required
+                           class="appearance-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                           placeholder="{{ lines|join:' / ' }}">
+                    {% endwith %}
                 </div>
 
+                {# Email #}
                 <div>
-                    <label for="{{ form.phone_number.id_for_label }}" class="font-semibold text-gray-700 block mb-1">Phone Number</label>
-                    <div class="flex relative">
-                        {{ form.phone_number }}
+                    <label for="id_email" class="sr-only">Email</label>
+                    {% with lines=site_settings.register_email_lines %}
+                    <input name="email" type="email" id="id_email" required
+                           class="appearance-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                           placeholder="{{ lines|join:' / ' }}">
+                    {% endwith %}
+                </div>
+
+                {# Phone Number with Country Code #}
+                <div>
+                    <label for="id_phone_input" class="sr-only">Phone Number</label>
+
+                    <div class="relative flex rounded-md shadow-sm">
+                        {# Country Code Selector: Must send ISO codes (MY, SG) not prefixes (+60) #}
+                        <div class="inset-y-0 left-0 flex items-center">
+                            <label for="country_code" class="sr-only">Country</label>
+                            <select id="country_code" name="phone_number_0" class="h-full py-0 pl-3 pr-7 border-transparent bg-transparent text-gray-500 sm:text-sm rounded-l-md focus:ring-indigo-500 focus:border-indigo-500 border-r border-gray-300 bg-gray-50">
+                                <option value="MY">MY +60</option>
+                                <option value="SG">SG +65</option>
+                                <option value="CN">CN +86</option>
+                                <option value="US">US +1</option>
+                                <option value="GB">UK +44</option>
+                                <option value="AU">AU +61</option>
+                                <option value="JP">JP +81</option>
+                            </select>
+                        </div>
+
+                        {# Phone Number Input: Must be named phone_number_1 #}
+                        {% with lines=site_settings.register_phone_lines %}
+                        <input type="tel" id="id_phone_input" name="phone_number_1" required
+                               class="flex-1 appearance-none block w-full min-w-0 px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-r-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                               placeholder="{{ lines|join:' / ' }}">
+                        {% endwith %}
                     </div>
                 </div>
 
+                {# Password #}
                 <div>
-                    <label for="password-input" class="font-semibold text-gray-700 block mb-1">Password</label>
+                    <label for="password-input" class="sr-only">Password</label>
                     <div class="relative">
-                        {{ form.password1 }}
-                        <button type="button" id="toggle-password-visibility" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500">
-                            <svg id="eye-icon-open" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                            </svg>
-                            <svg id="eye-icon-closed" class="h-5 w-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274-4.057 5.064-7 9.542-7 .847 0 1.67.127 2.457.362m3.692 11.238A12.022 12.022 0 0021.542 12c-1.274-4.057-5.064-7-9.542-7a11.95 11.95 0 00-2.457.362M4.5 4.5l15 15"></path>
-                            </svg>
+                        {% with lines=site_settings.register_password_lines %}
+                        <input name="password1" type="password" id="password-input" required
+                               class="appearance-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm pr-10"
+                               placeholder="{{ lines|join:' / ' }}">
+                        {% endwith %}
+                        <button type="button" id="toggle-password-visibility" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <svg id="eye-icon-open" class="h-5 w-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                            <svg id="eye-icon-closed" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274-4.057 5.064-7 9.542-7 .847 0 1.67.127 2.457.362m3.692 11.238A12.022 12.022 0 0021.542 12c-1.274-4.057-5.064-7-9.542-7a11.95 11.95 0 00-2.457.362M4.5 4.5l15 15"></path></svg>
                         </button>
                     </div>
                 </div>
+
+                {# Password Criteria #}
                 <div class="mt-2">
-                    <div class="h-2 w-full bg-gray-200 rounded">
-                        <div id="password-strength-bar" class="h-full rounded transition-all duration-300"></div>
+                    <div class="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                        <div id="password-strength-bar" class="h-full transition-all duration-300 w-0"></div>
                     </div>
-                    <ul id="password-criteria" class="mt-2 text-sm text-gray-600">
+                    <ul id="password-criteria" class="mt-3 text-xs text-gray-500 grid grid-cols-2 gap-2">
                         <li id="length" class="flex items-center">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            At least 8 characters
+                            <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            8+ Characters
                         </li>
                         <li id="uppercase" class="flex items-center">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            An uppercase letter
+                            <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Uppercase
                         </li>
                         <li id="lowercase" class="flex items-center">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            A lowercase letter
+                            <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Lowercase
                         </li>
                         <li id="number" class="flex items-center">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            A number
+                            <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Number
                         </li>
                     </ul>
                 </div>
             </div>
 
-            <div class="mt-6">
-                <button type="submit" id="register-button" class="w-full px-4 py-2 tracking-wide text-white transition-colors duration-200 transform bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:bg-indigo-700 flex items-center justify-center opacity-50 cursor-not-allowed" disabled>
-                    <span id="register-button-text">Register</span>
+            <div>
+                <button type="submit" id="register-button" disabled
+                        class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-14 items-center opacity-50 cursor-not-allowed transition-opacity">
+
+                    {# Spinner #}
                     <svg id="register-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
+
+                    {# Dual Line Button Text #}
+                    <div class="flex flex-col items-center leading-tight" id="register-button-text">
+                        {% with lines=site_settings.register_btn_lines %}
+                            <span class="font-bold text-base">{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs font-normal opacity-90">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
                 </button>
             </div>
         </form>
 
-        <p class="mt-6 text-sm text-center text-gray-600">
-            Already have an account? <a href="{% url 'user:login' %}" class="font-medium text-indigo-600 hover:underline">Sign in</a>
-        </p>
+        {# Sign In Link #}
+        <div class="mt-4 text-center">
+            <a href="{% url 'user:login' %}" class="font-medium text-indigo-600 hover:text-indigo-500 flex flex-col items-center">
+                {% with lines=site_settings.register_signin_lines %}
+                    <span class="text-sm">{{ lines.0 }}</span>
+                    {% if lines|length > 1 %}
+                        <span class="text-xs opacity-80 mt-0.5">{{ lines.1 }}</span>
+                    {% endif %}
+                {% endwith %}
+            </a>
+        </div>
     </div>
 </div>
 
-
+{# --- VERIFICATION MODAL --- #}
 <div id="verify-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center">
-    <div class="fixed inset-0 bg-gray-800 opacity-75"></div>
+    <div class="fixed inset-0 bg-gray-800 opacity-75 backdrop-blur-sm"></div>
 
-    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-8 m-4">
-        <h2 class="text-2xl font-bold text-center text-gray-900 mb-4">Verify your phone</h2>
-
-        <div id="modal-message-container" class="px-4 py-3 rounded relative mb-4" role="alert">
-             <p id="modal-message" class="text-center text-sm"></p>
-        </div>
-
-        <form id="verify-form">
-            <div class="space-y-4">
-                <div>
-                    <label for="code" class="sr-only">Verification Code</label>
-                    <input name="code" type="text" id="code" class="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="6-digit code" required>
-                </div>
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-8 m-4 transform transition-all">
+        <div class="text-center mb-6">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </div>
 
-            <div class="mt-6">
-                <button type="submit" id="verify-button" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                    <span id="verify-button-text">Verify Account</span>
+            <h2 class="text-2xl font-bold text-gray-900 flex flex-col items-center">
+                {% with lines=site_settings.verify_modal_title_lines %}
+                    <span>{{ lines.0 }}</span>
+                    {% if lines|length > 1 %}
+                        <span class="text-base font-normal text-gray-500 mt-1">{{ lines.1 }}</span>
+                    {% endif %}
+                {% endwith %}
+            </h2>
+        </div>
+
+        <div id="modal-message-container" class="px-4 py-3 rounded relative mb-4 text-center text-sm" role="alert">
+             <p id="modal-message"></p>
+        </div>
+
+        <form id="verify-form" class="space-y-6">
+            <div>
+                <label for="code" class="sr-only">Verification Code</label>
+                <input name="code" type="text" id="code" class="appearance-none text-center tracking-widest text-2xl block w-full px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10" placeholder="000000" maxlength="6" required>
+            </div>
+
+            <div>
+                <button type="submit" id="verify-button" class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-12 items-center">
+
                     <svg id="verify-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
+
+                    <div class="flex flex-col items-center leading-tight" id="verify-button-text">
+                        {% with lines=site_settings.verify_btn_lines %}
+                            <span class="font-bold">{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs font-normal opacity-90">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
                 </button>
             </div>
         </form>
+
         <button id="close-modal" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
     </div>
 </div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 
-    // --- Password Validation ---
+    // --- 1. Password Validation Logic ---
     const passwordInput = document.getElementById('password-input');
     const strengthBar = document.getElementById('password-strength-bar');
     const registerButton = document.getElementById('register-button');
@@ -161,10 +351,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (hasLowercase) score++;
         if (hasNumber) score++;
 
-        updateCriteria('length', hasLength);
-        updateCriteria('uppercase', hasUppercase);
-        updateCriteria('lowercase', hasLowercase);
-        updateCriteria('number', hasNumber);
+        updateCriteria(criteria.length, hasLength);
+        updateCriteria(criteria.uppercase, hasUppercase);
+        updateCriteria(criteria.lowercase, hasLowercase);
+        updateCriteria(criteria.number, hasNumber);
         updateStrengthBar(score);
 
         const allCriteriaMet = hasLength && hasUppercase && hasLowercase && hasNumber;
@@ -177,28 +367,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    function updateCriteria(id, met) {
-        const el = criteria[id];
+    function updateCriteria(el, met) {
         const svg = el.querySelector('svg');
         if (met) {
-            el.classList.add('text-green-500');
+            el.classList.remove('text-gray-500');
+            el.classList.add('text-green-600', 'font-medium');
+            svg.classList.remove('text-gray-300');
+            svg.classList.add('text-green-500');
             svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
         } else {
-            el.classList.remove('text-green-500');
-            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+            el.classList.remove('text-green-600', 'font-medium');
+            el.classList.add('text-gray-500');
+            svg.classList.remove('text-green-500');
+            svg.classList.add('text-gray-300');
+            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path>';
         }
     }
 
     function updateStrengthBar(score) {
         const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
         const widths = ['w-1/4', 'w-1/2', 'w-3/4', 'w-full'];
-        strengthBar.className = 'h-full rounded transition-all duration-300';
+
+        strengthBar.className = 'h-full transition-all duration-300';
         if (score > 0) {
             strengthBar.classList.add(colors[score - 1], widths[score - 1]);
+        } else {
+            strengthBar.classList.add('w-0');
         }
     }
 
-    // --- Toggle Password Visibility ---
+    // --- 2. Toggle Password Visibility ---
     const togglePasswordButton = document.getElementById('toggle-password-visibility');
     const eyeIconOpen = document.getElementById('eye-icon-open');
     const eyeIconClosed = document.getElementById('eye-icon-closed');
@@ -211,8 +409,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
 
-    // --- AJAX MODAL LOGIC ---
-
+    // --- 3. AJAX Logic (Register & Verify) ---
     const registerForm = document.getElementById('registration-form');
     const verifyForm = document.getElementById('verify-form');
     const modal = document.getElementById('verify-modal');
@@ -233,7 +430,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalMessageContainer = document.getElementById('modal-message-container');
     const modalMessage = document.getElementById('modal-message');
 
-    // 1. Handle Registration Form Submission
+    // Submit Registration
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -245,63 +442,47 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(registerForm);
 
         try {
-            // --- FIXED URL ---
             const response = await fetch('{% url "user:register" %}', {
                 method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    // --- FIX: Add the X-CSRFToken header ---
                     'X-CSRFToken': csrfToken
                 },
                 body: formData
             });
 
-            // Handle non-JSON responses first (like 403 Forbidden HTML page)
             if (!response.ok) {
-                // Try to get text first, might be HTML error page
-                const errorText = await response.text();
                 try {
-                    // See if it's actually JSON
-                    const data = JSON.parse(errorText);
-                    displayFormErrors(data); // Display JSON error
-                } catch(jsonError) {
-                    // It wasn't JSON, likely HTML. Show generic CSRF or server error.
-                    if (response.status === 403) {
-                         displayFormErrors({ 'error': 'Security token validation failed. Please refresh the page and try again.' });
-                    } else {
-                         displayFormErrors({ 'error': `Server error (${response.status}). Please try again later.` });
-                    }
+                    const data = await response.json();
+                    displayFormErrors(data);
+                } catch {
+                    displayFormErrors({ 'error': `Server error (${response.status}). Please try again.` });
                 }
-                return; // Stop processing
+                return;
             }
 
-
-            // --- If response.ok, process as JSON ---
             const data = await response.json();
 
             if (data.success) {
-                modalMessage.textContent = `A verification code has been sent to your WhatsApp at ${data.phone_number}.`;
-                modalMessageContainer.className = 'bg-green-100 border-green-400 text-green-700 px-4 py-3 rounded relative mb-4';
+                // CHANGED: Use email from response
+                modalMessage.textContent = `A verification code has been sent to ${data.email}.`;
+                modalMessageContainer.className = 'bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative mb-4';
                 modal.classList.remove('hidden');
-                // Store the phone number for the verify step if needed later
-                // sessionStorage.setItem('verifyingPhoneNumber', data.phone_number);
             } else {
                 displayFormErrors(data);
             }
 
         } catch (error) {
-             console.error("Fetch Error:", error); // Log the actual error
-             displayFormErrors({ 'error': 'An network or unknown error occurred. Please try again.' });
+             console.error("Fetch Error:", error);
+             displayFormErrors({ 'error': 'A network error occurred. Please try again.' });
         } finally {
             registerButtonText.classList.remove('hidden');
             registerSpinner.classList.add('hidden');
-             // Re-enable button based on password criteria check
             passwordInput.dispatchEvent(new Event('input'));
         }
     });
 
-
-    // 2. Handle Verification Modal Form Submission
+    // Submit Verification
     verifyForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -312,7 +493,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const code = document.getElementById('code').value;
 
         try {
-            // --- FIXED URL ---
+            // CHANGED: URL pointing to verify_phone (which is now verify_email logic)
             const response = await fetch('{% url "user:verify_phone" %}', {
                 method: 'POST',
                 headers: {
@@ -326,27 +507,24 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (data.success) {
-                // Show success message with Swal
                 Swal.fire({
                     title: 'Welcome!',
                     text: 'Your registration was successful.',
                     icon: 'success',
-                    confirmButtonText: 'Great!'
+                    confirmButtonText: 'Continue'
                 }).then((result) => {
-                    // Redirect after the user clicks "Great!"
                     if (result.isConfirmed) {
                         window.location.href = data.redirect_url;
                     }
                 });
             } else {
-                modalMessage.textContent = data.error || 'An error occurred.';
-                modalMessageContainer.className = 'bg-red-100 border-red-400 text-red-700 px-4 py-3 rounded relative mb-4';
+                modalMessage.textContent = data.error || 'Verification failed.';
+                modalMessageContainer.className = 'bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mb-4';
             }
 
-
         } catch (error) {
-            modalMessage.textContent = 'An unknown error occurred. Please try again.';
-            modalMessageContainer.className = 'bg-red-100 border-red-400 text-red-700 px-4 py-3 rounded relative mb-4';
+            modalMessage.textContent = 'An unknown error occurred.';
+            modalMessageContainer.className = 'bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mb-4';
         } finally {
             verifyButton.disabled = false;
             verifyButtonText.classList.remove('hidden');
@@ -354,12 +532,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // 3. Handle Closing the Modal
     closeModalButton.addEventListener('click', () => {
         modal.classList.add('hidden');
     });
 
-    // 4. Helper function to display form errors
     function displayFormErrors(data) {
         registerErrorContainer.classList.remove('hidden');
         registerErrorList.innerHTML = '';

@@ -1,7 +1,7 @@
-# distributorplatform/app/order/models.py
+import uuid
 from django.db import models
 from django.conf import settings
-from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+from django.db.models import Sum, F
 from decimal import Decimal
 
 from product.models import Product
@@ -12,20 +12,22 @@ class Order(models.Model):
         COMPLETED = 'COMPLETED', 'Completed'
         CANCELLED = 'CANCELLED', 'Cancelled'
 
+    # --- CHANGED: Use UUID for ID ---
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     # Link to the agent who placed the order
     agent = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='orders'
     )
-    # You could add another FK to a 'Customer' if agents are selling to others
 
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Order {self.id} by {self.agent.username}"
+        return f"Order {str(self.id)[:8]}... by {self.agent.username}"
 
     @property
     def total_profit(self):
@@ -38,9 +40,6 @@ class Order(models.Model):
     @property
     def total_commission(self):
         """Calculates the total commission earned on this order."""
-        # This assumes a single commission rate for the whole order,
-        # based on the agent's *primary* group.
-        # A more complex system might store commission per-item.
         user_group = self.agent.user_groups.first()
         if not user_group or user_group.commission_percentage == 0:
             return Decimal('0.00')
@@ -70,4 +69,4 @@ class OrderItem(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in Order {self.order.id}"
+        return f"{self.quantity} x {self.product.name} in Order {str(self.order.id)[:8]}..."

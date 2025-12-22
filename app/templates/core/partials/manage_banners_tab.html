@@ -1,0 +1,56 @@
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-medium leading-6 text-gray-900">Manage Banners</h3>
+        <button @click="openBannerModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+            Add New Banner
+        </button>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preview</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                <template x-for="banner in $store.globals.allBanners" :key="banner.id">
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <template x-if="banner.background_image_url">
+                                <img :src="banner.background_image_url" class="h-12 w-20 object-cover rounded shadow-sm">
+                            </template>
+                            <template x-if="!banner.background_image_url">
+                                <div class="h-12 w-20 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400">No Image</div>
+                            </template>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="banner.location_display"></td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-medium text-gray-900" x-text="banner.title || '(No Title)'"></div>
+                            <div class="text-sm text-gray-500 truncate max-w-xs" x-text="banner.subtitle"></div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                  :class="banner.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                                  x-text="banner.is_active ? 'Active' : 'Inactive'"></span>
+                            <div class="text-xs text-gray-400 mt-1">Order: <span x-text="banner.order"></span></div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button @click="openBannerModal(banner)" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                            <button @click="deleteBanner(banner.id)" class="text-red-600 hover:text-red-900">Delete</button>
+                        </td>
+                    </tr>
+                </template>
+                <template x-if="$store.globals.allBanners.length === 0">
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">No banners found. Create one to get started.</td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+</div>

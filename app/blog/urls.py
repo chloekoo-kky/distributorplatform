@@ -16,4 +16,7 @@ urlpatterns = [
 
     # --- ADDED API URL ---
     path('api/manage-posts/', views.api_manage_posts, name='api_manage_posts'),
+    path('api/get-details/<int:post_id>/', views.api_get_post_details, name='api_get_post_details'),
+    path('api/save/', views.api_save_post, name='api_save_post_create'),
+    path('api/save/<int:post_id>/', views.api_save_post, name='api_save_post_update'),
 ]

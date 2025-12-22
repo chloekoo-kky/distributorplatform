@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Subscription Plans{% endblock %}
+
+{% block content %}
+<div class="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto">
+        <div class="text-center">
+            <h1 class="mt-1 text-4xl font-extrabold text-gray-900 sm:text-5xl sm:tracking-tight lg:text-6xl flex flex-col items-center">
+                {% with lines=site_settings.subscription_title_lines %}
+                    <span>{{ lines.0 }}</span>
+                    {% if lines|length > 1 %}
+                        <span class="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-500 mt-2">{{ lines.1 }}</span>
+                    {% endif %}
+                {% endwith %}
+            </h1>
+
+            <div class="max-w-xl mt-5 mx-auto text-xl text-gray-500 flex flex-col items-center">
+                {% with lines=site_settings.subscription_subtitle_lines %}
+                    <p>{{ lines.0 }}</p>
+                    {% if lines|length > 1 %}
+                        <p class="text-lg opacity-80 mt-1">{{ lines.1 }}</p>
+                    {% endif %}
+                {% endwith %}
+            </div>
+        </div>
+
+        <div class="mt-12 space-y-4 sm:mt-16 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-6 lg:max-w-4xl lg:mx-auto xl:max-w-none xl:mx-0 xl:grid-cols-3">
+            {% for plan in plans %}
+            <div class="border border-gray-200 rounded-lg shadow-sm divide-y divide-gray-200 bg-white flex flex-col relative
+                        {% if plan.is_popular %}ring-2 ring-indigo-500{% endif %}">
+
+                {% if plan.is_popular %}
+                    <div class="absolute top-0 right-0 -mt-2 -mr-2 px-3 py-1 bg-indigo-500 text-white text-xs font-bold rounded-full shadow">
+                        POPULAR
+                    </div>
+                {% endif %}
+
+                <div class="p-6">
+                    {# --- 1. Split Name --- #}
+                    <h2 class="text-2xl leading-6 font-bold text-gray-900 flex flex-col">
+                        {% with lines=plan.name_lines %}
+                            <span>{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-lg font-normal text-gray-500 mt-1">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </h2>
+
+                    {# --- 2. Split Description --- #}
+                    <div class="mt-4 text-sm text-gray-500 min-h-[40px]">
+                        {% with lines=plan.description_lines %}
+                            <p>{{ lines.0 }}</p>
+                            {% if lines|length > 1 %}
+                                <p class="text-xs mt-1 opacity-80">{{ lines.1 }}</p>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
+
+                    <p class="mt-8">
+                        <span class="text-4xl font-extrabold text-gray-900">
+                            {% if plan.price > 0 %}RM {{ plan.price|floatformat:0 }}{% else %}Free{% endif %}
+                        </span>
+                        {% if plan.price > 0 %}<span class="text-base font-medium text-gray-500">/mo</span>{% endif %}
+                    </p>
+
+                    {# Buttons Logic (Keep existing) #}
+                    {% if user.is_authenticated %}
+                        {% if plan.id == current_plan_id %}
+                             <button disabled class="mt-8 block w-full bg-green-50 border border-green-100 rounded-md py-2 text-sm font-semibold text-green-700 text-center cursor-default">
+                                Current Plan
+                            </button>
+                        {% else %}
+                            <a href="{% url 'user:checkout' plan.id %}"
+                                class="mt-8 block w-full bg-indigo-600 border border-transparent rounded-md py-2 text-sm font-semibold text-white text-center hover:bg-indigo-700 transition-colors">
+                                    Switch to {{ plan.name_lines.0 }}
+                            </a>
+                        {% endif %}
+                    {% else %}
+                        <a href="{% url 'user:register' %}?plan_id={{ plan.id }}"
+                           class="mt-8 block w-full bg-indigo-600 border border-transparent rounded-md py-2 text-sm font-semibold text-white text-center hover:bg-indigo-700">
+                           Get Started
+                        </a>
+                    {% endif %}
+                </div>
+
+                <div class="pt-6 pb-8 px-6 flex-1">
+                    <h3 class="text-xs font-medium text-gray-900 tracking-wide uppercase">What's included</h3>
+                    <ul role="list" class="mt-6 space-y-4">
+                        {# --- 3. Split Features --- #}
+                        {% for feature_lines in plan.features_lines_list %}
+                        <li class="flex space-x-3 items-start">
+                            <svg class="flex-shrink-0 h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                            <div class="flex flex-col text-sm text-gray-500">
+                                <span>{{ feature_lines.0 }}</span>
+                                {% if feature_lines|length > 1 %}
+                                    <span class="text-xs opacity-80">{{ feature_lines.1 }}</span>
+                                {% endif %}
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+    async function switchPlan(planId, planName) {
+        if (!confirm(`Are you sure you want to switch to the ${planName}?`)) return;
+
+        try {
+            const response = await fetch('{% url "user:api_update_subscription" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ plan_id: planId })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                if (data.action === 'redirect') {
+                    // Redirect user to payment gateway
+                    window.location.href = data.payment_url;
+                } else {
+                    // Free plan, instant update
+                    Swal.fire({
+                        title: 'Success!',
+                        text: `You have successfully switched to ${planName}.`,
+                        icon: 'success',
+                        confirmButtonText: 'Great'
+                    }).then(() => {
+                        location.reload();
+                    });
+                }
+            }
+        } catch (e) {
+            Swal.fire('Error', 'Network error occurred.', 'error');
+        }
+    }
+</script>
+{% endblock %}

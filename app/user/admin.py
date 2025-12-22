@@ -2,7 +2,7 @@
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from .models import (
-    CustomUser, UserGroup,
+    CustomUser, UserGroup, SubscriptionPlan
 )
 
 
@@ -29,6 +29,11 @@ class UserGroupAdmin(admin.ModelAdmin):
         return ", ".join([category.name for category in obj.product_categories.all()])
     display_product_categories.short_description = 'Product Categories'
 
+class SubscriptionPlanAdmin(admin.ModelAdmin):
+    list_display = ('name', 'price', 'target_group', 'is_active', 'is_popular', 'order')
+    list_editable = ('is_active', 'is_popular', 'order')
+    search_fields = ('name', 'target_group__name')
 
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(UserGroup, UserGroupAdmin)
+admin.site.register(SubscriptionPlan)

@@ -1,0 +1,171 @@
+<div x-show="showBannerModal"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     @keydown.escape.window="showBannerModal = false"
+     style="display: none;"
+     x-transition.opacity>
+
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 max-h-[90vh] flex flex-col"
+         @click.away="showBannerModal = false">
+
+        {# --- Modal Header --- #}
+        <button @click="showBannerModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">
+            <span x-text="currentBanner.id ? 'Edit Banner' : 'Create New Banner'"></span>
+        </h3>
+
+        {# --- Modal Body --- #}
+        <form id="banner-form"
+              @submit.prevent="submitBanner"
+              enctype="multipart/form-data"
+              class="flex-1 overflow-y-auto p-6 space-y-6">
+
+            {# Location #}
+            <div>
+                <label class="font-semibold text-gray-700 block mb-1">Location</label>
+                <select name="location" x-model="currentBanner.location"
+                        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                    <option value="HOME_HERO">Home Page Hero | 首页横幅</option>
+                    <option value="HOME_SUB">Home Sub-Feature (Side-by-Side) | 首页副横幅</option>
+                    <option value="GLOBAL_TOP">Global Top Banner | 全局顶部横幅</option>
+                </select>
+            </div>
+
+            {# Title #}
+            <div>
+                <label class="font-semibold text-gray-700 block mb-1">Title</label>
+                <input type="text" name="title" x-model="currentBanner.title"
+                       class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            {# Subtitle #}
+            <div>
+                <label class="font-semibold text-gray-700 block mb-1">Subtitle</label>
+                <textarea name="subtitle" x-model="currentBanner.subtitle" rows="2"
+                          class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+            </div>
+
+            {# Background Image #}
+            <div>
+                <label class="font-semibold text-gray-700 block mb-1">Background Image</label>
+
+                <template x-if="currentBanner.background_image_url">
+                    <div class="mb-3 relative group block w-full overflow-hidden rounded-md border border-gray-200">
+                        <img :src="currentBanner.background_image_url" class="h-32 w-full object-cover">
+                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center">
+                            <span class="text-xs bg-white px-2 py-1 rounded shadow opacity-0 group-hover:opacity-100">Current Image</span>
+                        </div>
+                    </div>
+                </template>
+
+                <input type="file" name="background_image"
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors">
+            </div>
+
+            {# --- Background Styling Section --- #}
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <label class="font-semibold text-gray-700 block mb-3">Background Styling</label>
+
+                <div class="grid grid-cols-2 gap-6">
+                    {# Color Picker #}
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 uppercase">Color Overlay</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="color" name="background_color" x-model="currentBanner.background_color"
+                                   class="h-10 w-16 p-1 border border-gray-300 rounded shadow-sm cursor-pointer bg-white">
+                            <span class="text-xs text-gray-600 font-mono" x-text="currentBanner.background_color"></span>
+                        </div>
+                    </div>
+
+                    {# Opacity Slider #}
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 uppercase">
+                            Opacity: <span x-text="currentBanner.background_opacity + '%'"></span>
+                        </label>
+                        <input type="range" name="background_opacity" x-model="currentBanner.background_opacity"
+                               min="0" max="100" step="5"
+                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">Set opacity to 0% to show only the image.</p>
+            </div>
+
+            {# Text Position #}
+            <div>
+                <label class="font-semibold text-gray-700 block mb-2">Text Position</label>
+                <select name="content_position" x-model="currentBanner.content_position" class="hidden">
+                    <option value="left-top">Top Left</option>
+                    <option value="center-top">Top Center</option>
+                    <option value="right-top">Top Right</option>
+                    <option value="left-middle">Middle Left</option>
+                    <option value="center-middle">Middle Center</option>
+                    <option value="right-middle">Middle Right</option>
+                    <option value="left-bottom">Bottom Left</option>
+                    <option value="center-bottom">Bottom Center</option>
+                    <option value="right-bottom">Bottom Right</option>
+                </select>
+
+                <div class="grid grid-cols-3 gap-2 w-40">
+                    <template x-for="pos in ['left-top', 'center-top', 'right-top', 'left-middle', 'center-middle', 'right-middle', 'left-bottom', 'center-bottom', 'right-bottom']">
+                        <button type="button"
+                                @click="currentBanner.content_position = pos"
+                                class="w-10 h-10 rounded-md border flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
+                                :class="currentBanner.content_position === pos
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md scale-105'
+                                    : 'bg-white border-gray-300 text-gray-400 hover:bg-gray-50'">
+                            <div class="w-2 h-2 rounded-full bg-current"></div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            {# Buttons and Links #}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="font-semibold text-gray-700 block mb-1">Button Text</label>
+                    <input type="text" name="button_text" x-model="currentBanner.button_text" placeholder="e.g. Shop Now"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="font-semibold text-gray-700 block mb-1">Button Link</label>
+                    <input type="text" name="button_link" x-model="currentBanner.button_link" placeholder="e.g. /products/"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+            </div>
+
+            {# Order & Active #}
+            <div class="grid grid-cols-2 gap-6 items-end">
+                <div>
+                    <label class="font-semibold text-gray-700 block mb-1">Order</label>
+                    <input type="number" name="order" x-model="currentBanner.order"
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white h-[42px]">
+                    <input type="checkbox" name="is_active" id="banner_is_active" x-model="currentBanner.is_active"
+                           class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="banner_is_active" class="ml-3 text-sm font-medium text-gray-700">Active</label>
+                </div>
+            </div>
+
+        </form>
+
+        {# --- Modal Footer --- #}
+        <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3 rounded-b-lg">
+            <button type="button" @click="showBannerModal = false"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shadow-sm">
+                Cancel
+            </button>
+            <button type="submit" form="banner-form" :disabled="bannerIsSubmitting"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 flex items-center shadow-sm">
+                <svg x-show="bannerIsSubmitting" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="bannerIsSubmitting ? 'Saving...' : 'Save Banner'"></span>
+            </button>
+        </div>
+
+    </div>
+</div>

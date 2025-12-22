@@ -1,18 +1,18 @@
 {# distributorplatform/app/user/templates/user/manage_agents_tab.html #}
 
 <div x-data="agentManagerData()" x-init="init()">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-        <div>
+        <div class="lg:col-span-1">
             <h3 class="text-2xl font-semibold text-gray-700 mb-6">Agent Groups</h3>
             <div class="bg-white shadow-lg rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission (%)</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission (%)</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
@@ -21,9 +21,9 @@
                             </template>
                             <template x-for="group in groups" :key="group.id">
                                 <tr>
-                                    <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="group.name"></td>
-                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="`${group.commission_percentage}%`"></td>
-                                    <td class="px-6 py-4 text-sm font-medium">
+                                    <td class="px-3 py-4 text-sm font-medium text-gray-900" x-text="group.name"></td>
+                                    <td class="px-3 py-4 text-sm text-gray-500" x-text="`${group.commission_percentage}%`"></td>
+                                    <td class="px-3 py-4 text-sm font-medium">
                                         <button @click="openGroupModal(group)" class="text-indigo-600 hover:text-indigo-900">Edit</button>
                                     </td>
                                 </tr>
@@ -34,7 +34,7 @@
             </div>
         </div>
 
-        <div>
+        <div class="lg:col-span-2">
             <h3 class="text-2xl font-semibold text-gray-700 mb-6">Users</h3>
             <div class="bg-white shadow-lg rounded-lg overflow-hidden">
                 <div class="p-4 border-b">
@@ -45,28 +45,43 @@
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent Groups</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent Groups</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subscription</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment Info</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
+
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <template x-if="isLoadingUsers">
-                                <tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">Loading users...</td></tr>
-                            </template>
-                            <template x-if="!isLoadingUsers && users.length === 0">
-                                <tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">No users found.</td></tr>
-                            </template>
                             <template x-for="user in users" :key="user.id">
                                 <tr>
-                                    <td class="px-6 py-4 text-sm font-medium text-gray-900">
+                                    <td class="px-3 py-4 text-sm font-medium text-gray-900">
                                         <span x-text="user.username"></span>
                                         <span x-show="user.is_staff" class="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Staff</span>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="user.email"></td>
-                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="user.group_names || '-'"></td>
-                                    <td class="px-6 py-4 text-sm font-medium">
+                                    <td class="px-3 py-4 text-sm text-gray-500" x-text="user.email"></td>
+                                    <td class="px-3 py-4 text-sm text-gray-500" x-text="user.group_names || '-'"></td>
+
+                                    <td class="px-3 py-4 text-sm text-gray-500" x-text="user.subscription_plan"></td>
+                                    <td class="px-3 py-4 text-sm">
+                                        <div class="flex flex-col">
+                                            <span class="text-gray-900 font-medium" x-show="user.payment_amount !== '-'" x-text="'RM ' + user.payment_amount"></span>
+                                            <span class="text-gray-500" x-show="user.payment_amount === '-'">-</span>
+
+                                            <span x-show="user.payment_status !== '-'"
+                                                class="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit"
+                                                :class="{
+                                                    'bg-green-100 text-green-800': user.payment_status === 'PAID',
+                                                    'bg-yellow-100 text-yellow-800': user.payment_status === 'PENDING',
+                                                    'bg-red-100 text-red-800': user.payment_status === 'FAILED'
+                                                }"
+                                                x-text="user.payment_status">
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-4 text-sm font-medium">
                                         <button @click="openUserModal(user)" class="text-indigo-600 hover:text-indigo-900">Assign Groups</button>
                                     </td>
                                 </tr>

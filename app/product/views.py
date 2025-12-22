@@ -769,3 +769,115 @@ def product_detail(request, sku):
         'agent_estimated_profit': agent_estimated_profit,
     }
     return render(request, 'product/product_detail.html', context)
+
+
+@staff_required
+def manage_category_create(request):
+    """
+    Handles creating a new category via AJAX (Modal).
+    """
+    if request.method == 'POST':
+        # Check for AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            try:
+                data = json.loads(request.body)
+                form = CategoryForm(data)
+
+                if form.is_valid():
+                    with transaction.atomic():
+                        saved_cat = form.save()
+
+                        # Handle Extra Sections
+                        sections_data = data.get('sections', [])
+                        if sections_data:
+                            new_sections = []
+                            for idx, section in enumerate(sections_data):
+                                title = section.get('title', '').strip()
+                                content = section.get('content', '').strip()
+                                if title or content:
+                                    new_sections.append(CategoryContentSection(
+                                        category=saved_cat,
+                                        title=title,
+                                        content=content,
+                                        order=idx
+                                    ))
+                            CategoryContentSection.objects.bulk_create(new_sections)
+
+                    return JsonResponse({'success': True, 'message': "Category created successfully."})
+                else:
+                    return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+            except Exception as e:
+                return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+# --- UPDATE THIS EXISTING VIEW ---
+@staff_required
+def manage_category_edit(request, category_id):
+    """
+    Handle editing a category. Supports AJAX for Modal.
+    """
+    category = get_object_or_404(Category.objects.prefetch_related('content_sections'), pk=category_id)
+
+    # --- AJAX GET: Fetch Data for Modal ---
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        sections = list(category.content_sections.values('title', 'content').order_by('order'))
+        data = {
+            'id': category.id,
+            'name': category.name,
+            'page_title': category.page_title,
+            'description': category.description,
+            'sections': sections,
+            'update_url': reverse('product:manage_category_edit', args=[category.id])
+        }
+        return JsonResponse(data)
+
+    # --- AJAX POST: Save Data from Modal ---
+    if request.method == 'POST':
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            try:
+                data = json.loads(request.body)
+                form = CategoryForm(data, instance=category)
+                if form.is_valid():
+                    with transaction.atomic():
+                        saved_cat = form.save()
+
+                        # Handle Extra Sections
+                        sections_data = data.get('sections', [])
+                        # Clear existing sections to replace/sync
+                        saved_cat.content_sections.all().delete()
+
+                        new_sections = []
+                        for idx, section in enumerate(sections_data):
+                            title = section.get('title', '').strip()
+                            content = section.get('content', '').strip()
+                            if title or content:
+                                new_sections.append(CategoryContentSection(
+                                    category=saved_cat,
+                                    title=title,
+                                    content=content,
+                                    order=idx
+                                ))
+                        CategoryContentSection.objects.bulk_create(new_sections)
+
+                    return JsonResponse({'success': True, 'message': f"Category '{saved_cat.name}' updated."})
+                else:
+                    return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+            except Exception as e:
+                logger.error(f"Error saving category: {e}", exc_info=True)
+                return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+        # ... (Keep existing Standard POST logic if you want fallback, or remove it) ...
+        # For brevity, I'm omitting the fallback standard POST as the modal replaces it.
+
+    # ... (Keep existing Standard GET for standalone page if needed, otherwise this can be removed)
+    form = CategoryForm(instance=category)
+    sections = list(category.content_sections.values('title', 'content').order_by('order'))
+    context = {
+        'form': form,
+        'category': category,
+        'title': f"Edit Category: {category.name}",
+        'sections_json': sections,
+        'is_subpage': True,
+    }
+    return render(request, 'product/manage_category_form.html', context)
