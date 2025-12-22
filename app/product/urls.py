@@ -16,8 +16,9 @@ urlpatterns = [
 
     # --- NEW: Category Management API ---
     path('api/manage-categories/', views.api_manage_categories, name='api_manage_categories'),
+    path('manage/category/create/', views.manage_category_create, name='manage_category_create'),
     path('manage/category/edit/<int:category_id>/', views.manage_category_edit, name='manage_category_edit'),
-    # ------------------------------------
+            # ------------------------------------
 
     path('upload-products/', views.upload_products, name='upload_products'),
     path('export-products/', views.export_products_csv, name='export_products_csv'),

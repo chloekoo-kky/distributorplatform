@@ -10,6 +10,7 @@ from django.urls import reverse
 import json
 import os
 from django.core.paginator import Paginator, EmptyPage
+from django.views.decorators.http import require_POST, require_GET
 
 from django.core.files.base import ContentFile
 
@@ -205,3 +206,69 @@ def api_manage_posts(request):
             'has_previous': page_obj.has_previous(),
         }
     })
+
+
+@staff_required
+@require_GET
+def api_get_post_details(request, post_id):
+    """Fetch details of a post for editing in modal."""
+    post = get_object_or_404(Post, pk=post_id)
+    data = {
+        'id': post.id,
+        'title': post.title,
+        'slug': post.slug,
+        'content': post.content,
+        'post_type': post.post_type,
+        'is_published': post.status == Post.PostStatus.PUBLISHED,
+        'featured_image': post.featured_image.id if post.featured_image else None,
+        'featured_image_url': post.featured_image.image.url if post.featured_image else '',
+        'user_groups': list(post.user_groups.values_list('id', flat=True)),
+        'related_products': list(post.related_products.values_list('id', flat=True)),
+        'related_products_title': post.related_products_title,
+    }
+    return JsonResponse(data)
+
+@staff_required
+@require_POST
+def api_save_post(request, post_id=None):
+    """Create or update a post via API."""
+    try:
+        data = json.loads(request.body)
+
+        # Prepare data for Form (Django Forms expect dictionary-like data)
+        # We need to map JSON fields to Form fields manually or reconstruct QueryDict
+        form_data = {
+            'title': data.get('title'),
+            'slug': data.get('slug', ''),
+            'content': data.get('content', ''),
+            'post_type': data.get('post_type', 'NEWS'),
+            'status': Post.PostStatus.PUBLISHED if data.get('is_published') else Post.PostStatus.DRAFT,
+            'related_products_title': data.get('related_products_title', ''),
+            'featured_image': data.get('featured_image'), # This expects ID
+        }
+
+        if post_id:
+            post = get_object_or_404(Post, pk=post_id)
+            form = PostForm(data=form_data, instance=post)
+        else:
+            form = PostForm(data=form_data)
+            # Handle user on save
+
+        if form.is_valid():
+            post = form.save(commit=False)
+            if not post_id:
+                post.author = request.user
+            post.save()
+
+            # Save Many-to-Many fields
+            if 'user_groups' in data:
+                post.user_groups.set(data['user_groups'])
+            if 'related_products' in data:
+                post.related_products.set(data['related_products'])
+
+            return JsonResponse({'success': True, 'message': 'Post saved successfully!'})
+        else:
+            return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

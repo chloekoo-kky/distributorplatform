@@ -65,6 +65,25 @@ class CategoryContentSection(models.Model):
     content = HTMLField()
     order = models.PositiveIntegerField(default=0)
 
+    @property
+    def display_name_lines(self):
+        """Splits the category name by '|'."""
+        if '|' in self.name:
+            return [line.strip() for line in self.name.split('|')]
+        return [self.name]
+
+    # --- ADD THIS PROPERTY ---
+    @property
+    def display_title_lines(self):
+        """
+        Returns the lines for the Page Title if set, otherwise falls back to Name.
+        Supports 'Title | Subtitle' format.
+        """
+        text = self.page_title if self.page_title else self.name
+        if text and '|' in text:
+            return [line.strip() for line in text.split('|')]
+        return [text] if text else []
+
     class Meta:
         ordering = ['order']
 
@@ -141,6 +160,16 @@ class Product(models.Model):
         blank=True,
         help_text="Suppliers who provide this product."
     )
+
+    @property
+    def name_lines(self):
+        """
+        Splits the product name by '|' for dual-language display.
+        Example: "Nike Air | 耐克气垫" -> ["Nike Air", "耐克气垫"]
+        """
+        if self.name and '|' in self.name:
+            return [line.strip() for line in self.name.split('|')]
+        return [self.name]
 
     @property
     def discounted_price(self):

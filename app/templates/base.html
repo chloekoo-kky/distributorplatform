@@ -146,15 +146,51 @@
                         {% if site_settings.site_logo %}
                             <img src="{{ site_settings.site_logo.url }}" alt="{{ site_settings.site_name }}" class="h-10 w-auto object-contain">
                         {% endif %}
-                        <span class="text-2xl font-bold text-indigo-600">
-                            {{ site_settings.site_name|default:"Distributor Platform" }}
-                        </span>
+                        <div class="flex flex-col">
+                            {% with lines=site_settings.site_name_lines %}
+                                <span class="text-2xl font-bold leading-none"
+                                      style="color: {{ site_settings.site_name_color }};">
+                                    {{ lines.0|default:"Distributor Platform" }}
+                                </span>
+                                {% if lines|length > 1 %}
+                                    <span class="text-sm font-medium leading-none mt-1"
+                                          style="color: {{ site_settings.site_name_subtitle_color }};">
+                                        {{ lines.1 }}
+                                    </span>
+                                {% endif %}
+                            {% endwith %}
+                        </div>
                     </a>
                     <div class="hidden md:flex space-x-8">
+                        {# --- Main Menu Links Loop --- #}
                         {% for link in main_menu_links %}
-                            <a href="{{ link.get_absolute_url }}" class="text-gray-500 hover:text-gray-900">{{ link.title }}</a>
+                        <a href="{{ link.get_absolute_url }}"
+                        class="flex flex-col justify-center items-center py-2 px-2 border-b-2 font-medium transition-colors duration-200 min-w-max border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+
+                            {% with lines=link.title_lines %}
+                                {# Primary Language (Line 1) #}
+                                <span class="text-base leading-tight">{{ lines.0 }}</span>
+
+                                {# Secondary Language (Line 2) #}
+                                {% if lines|length > 1 %}
+                                    <span class="text-xs leading-tight opacity-80">{{ lines.1 }}</span>
+                                {% endif %}
+                            {% endwith %}
+                        </a>
                         {% endfor %}
-                        <a href="{% url 'blog:post_list' %}" class="text-gray-500 hover:text-gray-900">了解市场</a>
+                        <a href="{% url 'blog:post_list' %}"
+                            class="flex flex-col justify-center items-center py-2 px-2 border-b-2 font-medium transition-colors duration-200 min-w-max border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+
+                                {% with lines=site_settings.market_insights_nav_lines %}
+                                    {# Primary Language (Line 1) #}
+                                    <span class="text-base leading-tight">{{ lines.0 }}</span>
+
+                                    {# Secondary Language (Line 2) #}
+                                    {% if lines|length > 1 %}
+                                        <span class="text-xs leading-tight opacity-80">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
                     </div>
                 </div>
 
@@ -162,6 +198,7 @@
                     {% if user.is_authenticated %}
 
                         {% if user.is_staff %}
+                            <a href="{% url 'order:manage_orders' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Orders</a>
                             <a href="{% url 'manage_dashboard' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Manage</a>
                         {% endif %}
 
@@ -199,15 +236,56 @@
                             </div>
 
                             <div id="user-menu" class="dropdown-menu absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden opacity-0 transform scale-95" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
-                                <span class="block px-4 py-2 text-sm text-gray-700 font-medium border-b border-gray-100" role="none">
-                                    Signed in as<br><strong>{{ user.username }}</strong>
+
+                                {# 1. Signed in as #}
+                                <span class="block px-4 py-2 text-sm text-gray-700 border-b border-gray-100" role="none">
+                                    <div class="flex flex-col items-start">
+                                        {% with lines=site_settings.user_menu_signed_in_lines %}
+                                            <span class="font-medium">{{ lines.0 }}</span>
+                                            {% if lines|length > 1 %}
+                                                <span class="text-xs text-gray-400 mb-1">{{ lines.1 }}</span>
+                                            {% endif %}
+                                        {% endwith %}
+                                        <strong class="text-gray-600 truncate w-full block">{{ user.username }}</strong>
+                                    </div>
                                 </span>
-                                <a href="{% url 'user:profile' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-0">Your Profile</a>
-                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-1">Settings</a>
+
+                                {# 2. Your Profile #}
+                                <a href="{% url 'user:profile' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-0">
+                                    <div class="flex flex-col items-start">
+                                        {% with lines=site_settings.user_menu_profile_lines %}
+                                            <span class="group-hover:text-gray-900">{{ lines.0 }}</span>
+                                            {% if lines|length > 1 %}
+                                                <span class="text-xs text-gray-400 group-hover:text-gray-500">{{ lines.1 }}</span>
+                                            {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </a>
+
+                                {# 3. Settings #}
+                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-1">
+                                    <div class="flex flex-col items-start">
+                                        {% with lines=site_settings.user_menu_settings_lines %}
+                                            <span class="group-hover:text-gray-900">{{ lines.0 }}</span>
+                                            {% if lines|length > 1 %}
+                                                <span class="text-xs text-gray-400 group-hover:text-gray-500">{{ lines.1 }}</span>
+                                            {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </a>
+
+                                {# 4. Sign Out #}
                                 <form action="{% url 'user:logout' %}" method="post" role="none">
                                     {% csrf_token %}
-                                    <button type="submit" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-2">
-                                        Sign out
+                                    <button type="submit" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-2">
+                                        <div class="flex flex-col items-start">
+                                            {% with lines=site_settings.user_menu_signout_lines %}
+                                                <span class="font-medium">{{ lines.0 }}</span>
+                                                {% if lines|length > 1 %}
+                                                    <span class="text-xs text-gray-400 group-hover:text-gray-500">{{ lines.1 }}</span>
+                                                {% endif %}
+                                            {% endwith %}
+                                        </div>
                                     </button>
                                 </form>
                             </div>
@@ -216,9 +294,22 @@
                         <span class="text-sm text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
                             Guest
                         </span>
-                        <a href="{% url 'user:login' %}" class="text-gray-500 hover:text-gray-900">Login</a>
-                        <a href="{% url 'user:register' %}" class="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                            Register
+                        <a href="{% url 'user:login' %}" class="text-gray-500 hover:text-gray-900 flex flex-col items-center mx-2">
+                            {% with lines=site_settings.nav_login_lines %}
+                                <span class="text-sm font-medium leading-none">{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}
+                                    <span class="text-[10px] opacity-80 leading-none mt-0.5">{{ lines.1 }}</span>
+                                {% endif %}
+                            {% endwith %}
+                        </a>
+
+                        <a href="{% url 'user:register' %}" class="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex flex-col items-center">
+                            {% with lines=site_settings.nav_register_lines %}
+                                <span class="font-bold leading-none">{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}
+                                    <span class="text-[10px] opacity-90 leading-none mt-0.5">{{ lines.1 }}</span>
+                                {% endif %}
+                            {% endwith %}
                         </a>
                     {% endif %}
                 </div>
@@ -227,19 +318,41 @@
     </nav>
 
     {% block full_width_banner %}
-    <div class="bg-yellow-400 text-gray-900">
-        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 rounded-lg flex flex-col sm:flex-row items-center justify-between text-center sm:text-left">
-            <div class="flex-1">
-                <p class="text-xl sm:text-2xl font-bold">New Arrivals Every Week!</p>
-                <p class="text-sm sm:text-base mt-1">Discover our latest products and exclusive deals.</p>
+    {% if active_global_banner %}
+    <div class="relative overflow-hidden shadow-md transition-colors duration-300"
+         style="background-color: {{ active_global_banner.rgba_color }}; color: white;">
+
+        {% if active_global_banner.background_image %}
+            <div class="absolute inset-0">
+                <img class="w-full h-full object-cover opacity-40" src="{{ active_global_banner.background_image.url }}" alt="Banner Background">
+                <div class="absolute inset-0 mix-blend-multiply"
+                     style="background-color: {{ active_global_banner.rgba_color }};">
+                </div>
             </div>
+        {% endif %}
+
+        <div class="relative max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-center sm:text-left">
+            <div class="flex-1">
+                {% if active_global_banner.title %}
+                    <p class="text-xl sm:text-2xl font-bold">{{ active_global_banner.title }}</p>
+                {% endif %}
+                {% if active_global_banner.subtitle %}
+                    <p class="text-sm sm:text-base mt-1 text-indigo-50">
+                       {{ active_global_banner.subtitle }}
+                    </p>
+                {% endif %}
+            </div>
+            {% if active_global_banner.button_text and active_global_banner.button_link %}
             <div class="mt-4 sm:mt-0 sm:ml-6">
-                <a href="{% url 'product:product_list' %}" class="inline-block bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg shadow-lg transform hover:scale-105 transition duration-300">
-                    Shop Now
+                <a href="{{ active_global_banner.button_link }}"
+                   class="inline-block font-semibold py-2 px-6 rounded-lg shadow transition duration-300 bg-white text-indigo-900 hover:bg-gray-50">
+                    {{ active_global_banner.button_text }}
                 </a>
             </div>
+            {% endif %}
         </div>
     </div>
+    {% endif %}
     {% endblock %}
 
     {% block full_width_sticky_nav %}
@@ -285,39 +398,58 @@
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9.75l-9-5.25M12 17.25v-9.75" />
                     </svg>
-                    <span class="text-xs mt-1">Products</span>
-                </a>
 
-                {% for link in main_menu_links %}
-                <a href="{{ link.get_absolute_url }}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                    </svg>
-                    <span class="text-xs mt-1">{{ link.title|truncatechars:10 }}</span>
+                    {# CHANGED: Dual line text #}
+                    {% with lines=site_settings.mobile_nav_products_lines %}
+                        <span class="text-[10px] font-bold leading-none mt-1">{{ lines.0 }}</span>
+                        {% if lines|length > 1 %}
+                            <span class="text-[9px] leading-none opacity-80 scale-90">{{ lines.1 }}</span>
+                        {% endif %}
+                    {% endwith %}
                 </a>
-                {% endfor %}
 
                 {% if user.is_authenticated %}
                     <a href="{% url 'order:place_order' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.view_name == 'order:place_order' %}active{% endif %}">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
                         </svg>
-                        <span class="text-xs mt-1">Order</span>
+
+                        {# CHANGED: Dual line text #}
+                        {% with lines=site_settings.mobile_nav_order_lines %}
+                            <span class="text-[12px] font-bold leading-none mt-1">{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-[10px] leading-none opacity-80 scale-90">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
                     </a>
 
                     <a href="{% url 'user:profile' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        <span class="text-xs mt-1">Account</span>
+
+                        {# CHANGED: Dual line text #}
+                        {% with lines=site_settings.mobile_nav_account_lines %}
+                            <span class="text-[12px] font-bold leading-none mt-1">{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-[10px] leading-none opacity-80 scale-90">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
                     </a>
                  {% else %}
                  <a href="{% url 'user:login' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.url_name == 'login' %}active{% endif %}">
-                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
                     </svg>
-                    <span class="text-xs mt-1">Login</span>
-                 </a>
+
+                    {# CHANGED: Dual line text #}
+                    {% with lines=site_settings.mobile_nav_login_lines %}
+                        <span class="text-[12px] font-bold leading-none mt-1">{{ lines.0 }}</span>
+                        {% if lines|length > 1 %}
+                            <span class="text-[10px] leading-none opacity-80 scale-90">{{ lines.1 }}</span>
+                        {% endif %}
+                    {% endwith %}
+                </a>
                  {% endif %}
             </div>
         </div>
@@ -329,8 +461,18 @@
 
                 {# Column 1: About & Social #}
                 <div class="space-y-4">
-                    <h3 class="text-lg font-bold text-indigo-600 tracking-wider uppercase">
-                        {{ site_settings.site_name|default:"Distributor Platform" }}
+                    <h3 class="text-lg font-bold tracking-wider uppercase flex flex-col">
+                        {% with lines=site_settings.site_name_lines %}
+                            <span style="color: {{ site_settings.site_name_color }};">
+                                {{ lines.0|default:"Distributor Platform" }}
+                            </span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs normal-case opacity-80 mt-0.5"
+                                      style="color: {{ site_settings.site_name_subtitle_color }};">
+                                    {{ lines.1 }}
+                                </span>
+                            {% endif %}
+                        {% endwith %}
                     </h3>
                     <p class="text-gray-500 text-sm">
                         {{ site_settings.footer_about_text|default:"Connecting suppliers and distributors with efficiency and ease." }}
@@ -353,21 +495,79 @@
 
                 {# Column 2: Quick Links #}
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">歡迎來到我們的頁面</h3>
+                    {# --- HEADER --- #}
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4 flex flex-col">
+                        {% with lines=site_settings.footer_col2_title_lines %}
+                            <span>{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs normal-case opacity-80 mt-0">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </h3>
+
                     <ul class="space-y-3">
-                        {# Standard Navigation #}
-                        <li><a href="{% url 'product:home' %}" class="text-base text-gray-500 hover:text-gray-900">主頁</a></li>
-                        <li><a href="{% url 'product:product_list' %}" class="text-base text-gray-500 hover:text-gray-900">所有產品</a></li>
-                        <li><a href="{% url 'blog:post_list' %}" class="text-base text-gray-500 hover:text-gray-900">市場咨詢</a></li>
+                        {# --- STANDARD LINKS --- #}
+
+                        {# 1. Home #}
+                        <li>
+                            <a href="{% url 'product:home' %}" class="group block">
+                                {% with lines=site_settings.footer_link_home_lines %}
+                                    <span class="block text-base text-gray-500 group-hover:text-gray-900">{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
+                        </li>
+
+                        {# 2. All Products #}
+                        <li>
+                            <a href="{% url 'product:product_list' %}" class="group block">
+                                {% with lines=site_settings.footer_link_products_lines %}
+                                    <span class="block text-base text-gray-500 group-hover:text-gray-900">{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
+                        </li>
+
+                        {# 3. Blog / Insights #}
+                        <li>
+                            <a href="{% url 'blog:post_list' %}" class="group block">
+                                {% with lines=site_settings.footer_link_blog_lines %}
+                                    <span class="block text-base text-gray-500 group-hover:text-gray-900">{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
+                        </li>
+
+                        {# 4. My Account (Conditional) #}
                         {% if user.is_authenticated %}
-                            <li><a href="{% url 'user:profile' %}" class="text-base text-gray-500 hover:text-gray-900">我的賬戶</a></li>
+                            <li>
+                                <a href="{% url 'user:profile' %}" class="group block">
+                                    {% with lines=site_settings.footer_link_account_lines %}
+                                        <span class="block text-base text-gray-500 group-hover:text-gray-900">{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}
+                                            <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0">{{ lines.1 }}</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </a>
+                            </li>
                         {% endif %}
 
-                        {# Dynamic Footer Links #}
+                        {# --- DYNAMIC FOOTER LINKS (From Post Model) --- #}
                         {% for link in footer_quick_links %}
                             <li>
-                                <a href="{{ link.get_absolute_url }}" class="text-base text-gray-500 hover:text-gray-900">
-                                    {{ link.title }}
+                                <a href="{{ link.get_absolute_url }}" class="group block">
+                                    {% with lines=link.title_lines %}
+                                        <span class="block text-base text-gray-500 group-hover:text-gray-900">{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}
+                                            <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0">{{ lines.1 }}</span>
+                                        {% endif %}
+                                    {% endwith %}
                                 </a>
                             </li>
                         {% endfor %}
@@ -376,28 +576,72 @@
 
                 {# Column 3: Categories (Available to User Group) #}
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">產品分類</h3>
+                    {# CHANGED: Dynamic Header #}
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4 flex flex-col">
+                        {% with lines=site_settings.footer_col3_title_lines %}
+                            <span>{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs normal-case opacity-80 mt-0.5">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </h3>
+
                     <ul class="space-y-3">
                         {# The allowed_categories_list is provided by the product context processor #}
                         {% for category in allowed_categories_list|slice:":6" %}
                             <li>
-                                <a href="{% url 'product:product_list' %}?category={{ category.code }}" class="text-base text-gray-500 hover:text-gray-900">
-                                    {{ category.name }}
+                                <a href="{% url 'product:product_list' %}?category={{ category.code }}" class="group block">
+                                    {# CHANGED: Dual Line Category Name #}
+                                    {% with lines=category.display_name_lines %}
+                                        <span class="block text-base text-gray-500 group-hover:text-gray-900 leading-tight">
+                                            {{ lines.0 }}
+                                        </span>
+                                        {% if lines|length > 1 %}
+                                            <span class="block text-xs text-gray-400 group-hover:text-gray-600 mt-0.5">
+                                                {{ lines.1 }}
+                                            </span>
+                                        {% endif %}
+                                    {% endwith %}
                                 </a>
                             </li>
                         {% empty %}
                             <li class="text-sm text-gray-400 italic">No categories available.</li>
                         {% endfor %}
+
                         {% if allowed_categories_list|length > 6 %}
-                            <li><a href="{% url 'product:product_list' %}" class="text-sm text-indigo-600 hover:text-indigo-500">View all categories &rarr;</a></li>
+                            <li>
+                                <a href="{% url 'product:product_list' %}" class="group block mt-2">
+                                    {# CHANGED: Dual Line 'View All' Link #}
+                                    {% with lines=site_settings.footer_view_all_lines %}
+                                        <span class="block text-sm text-indigo-600 group-hover:text-indigo-500 font-medium leading-tight">
+                                            {{ lines.0 }} &rarr;
+                                        </span>
+                                        {% if lines|length > 1 %}
+                                            <span class="block text-[10px] text-indigo-400 group-hover:text-indigo-300 mt-0.5">
+                                                {{ lines.1 }} &rarr;
+                                            </span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </a>
+                            </li>
                         {% endif %}
                     </ul>
                 </div>
 
                 {# Column 4: Contact Info #}
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4">關注我們</h3>
+                    {# CHANGED: Dynamic Header #}
+                    <h3 class="text-lg font-semibold text-gray-400 tracking-wider uppercase mb-4 flex flex-col">
+                        {% with lines=site_settings.footer_col4_title_lines %}
+                            <span>{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs normal-case opacity-80 mt-0.5">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </h3>
+
                     <ul class="space-y-3">
+                        {# ... (Keep existing contact info loop) ... #}
                         {% if site_settings.contact_address %}
                         <li class="flex items-start">
                             <svg class="h-6 w-6 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>

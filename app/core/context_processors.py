@@ -1,5 +1,5 @@
 # distributorplatform/app/core/context_processors.py
-from .models import SiteSetting, ProductFeature
+from .models import SiteSetting, ProductFeature, Banner
 from blog.models import Post
 
 def site_settings_context(request):
@@ -28,7 +28,7 @@ def site_settings_context(request):
         main_menu_links = Post.objects.filter(
             post_type=Post.PostType.MAIN_MENU,
             status=Post.PostStatus.PUBLISHED
-        ).order_by('created_at')
+        ).order_by('order', 'created_at') # Sort by Order first
     except Exception:
         main_menu_links = []
 
@@ -37,9 +37,24 @@ def site_settings_context(request):
     except Exception:
         global_product_features = []
 
+    active_home_banner = Banner.objects.filter(
+        location='HOME_HERO', is_active=True
+    ).order_by('order', '-created_at').first()
+
+    active_home_sub_banners = Banner.objects.filter(
+        location='HOME_SUB', is_active=True
+    ).order_by('order', '-created_at')[:2]
+
+    active_global_banner = Banner.objects.filter(
+        location='GLOBAL_TOP', is_active=True
+    ).order_by('order', '-created_at').first()
+
     return {
         'site_settings': settings_obj,
         'footer_quick_links': footer_quick_links,
         'main_menu_links': main_menu_links,
         'global_product_features': global_product_features,
+        'active_home_banner': active_home_banner,
+        'active_home_sub_banners': active_home_sub_banners,
+        'active_global_banner': active_global_banner,
     }

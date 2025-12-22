@@ -1,9 +1,11 @@
+{# distributorplatform/app/seo/templates/seo/manage_seo_tab.html #}
 <div class="flex justify-between items-center mb-6">
     <h3 class="text-2xl font-semibold text-gray-700">Manage SEO & Meta Tags</h3>
-    <a href="{% url 'seo:manage_seo_create' %}" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center">
+    <button @click="$dispatch('open-seo-modal')"
+            class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center">
         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
         Add New Page Setting
-    </a>
+    </button>
 </div>
 
 <div class="bg-white shadow-lg rounded-lg overflow-hidden">
@@ -24,7 +26,10 @@
                     <td class="px-6 py-4 text-sm text-gray-500 font-mono">{{ meta.page_path }}</td>
                     <td class="px-6 py-4 text-sm text-gray-500">{{ meta.meta_title }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <a href="{% url 'seo:manage_seo_edit' meta.id %}" class="text-indigo-600 hover:text-indigo-900">Edit</a>
+                        <button @click="$dispatch('open-seo-modal', {{ meta.id }})"
+                                class="text-indigo-600 hover:text-indigo-900 focus:outline-none">
+                            Edit
+                        </button>
                     </td>
                 </tr>
                 {% empty %}

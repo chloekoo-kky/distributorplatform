@@ -1,10 +1,12 @@
 # distributorplatform/app/core/views.py
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from inventory.models import Supplier
 from product.models import Category
 from images.models import ImageCategory
 from inventory.views import staff_required # Re-use the staff_required decorator
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
 
 # Import forms needed for modals
 from inventory.forms import (
@@ -23,9 +25,9 @@ from blog.models import Post
 from seo.models import PageMetadata
 from sales.models import Invoice
 
-# --- START MODIFICATION ---
 from user.models import UserGroup # Import UserGroup
-# --- END MODIFICATION ---
+from .models import Banner
+from .forms import BannerForm
 
 # --- Make sure logging is imported ---
 import logging
@@ -73,10 +75,6 @@ def manage_dashboard(request):
     # 3. Create the flat list from the set
     all_categories_flat_list = sorted(list(all_categories_set))
 
-    # --- END: ROBUST FILTER DATA GENERATION ---
-
-
-    # --- (Optional) Log the final, clean map ---
     try:
         logger.info(f"[DEBUG] manage_dashboard: CLEANED group_to_categories_map: {json.dumps(group_to_categories_map, indent=2)}")
     except Exception as e:
@@ -125,6 +123,24 @@ def manage_dashboard(request):
     # 3. For SEO Tab
     all_seo_settings = PageMetadata.objects.all().order_by('page_path')
 
+    all_banners = Banner.objects.all().order_by('location', 'order', '-created_at')
+
+    all_banners_list = [{
+        'id': b.id,
+        'location': b.location,
+        'location_display': b.get_location_display(),
+        'title': b.title,
+        'subtitle': b.subtitle,
+        'background_image_url': b.background_image.url if b.background_image else '',
+        'background_color': b.background_color,
+        'background_opacity': b.background_opacity,
+        'content_position': b.content_position,
+        'button_text': b.button_text,
+        'button_link': b.button_link,
+        'is_active': b.is_active,
+        'order': b.order
+    } for b in all_banners]
+
     context = {
         'title': 'Manage Dashboard',
         'is_subpage': False,
@@ -144,15 +160,16 @@ def manage_dashboard(request):
         'today_date': datetime.date.today(),
 
         'product_upload_form': ProductUploadForm(),
-        # --- MODIFICATION: Pass raw lists (not json strings) ---
+
         'all_categories_list': all_categories_list,
         'all_suppliers_list': all_suppliers_list,
-        # --- END MODIFICATION ---
+
         'all_image_categories_json': json.dumps(all_image_categories),
 
-        # --- START MODIFICATION ---
         'all_user_groups_list': all_user_groups_list, # Pass the new list
-        # --- END MODIFICATION ---
+        'all_banners_list': all_banners_list,
+
+        'banner_form': BannerForm(),
 
         'invoices': all_invoices,
         'blog_posts': all_blog_posts,
@@ -160,3 +177,28 @@ def manage_dashboard(request):
     }
 
     return render(request, 'core/manage_tools.html', context)
+
+
+@staff_required
+@require_POST
+def api_save_banner(request, banner_id=None):
+    """Create or Update a banner."""
+    if banner_id:
+        banner = get_object_or_404(Banner, pk=banner_id)
+        form = BannerForm(request.POST, request.FILES, instance=banner)
+    else:
+        form = BannerForm(request.POST, request.FILES)
+
+    if form.is_valid():
+        banner = form.save()
+        return JsonResponse({'success': True})
+    else:
+        return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+
+
+@staff_required
+@require_POST
+def api_delete_banner(request, banner_id):
+    banner = get_object_or_404(Banner, pk=banner_id)
+    banner.delete()
+    return JsonResponse({'success': True})

@@ -4,7 +4,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from . import views as core_views # <-- ADD THIS
+from . import views as core_views
+from . import views
 
 handler403 = 'user.views.handler403'
 
@@ -20,13 +21,17 @@ urlpatterns = [
     # --- END MODIFICATION ---
 
     # Your application URLs
-    path('accounts/', include('user.urls', namespace='user')),
+    path('user/', include('user.urls', namespace='user')),
     path('inventory/', include('inventory.urls', namespace='inventory')),
     path('sales/', include('sales.urls', namespace='sales')),
     path('blog/', include('blog.urls', namespace='blog')),
     path('seo/', include('seo.urls', namespace='seo')),
     path('images/', include('images.urls', namespace='images')),
     path('tinymce/', include('tinymce.urls')),
+
+    path('manage/api/save-banner/', views.api_save_banner, name='api_save_banner'),
+    path('manage/api/save-banner/<int:banner_id>/', views.api_save_banner, name='api_update_banner'),
+    path('manage/api/delete-banner/<int:banner_id>/', views.api_delete_banner, name='api_delete_banner'),
 ]
 
 # Add static and media file serving for development

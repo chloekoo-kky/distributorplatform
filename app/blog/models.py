@@ -69,6 +69,11 @@ class Post(models.Model):
         related_name="post_galleries"
     )
 
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Control the display order (lower numbers appear first). Useful for Main Menu links."
+    )
+
     status = models.CharField(max_length=10, choices=PostStatus.choices, default=PostStatus.DRAFT)
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -86,8 +91,18 @@ class Post(models.Model):
         help_text="Select groups to restrict this post to. Leave blank for a public post."
     )
 
+    @property
+    def title_lines(self):
+        """
+        Splits the post title by '|' for dual-language display.
+        Useful for Footer Links or Menu items.
+        """
+        if '|' in self.title:
+            return [line.strip() for line in self.title.split('|')]
+        return [self.title]
+
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['order', '-created_at']
 
     def __str__(self):
         return self.title
