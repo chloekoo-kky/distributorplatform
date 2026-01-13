@@ -728,6 +728,7 @@ def export_order_statement(request):
     """
     Export orders to CSV based on Month/Year.
     Rows are split by Order Item.
+    Order Total is only shown on the LAST item row of each order.
     """
     try:
         month = int(request.GET.get('month', timezone.now().month))
@@ -750,23 +751,29 @@ def export_order_statement(request):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         writer = csv.writer(response)
-        # Header Row - Updated for split items
+        # Header Row
         writer.writerow([
             'Date', 'Order ID', 'Customer', 'Type', 'Status', 'Payment Method',
             'Product Name', 'SKU', 'Quantity', 'Unit Price (RM)', 'Line Total (RM)', 'Order Total (RM)'
         ])
 
         for order in orders:
-            # Determine type (Agent or Customer)
             is_agent = order.agent.user_groups.filter(commission_percentage__gt=0).exists()
             user_type = "Agent" if is_agent else "Customer"
 
-            # Calculate Order Total for reference column
-            order_total = sum(item.selling_price * item.quantity for item in order.items.all())
+            # Fetch all items to a list to check length
+            items = list(order.items.all())
+            order_total = sum(item.selling_price * item.quantity for item in items)
+            total_items_count = len(items)
 
-            # Loop through items to create one row per item
-            for item in order.items.all():
+            for index, item in enumerate(items):
                 line_total = item.selling_price * item.quantity
+
+                # --- LOGIC UPDATE: Show Order Total ONLY on the LAST row ---
+                if index == total_items_count - 1:
+                    row_order_total = f"{order_total:.2f}"
+                else:
+                    row_order_total = "" # Empty for previous rows
 
                 writer.writerow([
                     order.created_at.strftime('%Y-%m-%d %H:%M'),
@@ -780,7 +787,7 @@ def export_order_statement(request):
                     item.quantity,
                     f"{item.selling_price:.2f}",
                     f"{line_total:.2f}",
-                    f"{order_total:.2f}"
+                    row_order_total  # Only populated for last item
                 ])
 
         return response
