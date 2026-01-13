@@ -867,6 +867,17 @@
                 } else {
                     console.error('CSRF token not found on page.');
                 }
+
+                // Watch for tab changes and scroll to top
+                this.$watch('tab', (val) => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+
+                // Ensure Back/Forward button updates the tab correctly
+                window.addEventListener('hashchange', () => {
+                    this.tab = window.location.hash || '#quotations';
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
             },
 
             // --- Modal Functions (Live in parent) ---
@@ -1429,6 +1440,10 @@
 
         <div x-show="tab === '#banners'" id="banners" x-cloak>
              {% include 'core/partials/manage_banners_tab.html' %}
+        </div>
+
+        <div x-show="tab === '#commissions'" id="commissions" x-cloak>
+             {% include 'commission/manage_commissions_tab.html' %}
         </div>
 
         <div x-show="tab === '#orders'" id="orders" x-cloak>

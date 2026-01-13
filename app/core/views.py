@@ -33,6 +33,10 @@ from .forms import BannerForm
 import logging
 logger = logging.getLogger(__name__)
 
+try:
+    import weasyprint
+except ImportError:
+    weasyprint = None
 
 @staff_required
 def manage_dashboard(request):

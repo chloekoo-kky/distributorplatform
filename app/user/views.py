@@ -4,6 +4,7 @@ import logging
 import time
 import uuid
 import requests
+import urllib.parse
 
 from django.shortcuts import render, redirect, get_object_or_404 # Add get_object_or_404
 from django.contrib.auth import login
@@ -17,24 +18,20 @@ from django_ratelimit.exceptions import Ratelimited
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.http import HttpResponse
+from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth import update_session_auth_hash
 
-from core.models import SiteSetting
+from core.models import SiteSetting, PaymentOption
 from .forms import CustomUserCreationForm
-from .models import UserGroup, CustomUser, SubscriptionPlan
+from .models import UserGroup, CustomUser, SubscriptionPlan, SubscriptionPayment
 from .utils import generate_verification_code, send_verification_code
-from django.core.paginator import Paginator, EmptyPage # Add Paginator
-from django.db.models import Q # Add Q
-from inventory.views import staff_required # Add staff_required
-from decimal import Decimal # Add Decimal
-
-
-
-from .forms import CustomUserCreationForm
-from .models import UserGroup, CustomUser, SubscriptionPayment
-from .utils import generate_verification_code, send_verification_code
+from django.core.paginator import Paginator, EmptyPage
+from django.db.models import Q
+from inventory.views import staff_required
+from decimal import Decimal
 from order.models import Order
 from commission.models import CommissionLedger
-
+from .forms import UserSettingsForm
 
 logger = logging.getLogger(__name__)
 
@@ -268,26 +265,52 @@ def profile_view(request):
 
     # Determine current plan based on user's groups
     current_plan_id = None
-    # We look for a plan whose target_group matches one of the user's groups
     for plan in plans:
         if user.user_groups.filter(id=plan.target_group.id).exists():
             current_plan_id = plan.id
             break
 
+    # --- NEW: Get Payment Options for the Modal ---
+    payment_options = PaymentOption.objects.filter(is_active=True)
+
     context = {
         'is_agent': is_agent,
         'orders': orders,
-        'plans': plans,               # Passed to template
-        'current_plan_id': current_plan_id # Passed to template
+        'plans': plans,
+        'current_plan_id': current_plan_id,
+        'payment_options': payment_options, # Passed to template
     }
 
     # 3. Get Commission Data (Agent Only)
     if is_agent:
-        commissions = CommissionLedger.objects.filter(agent=user).select_related('order_item__product').order_by('-created_at')
+        # --- OPTIMIZED QUERY: Added 'order_item__order__agent' to display Customer name ---
+        commissions = CommissionLedger.objects.filter(agent=user).select_related(
+            'order_item__product',
+            'order_item__order',
+            'order_item__order__agent'  # Fetch the customer/buyer details
+        ).order_by('-created_at')
 
-        total_earnings = commissions.exclude(status='CANCELLED').aggregate(sum=Sum('amount'))['sum'] or 0
-        pending_payout = commissions.filter(status='PENDING').aggregate(sum=Sum('amount'))['sum'] or 0
-        paid_payout = commissions.filter(status='PAID').aggregate(sum=Sum('amount'))['sum'] or 0
+        # --- REVISED LOGIC: Commission is only "EARNED" if Order Status is COMPLETED ---
+
+        # Total Earnings (All Time):
+        # Commission is not CANCELLED AND Order is COMPLETED
+        total_earnings = commissions.filter(
+            ~Q(status=CommissionLedger.CommissionStatus.CANCELLED),
+            order_item__order__status=Order.OrderStatus.COMPLETED
+        ).aggregate(sum=Sum('amount'))['sum'] or Decimal('0.00')
+
+        # Pending Payout (Waiting for Admin):
+        # Ledger is PENDING AND Order is COMPLETED (Eligible)
+        pending_payout = commissions.filter(
+            status=CommissionLedger.CommissionStatus.PENDING,
+            order_item__order__status=Order.OrderStatus.COMPLETED
+        ).aggregate(sum=Sum('amount'))['sum'] or Decimal('0.00')
+
+        # Paid Out (Already Paid):
+        # Ledger is PAID
+        paid_payout = commissions.filter(
+            status=CommissionLedger.CommissionStatus.PAID
+        ).aggregate(sum=Sum('amount'))['sum'] or Decimal('0.00')
 
         context.update({
             'commissions': commissions,
@@ -340,17 +363,13 @@ def api_update_subscription(request):
         )
 
         # 4. Payment Gateway Logic
-        if config.payment_provider == 'TOYYIBPAY':
-            # Pass the annual_price to the helper
-            return _initiate_toyyibpay_payment(request, user, selected_plan, config, ref_id, annual_price)
+        if config.payment_provider == 'SENANGPAY':
+            # Updated to call SenangPay helper
+            return _initiate_senangpay_subscription_payment(request, user, selected_plan, config, ref_id, annual_price)
 
         elif config.payment_provider == 'BILLPLZ':
             # Placeholder for Billplz logic
             return _initiate_billplz_payment(request, user, selected_plan, config, ref_id)
-
-        elif config.payment_provider == 'STRIPE':
-            # Placeholder for Stripe logic
-            return JsonResponse({'success': False, 'error': 'Stripe provider not yet implemented.'}, status=501)
 
         else:
             return JsonResponse({'success': False, 'error': 'Invalid payment provider configuration.'}, status=500)
@@ -377,64 +396,52 @@ def _update_user_plan_logic(user, plan):
     # Optional: Log the change
     logger.info(f"User {user.username} upgraded to plan {plan.name} (Group: {plan.target_group.name})")
 
-def _initiate_toyyibpay_payment(request, user, plan, config, ref_id):
+def _initiate_senangpay_subscription_payment(request, user, plan, config, ref_id, amount):
     """
-    Constructs the payload and calls ToyyibPay API.
+    Constructs the payload and redirect URL for SenangPay Subscription.
     """
-    # 1. Prepare Payload
-    # Note: ToyyibPay expects amount in CENTS usually, strictly check their latest docs.
-    # Standard CreateBill API usually takes Ringgit (RM) but some versions take cents.
-    # Assuming standard 'billAmount' is in CENTS (e.g. RM1.00 = 100).
-    bill_amount_cents = int(plan.price * 100)
+    # SenangPay Amount: "100.00"
+    amount_str = f"{amount:.2f}"
 
-    payload = {
-        'userSecretKey': config.payment_api_key,
-        'categoryCode': config.payment_category_code,
-        'billName': f"Subscription: {plan.name}",
-        'billDescription': f"Upgrade to {plan.name} Plan for {user.username}",
-        'billPriceSetting': 1,
-        'billPayorInfo': 1,
-        'billAmount': bill_amount_cents,
-        'billReturnUrl': request.build_absolute_uri(reverse('user:payment_callback')),
-        'billCallbackUrl': request.build_absolute_uri(reverse('user:payment_webhook')),
-        'billExternalReferenceNo': ref_id,
-        'billTo': user.username,
-        'billEmail': user.email,
-        'billPhone': str(user.phone_number).replace('+', ''), # Remove + for some gateways
-        'billSplitPayment': 0,
-        'billPaymentChannel': '0', # 0 for FPX, 1 for Credit Card, 2 for Both
+    # Merchant ID & Secret Key
+    merchant_id = config.payment_category_code
+    secret_key = config.payment_api_key
+
+    # Details
+    detail = f"Subscription_{plan.name}"
+    order_id = ref_id # Use the subscription payment reference ID
+
+    # Hash
+    data_to_hash = f"{secret_key}{detail}{amount_str}{order_id}"
+    hashed_value = hashlib.md5(data_to_hash.encode()).hexdigest()
+
+    # User Details
+    name = user.username
+    email = user.email
+    phone = str(user.phone_number).replace('+', '')
+
+    # Construct Parameters
+    params = {
+        'detail': detail,
+        'amount': amount_str,
+        'order_id': order_id,
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'hash': hashed_value,
     }
 
-    try:
-        # 2. Send Request
-        # Use the configured URL or fallback to production default
-        gateway_url = config.payment_gateway_url or "https://toyyibpay.com/index.php/api/createBill"
+    # Build URL
+    base_url = config.payment_gateway_url.rstrip('/')
+    query_string = urllib.parse.urlencode(params)
+    payment_url = f"{base_url}/{merchant_id}?{query_string}"
 
-        response = requests.post(gateway_url, data=payload, timeout=10)
-        resp_data = response.json()
-
-        # 3. Handle Response
-        # ToyyibPay returns an array with 'BillCode' on success
-        if isinstance(resp_data, list) and 'BillCode' in resp_data[0]:
-            bill_code = resp_data[0]['BillCode']
-
-            # Construct the payment URL for the user
-            # Determine base URL (dev or prod) based on the API URL used
-            base_url = "https://dev.toyyibpay.com" if "dev" in gateway_url else "https://toyyibpay.com"
-            payment_url = f"{base_url}/{bill_code}"
-
-            return JsonResponse({
-                'success': True,
-                'action': 'redirect',
-                'payment_url': payment_url
-            })
-        else:
-            logger.error(f"ToyyibPay Error: {resp_data}")
-            return JsonResponse({'success': False, 'error': 'Payment gateway rejected the request.'}, status=502)
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Gateway Connection Error: {e}")
-        return JsonResponse({'success': False, 'error': 'Could not connect to payment gateway.'}, status=502)
+    # Since the frontend expects JSON for the subscription upgrade action:
+    return JsonResponse({
+        'success': True,
+        'action': 'redirect',
+        'payment_url': payment_url
+    })
 
 def _initiate_billplz_payment(request, user, plan, config, ref_id, amount):
     """
@@ -566,3 +573,44 @@ def checkout_view(request, plan_id):
         'site_settings': SiteSetting.objects.first(),
     }
     return render(request, 'user/checkout.html', context)
+
+
+@login_required
+def settings_view(request):
+    user = request.user
+
+    # Initialize forms
+    profile_form = UserSettingsForm(instance=user)
+    password_form = PasswordChangeForm(user)
+
+    if request.method == 'POST':
+        if 'update_profile' in request.POST:
+            # Re-bind form with POST data
+            profile_form = UserSettingsForm(request.POST, instance=user)
+            if profile_form.is_valid():
+                profile_form.save()
+                messages.success(request, 'Your profile information has been updated.')
+                return redirect('user:settings')
+            else:
+                messages.error(request, 'Please correct the errors in the profile form.')
+                # CRITICAL: Do NOT redirect here.
+                # We must let the view fall through to render() so `profile_form`
+                # (with errors) is passed to the template.
+
+        elif 'change_password' in request.POST:
+            password_form = PasswordChangeForm(user, request.POST)
+            if password_form.is_valid():
+                user = password_form.save()
+                update_session_auth_hash(request, user)
+                messages.success(request, 'Your password has been changed successfully.')
+                return redirect('user:settings')
+            else:
+                messages.error(request, 'Please correct the errors in the password form.')
+                # CRITICAL: Fall through to render() to show password errors.
+
+    context = {
+        'profile_form': profile_form,
+        'password_form': password_form,
+        'active_tab': 'settings'
+    }
+    return render(request, 'user/settings.html', context)

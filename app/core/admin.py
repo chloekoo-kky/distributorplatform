@@ -1,7 +1,7 @@
 # distributorplatform/app/core/admin.py
 from django.contrib import admin
 from django import forms
-from .models import SiteSetting, ThemeSetting, ProductFeature, Banner, PaymentSetting
+from .models import SiteSetting, ThemeSetting, ProductFeature, Banner, PaymentSetting, PaymentOption
 
 # --- 1. Form for Color Settings ---
 class ThemeSettingForm(forms.ModelForm):
@@ -54,21 +54,40 @@ class PaymentSettingForm(forms.ModelForm):
         fields = [
             'payment_enabled',
             'payment_provider',
+            'payment_category_code', # Merchant ID
+            'payment_api_key',       # Secret Key
             'payment_gateway_url',
-            'payment_api_key',
-            'payment_category_code',
         ]
         widgets = {
             # Render the API key as a password field for basic visual security
             'payment_api_key': forms.PasswordInput(render_value=True),
             'payment_gateway_url': forms.TextInput(attrs={'style': 'width: 400px;'}),
         }
+        help_texts = {
+            'payment_gateway_url': "Default for SenangPay: <strong>https://app.senangpay.my/payment/</strong>",
+            'payment_category_code': "Your <strong>Merchant ID</strong> (e.g., 1234567890).",
+            'payment_api_key': "Your <strong>Secret Key</strong> from the SenangPay Dashboard.",
+        }
 
 @admin.register(PaymentSetting)
 class PaymentSettingAdmin(admin.ModelAdmin):
     form = PaymentSettingForm
 
-    list_display = ('payment_provider', 'payment_enabled', 'payment_gateway_url')
+    # Show Provider, Enabled Status, and Merchant ID in the list column
+    list_display = ('get_provider_label', 'payment_enabled', 'payment_category_code', 'get_masked_key')
+
+    def get_provider_label(self, obj):
+        """Displays the human-readable provider name or 'Not Set'."""
+        if not obj.payment_provider:
+            return "Not Set"
+        return obj.get_payment_provider_display()
+    get_provider_label.short_description = "Payment Provider"
+
+    def get_masked_key(self, obj):
+        if obj.payment_api_key:
+            return "********"
+        return "-"
+    get_masked_key.short_description = "Secret Key"
 
     # Restrict permissions to act like a Singleton
     def has_add_permission(self, request):
@@ -76,6 +95,7 @@ class PaymentSettingAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
 @admin.register(SiteSetting)
 class SiteSettingAdmin(admin.ModelAdmin):
     form = SiteSettingForm
@@ -113,3 +133,8 @@ class BannerAdmin(admin.ModelAdmin):
     list_filter = ('location', 'is_active')
     search_fields = ('title', 'subtitle')
 
+@admin.register(PaymentOption)
+class PaymentOptionAdmin(admin.ModelAdmin):
+    list_display = ('name', 'option_type', 'is_active')
+    list_filter = ('option_type', 'is_active')
+    search_fields = ('name',)

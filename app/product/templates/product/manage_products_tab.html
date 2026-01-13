@@ -71,8 +71,10 @@
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Featured Image</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category(s)</th>
+                        {% if user.is_superuser %}
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">P/Margin</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit (RM)</th>
+                        {% endif %}
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selling Price</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
@@ -109,18 +111,22 @@
                                 </template>
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500" x-text="product.categories.join(', ') || '-'"></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <span x-show="product.profit_margin !== null && product.profit_margin !== undefined" x-text="`${Number(product.profit_margin).toFixed(2)}%`"></span>
-                                <span x-show="product.profit_margin === null || product.profit_margin === undefined">-</span>
-                            </td>
+                            {% if user.is_superuser %}
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <span x-show="product.profit_margin !== null && product.profit_margin !== undefined" x-text="`${Number(product.profit_margin).toFixed(2)}%`"></span>
+                                    <span x-show="product.profit_margin === null || product.profit_margin === undefined">-</span>
+                                </td>
+                            {% endif %}
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                                 x-text="formatPrice(parseFloat(product.selling_price) - parseFloat(product.base_cost))">
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                {% if user.is_superuser %}
                                 <button type="button" @click="$dispatch('open-pricing-modal', product)" class="text-green-600 hover:text-green-900 mr-3">
                                     Pricing
                                 </button>
+                                {% endif %}
                                 <button type="button" @click="$dispatch('open-product-edit-modal', product.id)" class="text-indigo-600 hover:text-indigo-900">
                                     Edit
                                 </button>

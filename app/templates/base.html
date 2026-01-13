@@ -199,6 +199,7 @@
 
                         {% if user.is_staff %}
                             <a href="{% url 'order:manage_orders' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Orders</a>
+                            <a href="{% url 'manage_dashboard' %}#commissions" class="hidden md:inline text-gray-500 hover:text-gray-900">Commissions</a>
                             <a href="{% url 'manage_dashboard' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Manage</a>
                         {% endif %}
 
@@ -262,8 +263,8 @@
                                     </div>
                                 </a>
 
-                                {# 3. Settings #}
-                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-1">
+                                {# 3. Profile / Settings Link #}
+                                <a href="{% url 'user:settings' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-1">
                                     <div class="flex flex-col items-start">
                                         {% with lines=site_settings.user_menu_settings_lines %}
                                             <span class="group-hover:text-gray-900">{{ lines.0 }}</span>
@@ -712,6 +713,32 @@
     <div x-data="{}">
         {% include 'product/partials/product_quick_view_modal.html' %}
     </div>
+
+
+    {% if messages %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            {% for message in messages %}
+                Swal.fire({
+                    // Capitalize the first letter of the tag for the title
+                    title: "{% if message.tags == 'success' %}Success{% elif message.tags == 'error' %}Error{% else %}Notice{% endif %}",
+                    text: "{{ message|escapejs }}",
+                    // Map Django tags to SweetAlert icons
+                    icon: "{% if message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% elif message.tags == 'info' %}info{% else %}success{% endif %}",
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 4000,
+                    timerProgressBar: true,
+                    didOpen: (toast) => {
+                        toast.addEventListener('mouseenter', Swal.stopTimer)
+                        toast.addEventListener('mouseleave', Swal.resumeTimer)
+                    }
+                });
+            {% endfor %}
+        });
+    </script>
+    {% endif %}
 
 </body>
 </html>

@@ -29,6 +29,8 @@ urlpatterns = [
     path('images/', include('images.urls', namespace='images')),
     path('tinymce/', include('tinymce.urls')),
 
+    path('commission/', include('commission.urls', namespace='commission')),
+    
     path('manage/api/save-banner/', views.api_save_banner, name='api_save_banner'),
     path('manage/api/save-banner/<int:banner_id>/', views.api_save_banner, name='api_update_banner'),
     path('manage/api/delete-banner/<int:banner_id>/', views.api_delete_banner, name='api_delete_banner'),

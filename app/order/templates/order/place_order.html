@@ -38,8 +38,6 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50 sticky top-0 z-10">
                         <tr>
-                            {# --- 3. Table Headers (Dual Line) --- #}
-
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
                                 {% with lines=site_settings.place_order_header_product_lines %}
                                     <div class="flex flex-col">
@@ -67,13 +65,12 @@
                                 {% endwith %}
                             </th>
 
+                            {# --- MODIFIED: Header for Commission (Visible Only to Agents) --- #}
                             <th x-show="isAgent" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">
-                                {% with lines=site_settings.place_order_header_profit_lines %}
-                                    <div class="flex flex-col">
-                                        <span>{{ lines.0 }}</span>
-                                        {% if lines|length > 1 %}<span class="text-[10px] opacity-75">{{ lines.1 }}</span>{% endif %}
-                                    </div>
-                                {% endwith %}
+                                <div class="flex flex-col">
+                                    <span>Your Commission</span>
+                                    <span class="text-[10px] opacity-75">Per Unit</span>
+                                </div>
                             </th>
 
                             <th class="px-6 py-3 bg-gray-50"></th>
@@ -96,7 +93,6 @@
                                             </template>
                                         </div>
                                         <div class="ml-4">
-                                            {# --- 4. Product Name Splitting (Table) --- #}
                                             <div class="flex flex-col">
                                                 <span class="text-sm font-medium text-gray-900" x-text="splitName(product.name)[0]"></span>
                                                 <span class="text-xs text-gray-500" x-show="splitName(product.name)[1]" x-text="splitName(product.name)[1]"></span>
@@ -106,13 +102,15 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.sku"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
-                                <td x-show="isAgent" class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.profit)"></td>
+
+                                {# --- MODIFIED: Commission Cell (Visible Only to Agents) --- #}
+                                <td x-show="isAgent" class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.commission)"></td>
+
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <button @click="addToCart(product)"
                                             :disabled="$store.cartStore.isInCart(product.id)"
                                             class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed h-10 min-w-[80px] flex items-center justify-center">
 
-                                        {# --- State 1: Not in Cart (Add) --- #}
                                         <span x-show="!$store.cartStore.isInCart(product.id)" class="flex flex-col items-center leading-none">
                                             {% with lines=site_settings.place_order_add_lines %}
                                                 <span class="font-bold">{{ lines.0 }}</span>
@@ -122,7 +120,6 @@
                                             {% endwith %}
                                         </span>
 
-                                        {# --- State 2: In Cart (Added) --- #}
                                         <span x-show="$store.cartStore.isInCart(product.id)" class="flex flex-col items-center leading-none">
                                             {% with lines=site_settings.place_order_added_lines %}
                                                 <span class="font-bold">{{ lines.0 }}</span>
@@ -151,7 +148,6 @@
         {# Order Summary Sidebar #}
         <div class="lg:col-span-1">
             <div class="bg-green-50 shadow-lg rounded-lg sticky top-20">
-                {# --- 5. Order Summary Title --- #}
                 <h2 class="text-xl font-bold text-gray-800 p-4 border-b flex flex-col">
                      {% with lines=site_settings.place_order_summary_title_lines %}
                         <span>{{ lines.0 }}</span>
@@ -162,16 +158,12 @@
                 <div class="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
                     <template x-if="$store.cartStore.items.length === 0">
                         <div class="text-gray-500 text-center py-8 flex flex-col items-center justify-center">
-
-                            {# CHANGED: Dual Line Empty Message #}
                             {% with lines=site_settings.place_order_empty_cart_lines %}
                                 <span class="text-base font-medium text-gray-600">{{ lines.0 }}</span>
                                 {% if lines|length > 1 %}
                                     <span class="text-xs text-gray-400 mt-1">{{ lines.1 }}</span>
                                 {% endif %}
                             {% endwith %}
-
-                            {# Keep the link below #}
                             <div class="mt-3 text-sm">
                                 <a href="{% url 'product:product_list' %}" class="text-indigo-600 hover:underline">Browse products</a> to add items.
                             </div>
@@ -186,7 +178,6 @@
                                 <button @click="$store.cartStore.increment(item.id)" class="px-2 py-1 text-gray-600 hover:bg-gray-100">+</button>
                             </div>
                             <div class="flex-1 min-w-0">
-                                {# --- 6. Product Name Splitting (Sidebar) --- #}
                                 <div class="flex flex-col">
                                     <p class="text-sm font-medium text-gray-900 truncate" x-text="splitName(item.name)[0]"></p>
                                     <p class="text-[10px] text-gray-500 truncate" x-show="splitName(item.name)[1]" x-text="splitName(item.name)[1]"></p>
@@ -203,7 +194,6 @@
 
                 <div class="p-4 border-t bg-gray-50 space-y-2">
                     <div class="flex justify-between text-lg font-semibold items-center">
-                        {# --- 7. Total Labels --- #}
                         <div class="flex flex-col">
                              {% with lines=site_settings.place_order_total_lines %}
                                 <span>{{ lines.0 }}</span>
@@ -213,13 +203,13 @@
                         <span x-text="formatPrice($store.cartStore.cartTotal)"></span>
                     </div>
 
-                    <div x-show="isAgent" class="flex justify-between text-sm text-green-700 items-center">
+                    {# --- MODIFIED: Est. Total Commission Label (Visible Only to Agents) --- #}
+                    <div x-show="isAgent" class="flex justify-between text-sm text-green-700 items-center border-t border-green-200 pt-2 mt-2">
                         <div class="flex flex-col">
-                             {% with lines=site_settings.place_order_est_profit_lines %}
-                                <span>{{ lines.0 }}</span>
-                                {% if lines|length > 1 %}<span class="text-[10px] opacity-80">{{ lines.1 }}</span>{% endif %}
-                            {% endwith %}
+                             <span>Estimated Total Commission</span>
+                             <span class="text-[10px] opacity-80">(Earnings)</span>
                         </div>
+                        {# Note: 'cartProfit' in store likely sums the 'profit' field of items. Since we mapped 'commission' -> 'profit' in JS below, this works correctly. #}
                         <span x-text="formatPrice($store.cartStore.cartProfit)"></span>
                     </div>
                 </div>
@@ -228,7 +218,6 @@
                     <button @click="submitOrder()"
                             :disabled="$store.cartStore.items.length === 0 || isSubmitting"
                             class="w-full px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center h-12">
-                        {# --- 8. Place Order Button --- #}
                         <span x-show="!isSubmitting" class="flex flex-col items-center leading-tight">
                             {% with lines=site_settings.place_order_btn_lines %}
                                 <span class="font-bold">{{ lines.0 }}</span>
@@ -285,10 +274,8 @@ function orderForm() {
             );
         },
 
-        // --- NEW: Helper to split names for display ---
         splitName(name) {
             if (!name) return [''];
-            // Check if name contains the pipe separator
             if (name.includes('|')) {
                 return name.split('|').map(s => s.trim());
             }
@@ -297,36 +284,31 @@ function orderForm() {
 
         formatPrice(value) {
             if (value === null || value === undefined) return 'N/A';
-            return `RM ${Number(value).toFixed(2)}`;
+            return 'RM ' + parseFloat(value).toFixed(2);
         },
 
         addToCart(product) {
              Alpine.store('cartStore').addItem({
                 id: product.id,
-                name: product.name, // Keep original name for cart storage/backend
+                name: product.name,
                 sku: product.sku,
                 selling_price: product.selling_price,
-                base_cost: product.base_cost,
-                profit: product.profit,
+                // Map the backend 'commission' value to the 'profit' field in the Cart Store
+                // so that the Store's internal 'cartProfit' getter calculates total commission.
+                profit: product.commission,
                 img_url: product.img_url,
                 quantity: 1
             });
         },
 
-        // ... (submitOrder function remains the same) ...
         async submitOrder() {
-            // FIX: Access the global store instead of 'this.cart'
             const cartItems = Alpine.store('cartStore').items;
 
             if (cartItems.length === 0 || this.isSubmitting) return;
 
-            // Remove the confirm dialog here since we are adding a confirmation page
-            // if (!confirm(`Proceed with order?`)) return;
-
             this.isSubmitting = true;
 
             const payload = {
-                // FIX: Map over the store items
                 cart: cartItems.map(item => ({
                     id: item.id,
                     quantity: item.quantity
@@ -334,7 +316,6 @@ function orderForm() {
             };
 
             try {
-                // CHANGED URL: Now points to prepare checkout
                 const response = await fetch(`{% url 'order:api_prepare_checkout' %}`, {
                     method: 'POST',
                     headers: {
@@ -348,7 +329,6 @@ function orderForm() {
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    // Redirect to the checkout confirmation page
                     window.location.href = data.redirect_url;
                 } else {
                     Swal.fire({
