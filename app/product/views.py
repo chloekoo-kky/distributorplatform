@@ -64,18 +64,17 @@ def home(request):
     ).order_by('-created_at')[:4]
 
     # --- NEW: FAQ DATA ---
-    # Fetch posts specifically marked as FAQ
     faq_posts = accessible_posts.filter(
         post_type=Post.PostType.FAQ
-    ).order_by('created_at') # Oldest first (logical flow) or use '-created_at' for newest
-    # ---------------------
+    ).order_by('created_at')
 
-    # 3. Categories Products Logic (Unchanged)
+    # 3. Categories Products Logic
+    # FIX: Updated ordering to match Navigation Bar (display_order, name)
     categories_with_products = []
     if request.user.is_authenticated and not request.user.is_anonymous:
         cats_qs = Category.objects.filter(
             user_groups__users=request.user
-        ).distinct().order_by('name')
+        ).distinct().order_by('display_order', 'name') # <--- UPDATED
         product_prefetch = Prefetch(
             'products',
             queryset=Product.objects.select_related('featured_image').order_by('-created_at')
@@ -84,7 +83,7 @@ def home(request):
     else:
         cats_qs = Category.objects.filter(
             products__members_only=False
-        ).distinct().order_by('name')
+        ).distinct().order_by('display_order', 'name') # <--- UPDATED
         public_products_qs = Product.objects.filter(
             members_only=False
         ).select_related('featured_image').order_by('-created_at')
@@ -95,8 +94,8 @@ def home(request):
     context = {
         'featured_products': featured_products,
         'announcements': announcements,
-        'sidebar_posts': market_insights,  # Pass insights to sidebar variable
-        'latest_news_posts': latest_news_posts, # Pass news to main area
+        'sidebar_posts': market_insights,
+        'latest_news_posts': latest_news_posts,
         'categories_with_products': categories_with_products,
         'faq_posts': faq_posts,
     }
@@ -124,26 +123,17 @@ def product_list(request):
     selected_category_code = request.GET.get('category')
     search_query = request.GET.get('q')
 
-    logger.info(f"[DEBUG][List] START. User: {request.user}, Authenticated: {request.user.is_authenticated}")
-
     # --- 1. Product Filtering Logic ---
     products_query = None
     if request.user.is_authenticated and not request.user.is_anonymous:
-        # Log permissions
         allowed_categories = Category.objects.filter(user_groups__users=request.user)
-        logger.info(f"[DEBUG][List] User allowed categories count: {allowed_categories.count()}")
-
         products_query = Product.objects.filter(categories__in=allowed_categories).distinct()
     else:
         products_query = Product.objects.filter(members_only=False)
 
-    # [DEBUG] Count after permissions
-    logger.info(f"[DEBUG][List] Products count after permission filter: {products_query.count()}")
-
     # Apply Category filtering
     if selected_category_code:
         products_query = products_query.filter(categories__code=selected_category_code)
-        logger.info(f"[DEBUG][List] Applied category code filter '{selected_category_code}'. Count: {products_query.count()}")
 
     # Apply Search Filtering
     if search_query:
@@ -156,21 +146,11 @@ def product_list(request):
     # Prefetch and Convert to List
     all_products = list(products_query.select_related('featured_image').distinct().order_by('name'))
 
-    # [DEBUG] Log specific flags for the first few items
-    logger.info(f"[DEBUG][List] Total products loaded: {len(all_products)}")
-    for i, p in enumerate(all_products[:5]):
-        logger.info(f"[DEBUG][List] Item {i}: {p.name} | SKU: {p.sku} | is_promotion: {getattr(p, 'is_promotion', 'N/A')}")
-
     # --- SPLIT LOGIC ---
     promotional_products = [p for p in all_products if getattr(p, 'is_promotion', False)]
     regular_products = [p for p in all_products if not getattr(p, 'is_promotion', False)]
 
-    logger.info(f"[DEBUG][List] Final counts -> Regular: {len(regular_products)}, Promotional: {len(promotional_products)}")
-
-    if len(promotional_products) == 0 and len(all_products) > 0:
-        logger.warning("[DEBUG][List] No promotional products found! Check if 'is_promotion' is True in DB or if permissions are hiding them.")
-
-    # --- 2. Sidebar Data (Unchanged) ---
+    # --- 2. Sidebar Data ---
     accessible_posts = get_accessible_posts(request.user).select_related('featured_image', 'author')
     announcements = accessible_posts.filter(post_type=Post.PostType.ANNOUNCEMENT).order_by('-created_at')[:3]
     sidebar_posts = accessible_posts.filter(featured_image__isnull=False, post_type=Post.PostType.NEWS).order_by('-created_at')[:5]
@@ -192,7 +172,6 @@ def product_list(request):
     }
     return render(request, 'product/product_list.html', context)
 
-
 @staff_required
 def api_manage_categories(request):
     """ API to list categories for the management table. """
@@ -202,7 +181,8 @@ def api_manage_categories(request):
     search = request.GET.get('search', '')
     page = request.GET.get('page', 1)
 
-    queryset = Category.objects.select_related('group').order_by('group__name', 'name')
+    # Updated ordering: Group > Display Order > Name
+    queryset = Category.objects.select_related('group').order_by('group__name', 'display_order', 'name')
 
     if search:
         queryset = queryset.filter(Q(name__icontains=search) | Q(code__icontains=search))
@@ -218,8 +198,9 @@ def api_manage_categories(request):
         'name': cat.name,
         'code': cat.code,
         'group': cat.group.name,
+        'display_order': cat.display_order, # --- NEW: Include display_order ---
         'description': cat.description or '',
-        'page_title': cat.page_title or '', # --- NEW: Return page_title ---
+        'page_title': cat.page_title or '',
         'edit_url': reverse('product:manage_category_edit', args=[cat.id])
     } for cat in page_obj.object_list]
 
@@ -234,67 +215,68 @@ def api_manage_categories(request):
     })
 
 
-
 @staff_required
 def manage_category_edit(request, category_id):
     """
-    Handle editing a category via a standalone page.
+    Handle editing a category. Supports AJAX for Modal.
     """
     category = get_object_or_404(Category.objects.prefetch_related('content_sections'), pk=category_id)
 
+    # --- AJAX GET: Fetch Data for Modal ---
+    if request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        sections = list(category.content_sections.values('title', 'content').order_by('order'))
+        data = {
+            'id': category.id,
+            'name': category.name,
+            'page_title': category.page_title,
+            'description': category.description,
+            'display_order': category.display_order, # --- NEW ---
+            'sections': sections,
+            'update_url': reverse('product:manage_category_edit', args=[category.id])
+        }
+        return JsonResponse(data)
+
+    # --- AJAX POST: Save Data from Modal ---
     if request.method == 'POST':
-        form = CategoryForm(request.POST, instance=category)
-        if form.is_valid():
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             try:
-                with transaction.atomic():
-                    saved_cat = form.save()
+                data = json.loads(request.body)
+                form = CategoryForm(data, instance=category)
+                if form.is_valid():
+                    with transaction.atomic():
+                        saved_cat = form.save()
 
-                    # Handle Extra Sections from JSON field
-                    sections_json = request.POST.get('sections_data')
-                    if sections_json:
-                        try:
-                            sections_data = json.loads(sections_json)
-                            # Clear existing sections to replace them
-                            saved_cat.content_sections.all().delete()
+                        # Handle Extra Sections
+                        sections_data = data.get('sections', [])
+                        saved_cat.content_sections.all().delete()
 
-                            new_sections = []
-                            for idx, section in enumerate(sections_data):
-                                title = section.get('title', '').strip()
-                                content = section.get('content', '').strip()
-                                if title or content:
-                                    new_sections.append(CategoryContentSection(
-                                        category=saved_cat,
-                                        title=title,
-                                        content=content,
-                                        order=idx
-                                    ))
-                            if new_sections:
-                                CategoryContentSection.objects.bulk_create(new_sections)
-                        except json.JSONDecodeError:
-                            messages.warning(request, "Could not save additional sections (invalid data).")
+                        new_sections = []
+                        for idx, section in enumerate(sections_data):
+                            title = section.get('title', '').strip()
+                            content = section.get('content', '').strip()
+                            if title or content:
+                                new_sections.append(CategoryContentSection(
+                                    category=saved_cat,
+                                    title=title,
+                                    content=content,
+                                    order=idx
+                                ))
+                        CategoryContentSection.objects.bulk_create(new_sections)
 
-                messages.success(request, f"Category '{saved_cat.name}' updated successfully.")
-                # Redirect to dashboard URL (using root namespace if needed, or core if defined)
-                # Assuming 'manage_dashboard' is a top level name or inside 'core' depending on user url conf.
-                # Based on user's core/urls.py it is just 'manage_dashboard'
-                return redirect(reverse('manage_dashboard') + '#categories')
+                    return JsonResponse({'success': True, 'message': f"Category '{saved_cat.name}' updated."})
+                else:
+                    return JsonResponse({'success': False, 'errors': form.errors}, status=400)
             except Exception as e:
-                 logger.error(f"Error saving category: {e}", exc_info=True)
-                 messages.error(request, f"Error saving category: {e}")
-        else:
-            messages.error(request, "Please correct the errors below.")
-    else:
-        form = CategoryForm(instance=category)
+                logger.error(f"Error saving category: {e}", exc_info=True)
+                return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-    # Serialize sections for the frontend Alpine component
-    # FIX: Do not json.dumps here. Pass the raw list.
+    form = CategoryForm(instance=category)
     sections = list(category.content_sections.values('title', 'content').order_by('order'))
-
     context = {
         'form': form,
         'category': category,
         'title': f"Edit Category: {category.name}",
-        'sections_json': sections, # Pass RAW list, let template tag handle serialization
+        'sections_json': sections,
         'is_subpage': True,
     }
     return render(request, 'product/manage_category_form.html', context)

@@ -23,8 +23,9 @@ class CategoryResource(resources.ModelResource):
     class Meta:
         model = Category
         import_id_fields = ['code']
-        fields = ('id', 'code', 'name', 'group')
-        export_order = ('id', 'code', 'name', 'group')
+        # --- UPDATED: Added 'display_order' ---
+        fields = ('id', 'display_order', 'code', 'name', 'group')
+        export_order = ('id', 'display_order', 'code', 'name', 'group')
         skip_unchanged = True
         report_skipped = True
 
