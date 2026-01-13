@@ -1,0 +1,420 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ site_settings.settings_page_title_lines.0 }}{% endblock %}
+
+{% block content %}
+<div class="py-12 bg-gray-50 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        {# Page Title - Stacked #}
+        <h1 class="text-3xl font-bold text-gray-900 mb-8 flex flex-col items-start">
+            {% with lines=site_settings.settings_page_title_lines %}
+            <span>{{ lines.0 }}</span>
+            {% if lines|length > 1 %}
+                <span class="text-lg font-medium text-gray-500 mt-1">{{ lines.1 }}</span>
+            {% endif %}
+            {% endwith %}
+        </h1>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+
+            <div class="lg:col-span-3 space-y-6">
+                <div class="bg-white shadow rounded-lg p-6" x-data="{ isEditing: {{ profile_form.errors|yesno:'true,false' }} }">
+
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        {# Profile Section Title - Stacked #}
+                        <h2 class="text-xl font-semibold text-gray-800 flex flex-col">
+                            {% with lines=site_settings.settings_profile_title_lines %}
+                                <span>{{ lines.0 }}</span>
+                                {% if lines|length > 1 %}
+                                    <span class="text-sm font-normal text-gray-500">{{ lines.1 }}</span>
+                                {% endif %}
+                            {% endwith %}
+                        </h2>
+
+                        {# Edit Button - Stacked #}
+                        <button x-show="!isEditing" @click="isEditing = true" type="button" class="text-indigo-600 hover:text-indigo-800 flex items-center text-sm font-medium transition-colors">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                            <div class="flex flex-col items-start leading-none ml-1">
+                                {% with lines=site_settings.settings_btn_edit_lines %}
+                                    <span>{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="text-[10px] opacity-80">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </div>
+                        </button>
+                    </div>
+
+                    <div x-show="!isEditing" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                    {{ site_settings.settings_label_first_name_lines|join:" / " }}
+                                </label>
+                                <p class="mt-1 text-sm text-gray-900 font-medium">{{ user.first_name|default:"-" }}</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                    {{ site_settings.settings_label_last_name_lines|join:" / " }}
+                                </label>
+                                <p class="mt-1 text-sm text-gray-900 font-medium">{{ user.last_name|default:"-" }}</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {{ site_settings.settings_label_email_lines|join:" / " }}
+                            </label>
+                            <p class="mt-1 text-sm text-gray-900">{{ user.email }}</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {{ site_settings.settings_label_phone_lines|join:" / " }}
+                            </label>
+                            <p class="mt-1 text-sm text-gray-900">{{ user.phone_number|default:"-" }}</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {{ site_settings.settings_label_address_lines|join:" / " }}
+                            </label>
+                            <div class="mt-1 text-sm text-gray-900 whitespace-pre-line">{{ user.shipping_address|default:"No address set." }}</div>
+                        </div>
+                    </div>
+
+                    <div x-show="isEditing" x-cloak>
+                        <form method="post">
+                            {% csrf_token %}
+
+                            {% if profile_form.non_field_errors %}
+                                <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="text-sm text-red-700">{{ profile_form.non_field_errors.0 }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endif %}
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        {{ site_settings.settings_label_first_name_lines|join:" / " }}
+                                    </label>
+                                    {{ profile_form.first_name }}
+                                    {% if profile_form.first_name.errors %}
+                                        <p class="text-xs text-red-600 mt-1">{{ profile_form.first_name.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        {{ site_settings.settings_label_last_name_lines|join:" / " }}
+                                    </label>
+                                    {{ profile_form.last_name }}
+                                    {% if profile_form.last_name.errors %}
+                                        <p class="text-xs text-red-600 mt-1">{{ profile_form.last_name.errors.0 }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    {{ site_settings.settings_label_email_lines|join:" / " }}
+                                </label>
+                                {{ profile_form.email }}
+                                {% if profile_form.email.errors %}
+                                    <p class="text-xs text-red-600 mt-1">{{ profile_form.email.errors.0 }}</p>
+                                {% endif %}
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    {{ site_settings.settings_label_phone_lines|join:" / " }}
+                                </label>
+                                <div class="flex w-full">
+                                    {{ profile_form.phone_number }}
+                                </div>
+                                {% if profile_form.phone_number.errors %}
+                                    <p class="text-xs text-red-600 mt-1">{{ profile_form.phone_number.errors.0 }}</p>
+                                {% endif %}
+                                <p class="text-xs text-gray-500 mt-1">Format: +60123456789</p>
+                            </div>
+
+                            <div class="mb-6">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    {{ site_settings.settings_label_address_lines|join:" / " }}
+                                </label>
+                                {{ profile_form.shipping_address }}
+                                {% if profile_form.shipping_address.errors %}
+                                    <p class="text-xs text-red-600 mt-1">{{ profile_form.shipping_address.errors.0 }}</p>
+                                {% endif %}
+                                <p class="text-xs text-gray-500 mt-1">This address will be used as the default for your orders.</p>
+                            </div>
+
+                            <div class="flex justify-end space-x-3">
+                                {# Cancel Button - Stacked #}
+                                <button @click="isEditing = false" type="button" class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 font-medium transition-colors flex flex-col items-center leading-none">
+                                    {% with lines=site_settings.settings_btn_cancel_lines %}
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}
+                                            <span class="text-[10px] opacity-80 mt-0.5">{{ lines.1 }}</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </button>
+
+                                {# Save Button - Stacked #}
+                                <button type="submit" name="update_profile" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium transition-colors flex flex-col items-center leading-none">
+                                    {% with lines=site_settings.settings_btn_save_lines %}
+                                        <span>{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}
+                                            <span class="text-[10px] opacity-90 mt-0.5">{{ lines.1 }}</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white shadow rounded-lg p-6">
+                    {# Security Section Title - Stacked #}
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2 flex flex-col">
+                        {% with lines=site_settings.settings_security_title_lines %}
+                            <span>{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-sm font-normal text-gray-500">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </h2>
+
+                    {# Security Description - Stacked #}
+                    <p class="text-sm text-gray-600 mb-4">
+                        {% with lines=site_settings.settings_security_desc_lines %}
+                            {{ lines.0 }}
+                            {% if lines|length > 1 %}
+                                <br><span class="text-xs text-gray-500">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </p>
+
+                    <form method="post" id="security-form">
+                        {% csrf_token %}
+
+                        {% if password_form.non_field_errors %}
+                            <div class="mb-2 p-2 bg-red-50 text-red-600 text-xs rounded border border-red-200">
+                                {{ password_form.non_field_errors.0 }}
+                            </div>
+                        {% endif %}
+
+                        {# 1. Old Password #}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ password_form.old_password.id_for_label }}">
+                                {{ site_settings.settings_label_current_pwd_lines|join:" / " }}
+                            </label>
+                            {{ password_form.old_password }}
+                            {% for error in password_form.old_password.errors %}
+                                <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+                            {% endfor %}
+                        </div>
+
+                        {# 2. New Password (Enhanced) #}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ password_form.new_password1.id_for_label }}">
+                                {{ site_settings.settings_label_new_pwd_lines|join:" / " }}
+                            </label>
+
+                            <div class="relative">
+                                {# The input field rendered by Django #}
+                                {{ password_form.new_password1 }}
+
+                                {# Toggle Visibility Button #}
+                                <button type="button" id="toggle-new-password" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none">
+                                    <svg id="eye-icon-open" class="h-5 w-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                    <svg id="eye-icon-closed" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 1.274-4.057 5.064-7 9.542-7 .847 0 1.67.127 2.457.362m3.692 11.238A12.022 12.022 0 0021.542 12c-1.274-4.057-5.064-7-9.542-7a11.95 11.95 0 00-2.457.362M4.5 4.5l15 15"></path></svg>
+                                </button>
+                            </div>
+
+                            {# Errors Loop (Placed before help text for consistency) #}
+                            {% for error in password_form.new_password1.errors %}
+                                <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+                            {% endfor %}
+
+                            {# Help Text (Refined: Uses div, safe filter, and placed after errors) #}
+                            {% if password_form.new_password1.help_text %}
+                                <div class="text-xs text-gray-500 mt-1">{{ password_form.new_password1.help_text|safe }}</div>
+                            {% endif %}
+
+                            {# Password Strength Meter #}
+                            <div class="mt-2">
+                                <div class="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                                    <div id="password-strength-bar" class="h-full transition-all duration-300 w-0"></div>
+                                </div>
+                                <ul id="password-criteria" class="mt-3 text-xs text-gray-500 grid grid-cols-2 gap-2">
+                                    <li id="length" class="flex items-center">
+                                        <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        8+ Characters
+                                    </li>
+                                    <li id="uppercase" class="flex items-center">
+                                        <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        Uppercase
+                                    </li>
+                                    <li id="lowercase" class="flex items-center">
+                                        <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        Lowercase
+                                    </li>
+                                    <li id="number" class="flex items-center">
+                                        <svg class="w-3 h-3 mr-1.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        Number
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        {# 3. Confirm Password #}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1" for="{{ password_form.new_password2.id_for_label }}">
+                                {{ site_settings.settings_label_confirm_pwd_lines|join:" / " }}
+                            </label>
+                            {{ password_form.new_password2 }}
+                            {% for error in password_form.new_password2.errors %}
+                                <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+                            {% endfor %}
+                        </div>
+
+                        <div class="flex justify-end">
+                            {# Change Password Button - Stacked #}
+                            <button type="submit" name="change_password" class="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-900 font-medium transition-colors flex flex-col items-center leading-none">
+                                {% with lines=site_settings.settings_btn_change_pwd_lines %}
+                                    <span>{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="text-[10px] opacity-90 mt-0.5">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Styling for Django widgets */
+    input[type="password"], input[type="text"], input[type="email"], textarea, select {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #d1d5db; /* gray-300 */
+        border-radius: 0.375rem; /* rounded-md */
+        outline: none;
+        transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+    input:focus, textarea:focus, select:focus {
+        border-color: #6366f1; /* indigo-500 */
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    /* Hide Alpine content before load */
+    [x-cloak] { display: none !important; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Logic for New Password Field in Settings ---
+
+    // Select the "new_password1" field generated by Django.
+    // Default ID is "id_new_password1" for PasswordChangeForm.
+    const passwordInput = document.getElementById('id_new_password1');
+
+    // Add right padding to input so text doesn't go under the eye icon
+    if(passwordInput) {
+        passwordInput.classList.add('pr-10');
+    }
+
+    const strengthBar = document.getElementById('password-strength-bar');
+
+    // Elements for Toggle Visibility
+    const togglePasswordButton = document.getElementById('toggle-new-password');
+    const eyeIconOpen = document.getElementById('eye-icon-open');
+    const eyeIconClosed = document.getElementById('eye-icon-closed');
+
+    // Criteria List
+    const criteria = {
+        length: document.getElementById('length'),
+        uppercase: document.getElementById('uppercase'),
+        lowercase: document.getElementById('lowercase'),
+        number: document.getElementById('number'),
+    };
+
+    if (passwordInput && strengthBar) {
+        // Strength Meter Logic
+        passwordInput.addEventListener('input', () => {
+            const password = passwordInput.value;
+            let score = 0;
+            const hasLength = password.length >= 8;
+            const hasUppercase = /[A-Z]/.test(password);
+            const hasLowercase = /[a-z]/.test(password);
+            const hasNumber = /\d/.test(password);
+
+            if (hasLength) score++;
+            if (hasUppercase) score++;
+            if (hasLowercase) score++;
+            if (hasNumber) score++;
+
+            updateCriteria(criteria.length, hasLength);
+            updateCriteria(criteria.uppercase, hasUppercase);
+            updateCriteria(criteria.lowercase, hasLowercase);
+            updateCriteria(criteria.number, hasNumber);
+            updateStrengthBar(score);
+        });
+
+        // Toggle Visibility Logic
+        if (togglePasswordButton) {
+            togglePasswordButton.addEventListener('click', () => {
+                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordInput.setAttribute('type', type);
+                eyeIconOpen.classList.toggle('hidden');
+                eyeIconClosed.classList.toggle('hidden');
+            });
+        }
+    }
+
+    function updateCriteria(el, met) {
+        const svg = el.querySelector('svg');
+        if (met) {
+            el.classList.remove('text-gray-500');
+            el.classList.add('text-green-600', 'font-medium');
+            svg.classList.remove('text-gray-300');
+            svg.classList.add('text-green-500');
+            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
+        } else {
+            el.classList.remove('text-green-600', 'font-medium');
+            el.classList.add('text-gray-500');
+            svg.classList.remove('text-green-500');
+            svg.classList.add('text-gray-300');
+            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path>';
+        }
+    }
+
+    function updateStrengthBar(score) {
+        const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
+        const widths = ['w-1/4', 'w-1/2', 'w-3/4', 'w-full'];
+
+        strengthBar.className = 'h-full transition-all duration-300';
+        if (score > 0) {
+            strengthBar.classList.add(colors[score - 1], widths[score - 1]);
+        } else {
+            strengthBar.classList.add('w-0');
+        }
+    }
+});
+</script>
+{% endblock %}

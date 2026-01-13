@@ -8,12 +8,22 @@ from .models import (
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
-    list_display = ['username', 'email', 'phone_number', 'date_joined', 'display_user_groups']
-    # Add user_groups to the admin view
+    # Updated list_display to include names and assigned agent
+    list_display = ['username', 'email', 'first_name', 'last_name', 'phone_number', 'assigned_agent', 'date_joined', 'display_user_groups']
+
+    # Enable search for autocomplete
+    search_fields = ('username', 'email', 'first_name', 'last_name', 'phone_number')
+
+    # Add custom fields to the admin edit page
+    # Added 'assigned_agent' to the tuple
     fieldsets = UserAdmin.fieldsets + (
-        ('User Groups', {'fields': ('user_groups',)}),
+        ('Additional Information', {'fields': ('phone_number', 'shipping_address', 'user_groups', 'assigned_agent')}),
     )
+
     filter_horizontal = ('user_groups',)
+
+    # Enables a search box for selecting the agent instead of a long dropdown
+    autocomplete_fields = ['assigned_agent']
 
     def display_user_groups(self, obj):
         """Creates a string of all user groups for the list display."""
@@ -36,4 +46,4 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
 
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(UserGroup, UserGroupAdmin)
-admin.site.register(SubscriptionPlan)
+admin.site.register(SubscriptionPlan, SubscriptionPlanAdmin)

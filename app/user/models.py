@@ -83,11 +83,22 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True, blank=False)
     bio = models.TextField(max_length=500, blank=True)
     phone_number = PhoneNumberField(blank=False, null=False)
+    shipping_address = models.TextField(blank=True, help_text="Default shipping address for orders.")
     user_groups = models.ManyToManyField(UserGroup, blank=True, related_name="users")
 
     # We only need to know if they are verified or not
     is_verified = models.BooleanField(default=False)
 
+    assigned_agent = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='downline_customers',
+        verbose_name="Assigned Agent (Upline)",
+        help_text="Select the agent responsible for this customer. This agent will receive commissions on orders."
+    )
+    
     groups = models.ManyToManyField('auth.Group', related_name='customuser_set', blank=True)
     user_permissions = models.ManyToManyField('auth.Permission', related_name='customuser_set', blank=True)
 

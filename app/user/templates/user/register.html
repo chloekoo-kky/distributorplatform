@@ -50,7 +50,7 @@
         <form method="POST" id="registration-form" class="mt-8 space-y-2">
             {% csrf_token %}
 
-            {# --- NEW: Subscription Plan Selection --- #}
+            {# --- Subscription Plan Selection --- #}
             {% if plans %}
             <div class="space-y-3 mb-6">
                 <label class="block text-sm font-medium text-gray-700">Select Subscription Package</label>
@@ -160,31 +160,11 @@
                     {% endwith %}
                 </div>
 
-                {# Phone Number with Country Code #}
+                {# Phone Number - FIXED: Using form widget with flex wrapper #}
                 <div>
-                    <label for="id_phone_input" class="sr-only">Phone Number</label>
-
-                    <div class="relative flex rounded-md shadow-sm">
-                        {# Country Code Selector: Must send ISO codes (MY, SG) not prefixes (+60) #}
-                        <div class="inset-y-0 left-0 flex items-center">
-                            <label for="country_code" class="sr-only">Country</label>
-                            <select id="country_code" name="phone_number_0" class="h-full py-0 pl-3 pr-7 border-transparent bg-transparent text-gray-500 sm:text-sm rounded-l-md focus:ring-indigo-500 focus:border-indigo-500 border-r border-gray-300 bg-gray-50">
-                                <option value="MY">MY +60</option>
-                                <option value="SG">SG +65</option>
-                                <option value="CN">CN +86</option>
-                                <option value="US">US +1</option>
-                                <option value="GB">UK +44</option>
-                                <option value="AU">AU +61</option>
-                                <option value="JP">JP +81</option>
-                            </select>
-                        </div>
-
-                        {# Phone Number Input: Must be named phone_number_1 #}
-                        {% with lines=site_settings.register_phone_lines %}
-                        <input type="tel" id="id_phone_input" name="phone_number_1" required
-                               class="flex-1 appearance-none block w-full min-w-0 px-3 py-3 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-r-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                               placeholder="{{ lines|join:' / ' }}">
-                        {% endwith %}
+                    <label for="id_phone_number" class="sr-only">Phone Number</label>
+                    <div class="flex w-full">
+                        {{ form.phone_number }}
                     </div>
                 </div>
 
@@ -464,7 +444,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (data.success) {
-                // CHANGED: Use email from response
+                // Use email from response
                 modalMessage.textContent = `A verification code has been sent to ${data.email}.`;
                 modalMessageContainer.className = 'bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative mb-4';
                 modal.classList.remove('hidden');
@@ -493,7 +473,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const code = document.getElementById('code').value;
 
         try {
-            // CHANGED: URL pointing to verify_phone (which is now verify_email logic)
+            // URL pointing to verify_phone (which is now verify_email logic)
             const response = await fetch('{% url "user:verify_phone" %}', {
                 method: 'POST',
                 headers: {

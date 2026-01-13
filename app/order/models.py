@@ -1,4 +1,5 @@
-import uuid
+import string
+import random
 from django.db import models
 from django.conf import settings
 from django.db.models import Sum, F
@@ -6,14 +7,27 @@ from decimal import Decimal
 
 from product.models import Product
 
+def generate_order_id():
+    """Generates a random 8-character alphanumeric ID."""
+    characters = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(characters, k=8))
+
 class Order(models.Model):
     class OrderStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pending'
+        TO_PAY = 'TO_PAY', 'To Pay'
+        TO_SHIP = 'TO_SHIP', 'To Ship'
+        TO_RECEIVE = 'TO_RECEIVE', 'To Receive'
         COMPLETED = 'COMPLETED', 'Completed'
         CANCELLED = 'CANCELLED', 'Cancelled'
 
-    # --- CHANGED: Use UUID for ID ---
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # --- CHANGED: Use CharField with custom generator for ID ---
+    id = models.CharField(
+        primary_key=True,
+        default=generate_order_id,
+        max_length=8,
+        editable=False
+    )
 
     # Link to the agent who placed the order
     agent = models.ForeignKey(
@@ -22,12 +36,14 @@ class Order(models.Model):
         related_name='orders'
     )
 
+    payment_method = models.CharField(max_length=50, blank=True, null=True, help_text="The selected payment method (e.g., COD).")
+    
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Order {str(self.id)[:8]}... by {self.agent.username}"
+        return f"Order {self.id} by {self.agent.username}"
 
     @property
     def total_profit(self):
@@ -63,10 +79,15 @@ class OrderItem(models.Model):
         help_text="Total profit for this line item (selling_price - landed_cost) * quantity"
     )
 
+    @property
+    def total_price(self):
+        """Calculates total selling price for this line item."""
+        return self.selling_price * self.quantity
+
     def save(self, *args, **kwargs):
         # Calculate profit before saving
         self.profit = (self.selling_price - self.landed_cost) * self.quantity
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in Order {str(self.order.id)[:8]}..."
+        return f"{self.quantity} x {self.product.name} in Order {self.order.id}"

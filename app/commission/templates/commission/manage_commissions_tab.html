@@ -1,0 +1,353 @@
+{# distributorplatform/app/commission/templates/commission/manage_commissions_tab.html #}
+
+<div x-data="commissionManager()" x-init="init()">
+
+    <div class="mb-6 flex flex-col md:flex-row justify-between items-end gap-4">
+        <div>
+            <h3 class="text-2xl font-semibold text-gray-700">Commission Management</h3>
+            <p class="text-sm text-gray-500 mt-1">Overview of agent earnings and payouts for the current month.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
+                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Total Payout (This Month)
+                            </dt>
+                            <dd class="text-2xl font-semibold text-gray-900" x-text="'RM ' + stats.month_payout.toFixed(2)">
+                                RM 0.00
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-indigo-500 rounded-md p-3">
+                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Total Orders (This Month)
+                            </dt>
+                            <dd class="text-2xl font-semibold text-gray-900" x-text="stats.month_orders">
+                                0
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
+                        <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">
+                                Total Commission Items
+                            </dt>
+                            <dd class="text-2xl font-semibold text-gray-900" x-text="stats.month_items">
+                                0
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="w-full md:w-1/3">
+             </div>
+
+        <div class="flex gap-2 w-full md:w-auto justify-end">
+            <select x-model="filterStatus" @change="fetchCommissions()"
+                    class="border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="">All Statuses</option>
+                <option value="PENDING">Pending Payment</option>
+                <option value="PAID">Paid History</option>
+                <option value="CANCELLED">Cancelled</option>
+            </select>
+
+            <button @click="showExportModal = true"
+                    class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition flex items-center shadow-sm">
+                <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                Export Statement
+            </button>
+
+            <button @click="openPaymentModal()"
+                    x-show="selectedIds.length > 0"
+                    x-cloak
+                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition flex items-center shadow-sm">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                Pay Selected (<span x-text="selectedIds.length"></span>)
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left w-10">
+                            <input type="checkbox" x-model="selectAll" @change="toggleSelectAll()"
+                                   class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Earned</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Info</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-if="commissions.length === 0">
+                        <tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No records found.</td></tr>
+                    </template>
+                    <template x-for="item in commissions" :key="item.id">
+                        <tr :class="{'bg-indigo-50': selectedIds.some(id => id == item.id)}">
+                            <td class="px-6 py-4">
+                                <input type="checkbox" :value="item.id" x-model="selectedIds"
+                                       x-show="item.status === 'Pending'"
+                                       class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500" x-text="item.created_at"></td>
+                            <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="item.agent_name"></td>
+                            <td class="px-6 py-4 text-sm text-gray-500">
+                                <div>Order #<span x-text="item.order_id"></span></div>
+                                <div class="text-xs text-gray-400" x-text="item.product_name"></div>
+                            </td>
+                            <td class="px-6 py-4 text-sm font-bold text-gray-900" x-text="'RM ' + item.amount.toFixed(2)"></td>
+                            <td class="px-6 py-4 text-sm">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                      :class="{
+                                        'bg-yellow-100 text-yellow-800': item.status === 'Pending',
+                                        'bg-green-100 text-green-800': item.status === 'Paid',
+                                        'bg-red-100 text-red-800': item.status === 'Cancelled'
+                                      }" x-text="item.status">
+                                </span>
+                                <div x-show="item.status === 'Paid'" class="text-xs text-gray-400 mt-1">
+                                    Paid: <span x-text="item.paid_at"></span>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-show="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50"
+         x-transition.opacity style="display: none;" x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative" @click.away="showExportModal = false">
+
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Export Monthly Statement</h3>
+            <p class="text-sm text-gray-600 mb-6">Select the month and year for the commission statement you wish to download.</p>
+
+            <form action="{% url 'commission:export_commission_statement' %}" method="GET">
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                        <select name="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                        <input type="number" name="year" value="{{ today_date|date:'Y' }}"
+                               class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
+                    <select name="status" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">All Statuses (Recommended)</option>
+                        <option value="PAID">Paid Only</option>
+                        <option value="PENDING">Pending Only</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button type="button" @click="showExportModal = false"
+                            class="px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" @click="showExportModal = false"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                        Download CSV
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showPaymentModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50"
+         x-transition.opacity style="display: none;" x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative" @click.away="showPaymentModal = false">
+
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Mark Commissions as Paid</h3>
+
+            <div class="mb-4 text-gray-600">
+                You are about to pay <span class="font-bold text-indigo-600" x-text="selectedIds.length"></span> commission(s).
+                <div class="mt-2 text-sm bg-gray-100 p-2 rounded">
+                    Total Amount: <span class="font-bold">RM <span x-text="calculateTotalSelected()"></span></span>
+                </div>
+            </div>
+
+            <form @submit.prevent="submitPayment()">
+                <div class="mb-6">
+                    <label for="payment_date" class="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
+                    <input type="date" id="payment_date" x-model="paymentDate" required
+                           class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <p class="text-xs text-gray-500 mt-1">This date will be recorded in the ledger.</p>
+                </div>
+
+                <div class="flex justify-end space-x-3">
+                    <button type="button" @click="showPaymentModal = false"
+                            class="px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" :disabled="isSubmitting"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                        <span x-show="!isSubmitting">Confirm Payment</span>
+                        <span x-show="isSubmitting">Processing...</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function commissionManager() {
+    return {
+        commissions: [],
+        stats: {
+            month_payout: 0.0,
+            month_orders: 0,
+            month_items: 0
+        },
+        selectedIds: [],
+        selectAll: false,
+        filterStatus: '',
+
+        showPaymentModal: false,
+        showExportModal: false, // New State for Export Modal
+        paymentDate: new Date().toISOString().split('T')[0],
+        isSubmitting: false,
+
+        init() {
+            this.fetchCommissions();
+        },
+
+        async fetchCommissions() {
+            try {
+                const url = `{% url 'commission:api_get_commissions' %}?status=${this.filterStatus}`;
+                const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+                const data = await response.json();
+                this.commissions = data.commissions;
+
+                if (data.stats) {
+                    this.stats = data.stats;
+                }
+
+                this.selectedIds = [];
+                this.selectAll = false;
+            } catch (e) {
+                console.error("Error fetching commissions", e);
+            }
+        },
+
+        toggleSelectAll() {
+            if (this.selectAll) {
+                this.selectedIds = this.commissions
+                    .filter(c => c.status === 'Pending')
+                    .map(c => c.id);
+            } else {
+                this.selectedIds = [];
+            }
+        },
+
+        openPaymentModal() {
+            if (this.selectedIds.length === 0) return;
+            this.paymentDate = new Date().toISOString().split('T')[0];
+            this.showPaymentModal = true;
+        },
+
+        calculateTotalSelected() {
+            const total = this.commissions
+                .filter(c => this.selectedIds.some(id => id == c.id))
+                .reduce((sum, c) => sum + c.amount, 0);
+            return total.toFixed(2);
+        },
+
+        async submitPayment() {
+            this.isSubmitting = true;
+            try {
+                const response = await fetch(`{% url 'commission:api_pay_commissions' %}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: this.selectedIds,
+                        payment_date: this.paymentDate
+                    })
+                });
+
+                const res = await response.json();
+
+                if (res.success) {
+                    alert(res.message);
+                    this.showPaymentModal = false;
+                    this.fetchCommissions();
+                } else {
+                    alert(res.error || "Payment failed");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("An error occurred");
+            } finally {
+                this.isSubmitting = false;
+            }
+        }
+    }
+}
+</script>

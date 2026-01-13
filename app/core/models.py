@@ -18,6 +18,11 @@ class SiteSetting(models.Model):
         null=True,
         help_text="Upload a logo to display next to the site name in the navigation bar."
     )
+    customer_service_whatsapp = models.CharField(
+        max_length=20,
+        default="60199333030",
+        help_text="Format: 60123456789 (No '+' or dashes). Agent orders will be sent here."
+    )
     site_name_color = models.CharField(
         max_length=7,
         default='#4F46E5', # Indigo-600
@@ -33,6 +38,25 @@ class SiteSetting(models.Model):
         default='#FFFFFF',
         help_text="Hex color code for the top navigation bar (e.g., #FFFFFF)."
     )
+
+    # --- NEW: Checkout Page Settings ---
+    checkout_title = models.CharField(max_length=200, default="Checkout Confirmation|结账确认", help_text="Use '|' to separate lines.")
+    checkout_empty_msg = models.CharField(max_length=200, default="Your checkout session is empty or expired.|您的结账会话为空或已过期。", help_text="Use '|' to separate lines.")
+    checkout_return_btn = models.CharField(max_length=100, default="Return to Order Page|返回订单页面", help_text="Use '|' to separate lines.")
+
+    checkout_summary_title = models.CharField(max_length=200, default="Order Summary|订单摘要", help_text="Use '|' to separate lines.")
+    checkout_col_product = models.CharField(max_length=100, default="Product|产品", help_text="Use '|' to separate lines.")
+    checkout_col_qty = models.CharField(max_length=100, default="Qty|数量", help_text="Use '|' to separate lines.")
+    checkout_col_price = models.CharField(max_length=100, default="Unit Price|单价", help_text="Use '|' to separate lines.")
+    checkout_col_total = models.CharField(max_length=100, default="Total|总计", help_text="Use '|' to separate lines.")
+
+    checkout_total_label = models.CharField(max_length=100, default="Total:|总计：", help_text="Use '|' to separate lines.")
+    checkout_commission_label = models.CharField(max_length=100, default="Estimated Commission:|预计佣金：", help_text="Use '|' to separate lines.")
+
+    checkout_back_btn = models.CharField(max_length=100, default="Back to Cart|返回购物车", help_text="Use '|' to separate lines.")
+    checkout_confirm_btn = models.CharField(max_length=100, default="Confirm Order|确认订单", help_text="Use '|' to separate lines.")
+
+    # --- Payment Settings (Existing) ---
     payment_enabled = models.BooleanField(
         default=False,
         help_text="Enable or disable online payments globally."
@@ -40,11 +64,11 @@ class SiteSetting(models.Model):
     payment_provider = models.CharField(
         max_length=20,
         choices=[
-            ('TOYYIBPAY', 'ToyyibPay (FPX/Malaysia)'),
+            ('SENANGPAY', 'SenangPay (FPX/Credit Card)'),
             ('BILLPLZ', 'Billplz (FPX/Malaysia)'),
             ('STRIPE', 'Stripe (Credit Card)'),
         ],
-        default='TOYYIBPAY',
+        default='SENANGPAY',
         help_text="Select the logic handler for processing payments."
     )
     payment_gateway_url = models.CharField(
@@ -55,13 +79,14 @@ class SiteSetting(models.Model):
     payment_api_key = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Your Secret Key or API Key."
+        verbose_name="Secret Key / API Key",
+        help_text="Your Secret Key (SenangPay) or API Key."
     )
     payment_category_code = models.CharField(
         max_length=100,
         blank=True,
-        verbose_name="Category Code / Collection ID",
-        help_text="Required for ToyyibPay (Category Code) or Billplz (Collection ID)."
+        verbose_name="Merchant ID / Collection ID",
+        help_text="Required: Merchant ID (SenangPay) or Collection ID (Billplz)."
     )
     market_insights_nav_text = models.CharField(
         max_length=100,
@@ -105,95 +130,95 @@ class SiteSetting(models.Model):
     )
     sidebar_news_title = models.CharField(
         max_length=100,
-        default="Latest News | 最新消息",
+        default="最新消息 | Latest News",
         help_text="Title for the News widget in the sidebar (Product List/Detail pages)."
     )
     footer_col2_title = models.CharField(
         max_length=100,
-        default="Quick Links | 快速链接",
+        default="主要链接 | Quick Links",
         help_text="Title for the second column in the footer."
     )
     footer_col3_title = models.CharField(
         max_length=100,
-        default="Product Categories | 產品分類",
+        default="產品分類 | Product Categories",
         help_text="Title for the third column (Categories) in the footer."
     )
 
     footer_col4_title = models.CharField(
         max_length=100,
-        default="Contact Us | 關注我們",
+        default="联系我們 | Contact Us",
         help_text="Title for the fourth column (Contact Info) in the footer."
     )
 
     # Standard Link Labels
     footer_link_home_text = models.CharField(
         max_length=100,
-        default="Home | 主页",
+        default="主页 | Home",
         help_text="Label for the 'Home' link in the footer."
     )
     footer_link_products_text = models.CharField(
         max_length=100,
-        default="All Products | 所有产品",
+        default="所有产品 | All Products",
         help_text="Label for the 'All Products' link in the footer."
     )
     footer_link_blog_text = models.CharField(
         max_length=100,
-        default="Market Insights | 市场咨询",
+        default="市场热报 | Market Insights",
         help_text="Label for the 'Market Insights' link in the footer."
     )
     footer_link_account_text = models.CharField(
         max_length=100,
-        default="My Account | 我的账户",
+        default="我的账户 | My Account",
         help_text="Label for the 'My Account' link in the footer."
     )
     mobile_nav_products_text = models.CharField(
         max_length=50,
-        default="Products | 产品",
+        default="产品 | Products",
         help_text="Label for 'Products' in mobile bottom nav."
     )
     mobile_nav_order_text = models.CharField(
         max_length=50,
-        default="Order | 下单",
+        default="下单 | Order",
         help_text="Label for 'Order' in mobile bottom nav."
     )
     mobile_nav_account_text = models.CharField(
         max_length=50,
-        default="Account | 账户",
+        default="账户 | Account",
         help_text="Label for 'Account' in mobile bottom nav."
     )
     mobile_nav_login_text = models.CharField(
         max_length=50,
-        default="Login | 登录",
+        default="登录 | Login",
         help_text="Label for 'Login' in mobile bottom nav."
     )
     user_menu_signed_in_text = models.CharField(
         max_length=100,
-        default="Signed in as | 登录身份",
+        default="登录为 | Signed in as",
         help_text="Label for 'Signed in as' in the user dropdown."
     )
     user_menu_profile_text = models.CharField(
         max_length=100,
-        default="Your Profile | 个人资料",
-        help_text="Label for 'Your Profile' link in the user dropdown."
+        default="订单记录 | Order History",
+        help_text="Label for the link pointing to the Order History page (formerly Profile)."
     )
     user_menu_settings_text = models.CharField(
         max_length=100,
-        default="Settings | 设置",
-        help_text="Label for 'Settings' link in the user dropdown."
+        default="个人资料 | Profile",
+        help_text="Label for the link pointing to User Profile settings."
     )
     user_menu_signout_text = models.CharField(
         max_length=100,
-        default="Sign out | 退出登录",
+        default="退出 | Sign out",
         help_text="Label for 'Sign out' button in the user dropdown."
     )
     place_order_title = models.CharField(
         max_length=100,
-        default="Place a New Order | 下新订单",
+        default="建立新订单 | Place a New Order",
         help_text="Main title on the Place Order page."
     )
     place_order_search_placeholder = models.CharField(
         max_length=100,
-        default="Search products by name or SKU... | 按名称 or SKU 搜索...",
+        default="按名称 or SKU 搜索... | Search products by name or SKU...",
         help_text="Placeholder text for the search bar."
     )
     featured_products_title = models.CharField(
@@ -203,27 +228,27 @@ class SiteSetting(models.Model):
     )
     special_promotions_title = models.CharField(
         max_length=100,
-        default="Special Promotions | 特别优惠",
+        default="特别优惠 | Special Promotions",
         help_text="Title for the Promotions section on the product list page."
     )
     special_promotions_subtitle = models.CharField(
         max_length=255,
-        default="Exclusive deals available for a limited time. | 限时独家优惠。",
+        default="限时独家优惠。 | Exclusive deals available for a limited time.",
         help_text="Subtitle/Description under the Promotions title."
     )
     product_action_enquire_text = models.CharField(
         max_length=50,
-        default="Enquire | 咨询",
+        default="询问 | Enquire",
         help_text="Label for the 'Enquire' button (WhatsApp)."
     )
     product_action_share_text = models.CharField(
         max_length=50,
-        default="Share | 分享",
+        default=" 分享| Share",
         help_text="Label for the 'Share' button."
     )
     product_action_details_text = models.CharField(
         max_length=50,
-        default="Details | 详情",
+        default="详情 | Details",
         help_text="Label for the 'Details' button (Quick View modal)."
     )
     price_on_request_text = models.CharField(
@@ -243,61 +268,61 @@ class SiteSetting(models.Model):
     )
     homepage_view_all_text = models.CharField(
         max_length=50,
-        default="View All | 查看全部",
+        default="查看全部 | View All",
         help_text="Label for 'View All' links on the homepage category sections."
     )
     place_order_add_text = models.CharField(
         max_length=50,
-        default="Add | 添加",
+        default="加入购物车 | Add to Cart",
         help_text="Label for the 'Add' button in the order table."
     )
     place_order_added_text = models.CharField(
         max_length=50,
-        default="Added | 已加",
+        default="已加入购物车 | Added",
         help_text="Label for the 'Added' button state in the order table."
     )
     place_order_empty_cart_text = models.CharField(
         max_length=100,
-        default="Your cart is empty. | 您的购物车是空的。",
+        default="您的购物车是空的。 | Your cart is empty.",
         help_text="Message displayed when the cart is empty in the order summary."
     )
     profile_hello_text = models.CharField(
         max_length=50,
-        default="Hello | 你好",
+        default="你好 | Hello",
         help_text="Greeting text before the username."
     )
     profile_signout_text = models.CharField(
         max_length=50,
-        default="Sign Out | 退出",
+        default="退出 | Sign Out",
         help_text="Label for the Sign Out button."
     )
 
     # Agent Dashboard
     agent_dashboard_title = models.CharField(
         max_length=100,
-        default="Agent Dashboard | 代理仪表板",
+        default="代理仪表板 | Agent Dashboard",
         help_text="Title for the Agent Dashboard section."
     )
     agent_stats_earnings_text = models.CharField(
         max_length=100,
-        default="Total Earnings (All Time) | 总收入 (累计)",
+        default="总收入 (累计) | Total Earnings (All Time)",
         help_text="Label for the Total Earnings stat card."
     )
     agent_stats_pending_text = models.CharField(
         max_length=100,
-        default="Pending Payout | 待付金额",
+        default="待付金额 | Pending Payout",
         help_text="Label for the Pending Payout stat card."
     )
     agent_stats_paid_text = models.CharField(
         max_length=100,
-        default="Paid Out | 已付金额",
+        default="已付金额 | Paid Out",
         help_text="Label for the Paid Out stat card."
     )
 
     # Section Headers
     commission_history_title = models.CharField(
         max_length=100,
-        default="Commission History | 佣金记录",
+        default="佣金记录 | Commission History",
         help_text="Title for the Commission History table."
     )
     order_history_title = models.CharField(
@@ -394,12 +419,12 @@ class SiteSetting(models.Model):
     # --- NEW: Verification Modal Labels ---
     verify_modal_title = models.CharField(
         max_length=100,
-        default="Verify your email | 验证邮件账号",
+        default="验证邮件账号 | Verify your email",
         help_text="Title for the OTP verification modal."
     )
     verify_btn_text = models.CharField(
         max_length=50,
-        default="Verify Account | 验证账户",
+        default="验证账户 | Verify Account",
         help_text="Label for the Verify button."
     )
 
@@ -414,16 +439,39 @@ class SiteSetting(models.Model):
         help_text="Subtitle for the Subscription Plans page."
     )
     # Table Headers
-    place_order_header_product = models.CharField(max_length=50, default="Product | 产品")
+    place_order_header_product = models.CharField(max_length=50, default="产品 | Product")
     place_order_header_sku = models.CharField(max_length=50, default="SKU")
-    place_order_header_price = models.CharField(max_length=50, default="Selling Price | 售价")
-    place_order_header_profit = models.CharField(max_length=50, default="Your Profit | 您的利润")
+    place_order_header_price = models.CharField(max_length=50, default="售价 | Selling Price")
+    place_order_header_profit = models.CharField(max_length=50, default="您的利润 | Your Profit")
 
     # Sidebar / Summary
     place_order_summary_title = models.CharField(max_length=100, default="Order Summary | 订单摘要")
     place_order_total_label = models.CharField(max_length=50, default="Total Price: | 总价:")
     place_order_est_profit_label = models.CharField(max_length=50, default="Estimated Profit: | 预计利润:")
     place_order_btn_label = models.CharField(max_length=50, default="Place Order | 下单")
+
+    settings_page_title = models.CharField(max_length=100, default="Account Settings | 账户设置", help_text="Main title for the Settings page.")
+    settings_profile_title = models.CharField(max_length=100, default="Profile Information | 个人资料", help_text="Header for the Profile section.")
+    settings_security_title = models.CharField(max_length=100, default="Security | 安全设置", help_text="Header for the Security section.")
+    settings_security_desc = models.CharField(max_length=255, default="Update your password to keep your account secure. | 更新您的密码以保持账户安全。", help_text="Description under Security header.")
+
+    # Form Labels
+    settings_label_first_name = models.CharField(max_length=50, default="First Name | 名", help_text="Label for First Name.")
+    settings_label_last_name = models.CharField(max_length=50, default="Last Name | 姓", help_text="Label for Last Name.")
+    settings_label_email = models.CharField(max_length=50, default="Email Address | 电子邮件", help_text="Label for Email.")
+    settings_label_phone = models.CharField(max_length=50, default="Phone Number | 电话号码", help_text="Label for Phone.")
+    settings_label_address = models.CharField(max_length=50, default="Shipping Address | 收货地址", help_text="Label for Address.")
+
+    # Password Labels
+    settings_label_current_pwd = models.CharField(max_length=50, default="Current Password | 当前密码", help_text="Label for Current Password.")
+    settings_label_new_pwd = models.CharField(max_length=50, default="New Password | 新密码", help_text="Label for New Password.")
+    settings_label_confirm_pwd = models.CharField(max_length=50, default="Confirm New Password | 确认新密码", help_text="Label for Confirm Password.")
+
+    # Buttons
+    settings_btn_edit = models.CharField(max_length=50, default="Edit | 编辑", help_text="Button text for Edit.")
+    settings_btn_cancel = models.CharField(max_length=50, default="Cancel | 取消", help_text="Button text for Cancel.")
+    settings_btn_save = models.CharField(max_length=50, default="Save Changes | 保存更改", help_text="Button text for Save.")
+    settings_btn_change_pwd = models.CharField(max_length=50, default="Change Password | 更改密码", help_text="Button text for Change Password.")
 
     # --- Category Header Styling ---
     category_header_background_color = models.CharField(
@@ -669,6 +717,31 @@ class SiteSetting(models.Model):
         return self._get_lines(self.place_order_empty_cart_text)
 
     @property
+    def checkout_title_lines(self): return self._get_lines(self.checkout_title)
+    @property
+    def checkout_empty_msg_lines(self): return self._get_lines(self.checkout_empty_msg)
+    @property
+    def checkout_return_btn_lines(self): return self._get_lines(self.checkout_return_btn)
+    @property
+    def checkout_summary_title_lines(self): return self._get_lines(self.checkout_summary_title)
+    @property
+    def checkout_col_product_lines(self): return self._get_lines(self.checkout_col_product)
+    @property
+    def checkout_col_qty_lines(self): return self._get_lines(self.checkout_col_qty)
+    @property
+    def checkout_col_price_lines(self): return self._get_lines(self.checkout_col_price)
+    @property
+    def checkout_col_total_lines(self): return self._get_lines(self.checkout_col_total)
+    @property
+    def checkout_total_label_lines(self): return self._get_lines(self.checkout_total_label)
+    @property
+    def checkout_commission_label_lines(self): return self._get_lines(self.checkout_commission_label)
+    @property
+    def checkout_back_btn_lines(self): return self._get_lines(self.checkout_back_btn)
+    @property
+    def checkout_confirm_btn_lines(self): return self._get_lines(self.checkout_confirm_btn)
+
+    @property
     def profile_hello_lines(self): return self._get_lines(self.profile_hello_text)
 
     @property
@@ -758,6 +831,64 @@ class SiteSetting(models.Model):
     @property
     def subscription_subtitle_lines(self):
         return self._get_lines(self.subscription_subtitle)
+
+    @property
+    def settings_page_title_lines(self): return self._get_lines(self.settings_page_title)
+
+    @property
+    def settings_profile_title_lines(self): return self._get_lines(self.settings_profile_title)
+
+    @property
+    def settings_security_title_lines(self): return self._get_lines(self.settings_security_title)
+
+    @property
+    def settings_security_desc_lines(self): return self._get_lines(self.settings_security_desc)
+
+    @property
+    def settings_label_first_name_lines(self): return self._get_lines(self.settings_label_first_name)
+
+    @property
+    def settings_label_last_name_lines(self): return self._get_lines(self.settings_label_last_name)
+
+    @property
+    def settings_label_email_lines(self): return self._get_lines(self.settings_label_email)
+
+    @property
+    def settings_label_phone_lines(self): return self._get_lines(self.settings_label_phone)
+
+    @property
+    def settings_label_address_lines(self): return self._get_lines(self.settings_label_address)
+
+    @property
+    def settings_label_current_pwd_lines(self): return self._get_lines(self.settings_label_current_pwd)
+
+    @property
+    def settings_label_new_pwd_lines(self): return self._get_lines(self.settings_label_new_pwd)
+
+    @property
+    def settings_label_confirm_pwd_lines(self): return self._get_lines(self.settings_label_confirm_pwd)
+
+    @property
+    def settings_btn_edit_lines(self): return self._get_lines(self.settings_btn_edit)
+
+    @property
+    def settings_btn_cancel_lines(self): return self._get_lines(self.settings_btn_cancel)
+
+    @property
+    def settings_btn_save_lines(self): return self._get_lines(self.settings_btn_save)
+
+    @property
+    def settings_btn_change_pwd_lines(self): return self._get_lines(self.settings_btn_change_pwd)
+
+    @classmethod
+    def load(cls):
+        """
+        Singleton pattern helper: always returns the first instance,
+        or creates one if it doesn't exist.
+        """
+        if cls.objects.exists():
+            return cls.objects.first()
+        return cls.objects.create()
 
     def save(self, *args, **kwargs):
         # Ensure only one instance exists (Singleton pattern)
@@ -906,3 +1037,26 @@ class PaymentSetting(SiteSetting):
         proxy = True
         verbose_name = "Payment Configuration"
         verbose_name_plural = "Payment Configuration"
+
+class PaymentOption(models.Model):
+    OPTION_TYPES = [
+        ('GATEWAY', 'Online Gateway (Uses Site Config)'),
+        ('COD', 'Cash On Delivery'),
+        ('MANUAL', 'Manual / Bank Transfer'),
+    ]
+    name = models.CharField(max_length=100, help_text="Display name (e.g., 'Online Banking', 'COD').")
+    option_type = models.CharField(
+        max_length=20,
+        choices=OPTION_TYPES,
+        default='GATEWAY',
+        help_text="GATEWAY triggers the active online provider. COD/MANUAL just records the order."
+    )
+    description = models.TextField(blank=True, help_text="Instructions displayed to the user (e.g. Bank details).")
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_option_type_display()})"
+
+    class Meta:
+        verbose_name = "Payment Option"
+        verbose_name_plural = "Payment Options"

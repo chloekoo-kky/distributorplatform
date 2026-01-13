@@ -79,7 +79,7 @@ class OrderAdmin(admin.ModelAdmin):
     # --- Columns & Formatting ---
 
     def order_id_display(self, obj):
-        return f"#{str(obj.id)[:8]}..."
+        return f"{str(obj.id)[:8]}..."
     order_id_display.short_description = "ID"
     order_id_display.admin_order_field = 'id'
 
