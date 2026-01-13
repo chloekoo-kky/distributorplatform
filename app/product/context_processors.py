@@ -11,16 +11,18 @@ def category_nav_context(request):
 
     if request.user.is_authenticated and not request.user.is_anonymous:
         # Get all categories assigned to the user's groups
+        # FIX: Order by 'display_order' first, then 'name'
         allowed_categories_list = Category.objects.filter(
             user_groups__users=request.user
-        ).select_related('group').distinct().order_by('name')
+        ).select_related('group').distinct().order_by('display_order', 'name')
     else:
         # For anonymous users, get products first
         products_query = Product.objects.filter(members_only=False)
         # Find all categories that contain at least one of these products
+        # FIX: Order by 'display_order' first, then 'name'
         allowed_categories_list = Category.objects.filter(
             products__in=products_query
-        ).select_related('group').distinct().order_by('name')
+        ).select_related('group').distinct().order_by('display_order', 'name')
 
     return {
         'allowed_categories_list': allowed_categories_list,

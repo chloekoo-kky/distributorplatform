@@ -27,6 +27,10 @@ class Category(models.Model):
         blank=True,
         help_text="A unique code for this category (e.g., 'NIKE')."
     )
+    display_order = models.PositiveIntegerField(
+        default=0,
+        help_text="Order of display in navigation menus (lowest number appears first. )"
+    )
 
     description = HTMLField(
         blank=True,
@@ -44,6 +48,7 @@ class Category(models.Model):
     class Meta:
         unique_together = ('name', 'group')
         verbose_name_plural = "Categories"
+        ordering = ['display_order', 'name']
 
     def __str__(self):
         return f"{self.group.name} - {self.name}"

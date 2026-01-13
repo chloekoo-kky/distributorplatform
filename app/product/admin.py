@@ -39,7 +39,7 @@ class CategoryContentSectionInline(admin.TabularInline):
 
 class CategoryAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = CategoryResource
-    list_display = ('code', 'name', 'group', 'product_count')
+    list_display = ('display_order', 'code', 'name', 'group', 'product_count')
     list_filter = ('group',)
     search_fields = ('code', 'name', 'group__name')
     # --- Add Inline ---
