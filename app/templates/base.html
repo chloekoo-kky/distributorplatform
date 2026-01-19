@@ -360,7 +360,7 @@
     {% if allowed_categories_list %}
     <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav class="-mb-px flex space-x-8 overflow-x-auto pb-2" aria-label="Tabs">
+            <nav class="-mb-px flex space-x-8 overflow-x-auto pb-2 pt-2" aria-label="Tabs">
                 {% for category in allowed_categories_list %}
                 <a href="{% url 'product:product_list' %}?category={{ category.code }}"
                 class="flex flex-col justify-center items-center py-2 px-2 border-b-2 font-medium transition-colors duration-200 min-w-max

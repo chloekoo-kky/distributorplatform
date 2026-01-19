@@ -107,6 +107,26 @@
                         <div class="p-3">
                              <p class="text-sm font-medium text-gray-900 truncate" x-text="image.title"></p>
                              <p class="text-xs font-medium text-indigo-600" x-text="image.category_name"></p>
+                            <template x-if="image.assigned_to && image.assigned_to.length > 0">
+                                 <div class="border-t border-gray-100 pt-2 mt-1">
+                                     <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Assigned To:</p>
+                                     <div class="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
+                                         <template x-for="(assign, idx) in image.assigned_to" :key="idx">
+                                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200"
+                                                   :title="assign.type + ': ' + assign.name">
+                                                 <span class="font-bold mr-1" x-text="assign.type + ':'"></span>
+                                                 <span class="truncate max-w-[80px]" x-text="assign.name"></span>
+                                             </span>
+                                         </template>
+                                     </div>
+                                 </div>
+                             </template>
+
+                             <template x-if="!image.assigned_to || image.assigned_to.length === 0">
+                                 <div class="border-t border-gray-100 pt-2 mt-1">
+                                     <p class="text-[10px] text-gray-400 italic">Not assigned</p>
+                                 </div>
+                             </template>
                         </div>
                         <div class="absolute top-2 right-2 flex flex-col space-y-1.5">
                             <button @click="$store.images.deleteImage(image.id)" class="p-1.5 bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Delete Image">

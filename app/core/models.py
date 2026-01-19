@@ -327,92 +327,92 @@ class SiteSetting(models.Model):
     )
     order_history_title = models.CharField(
         max_length=100,
-        default="Order History | 订单记录",
+        default="订单记录 | Order History",
         help_text="Title for the Order History table."
     )
     nav_login_text = models.CharField(
         max_length=50,
-        default="Login | 登录",
+        default="登录 | Login",
         help_text="Label for the 'Login' link in the top navigation."
     )
     nav_register_text = models.CharField(
         max_length=50,
-        default="Register | 注册",
+        default="注册 | Register",
         help_text="Label for the 'Register' button in the top navigation."
     )
     login_title = models.CharField(
         max_length=100,
-        default="Sign In | 登录",
+        default="登录 | Sign In",
         help_text="Browser tab title for the login page."
     )
     login_heading = models.CharField(
         max_length=100,
-        default="Sign in to your account | 登录您的账户",
+        default="登录您的账户 | Sign in to your account",
         help_text="Main heading on the login card."
     )
     login_register_text = models.CharField(
         max_length=100,
-        default="Or register for a new account | 或注册新账户",
+        default="或注册新账户 | Or register for a new account",
         help_text="Link text to the registration page."
     )
     login_username_placeholder = models.CharField(
         max_length=50,
-        default="Username | 用户名",
+        default="用户名 | Username",
         help_text="Placeholder for the username input."
     )
     login_password_placeholder = models.CharField(
         max_length=50,
-        default="Password | 密码",
+        default="密码 | Password",
         help_text="Placeholder for the password input."
     )
     login_btn_text = models.CharField(
         max_length=50,
-        default="Sign In | 登录",
+        default="登录 | Sign In",
         help_text="Label for the Sign In button."
     )
     login_error_text = models.CharField(
         max_length=200,
-        default="Your username and password didn't match. Please try again. | 用户名或密码不匹配，请重试。",
+        default="用户名或密码不匹配，请重试。 | Your username and password didn't match. Please try again.",
         help_text="Error message displayed when login fails."
     )
     register_title = models.CharField(
         max_length=100,
-        default="Join Us | 注册",
+        default="注册 | Join Us",
         help_text="Browser tab title for the register page."
     )
     register_heading = models.CharField(
         max_length=100,
-        default="Create your account | 创建您的账户",
+        default="创建您的账户 | Create your account",
         help_text="Main heading on the register card."
     )
     register_username_placeholder = models.CharField(
         max_length=50,
-        default="Username | 用户名",
+        default="用户名 | Username",
         help_text="Placeholder for the username input."
     )
     register_email_placeholder = models.CharField(
         max_length=50,
-        default="Email | 电子邮件",
+        default="电子邮件 | Email",
         help_text="Placeholder for the email input."
     )
     register_phone_placeholder = models.CharField(
         max_length=50,
-        default="Phone Number | 电话号码",
+        default="电话号码 | Phone Number",
         help_text="Placeholder for the phone number input."
     )
     register_password_placeholder = models.CharField(
         max_length=50,
-        default="Password | 密码",
+        default="密码 | Password",
         help_text="Placeholder for the password input."
     )
     register_btn_text = models.CharField(
         max_length=50,
-        default="Register | 注册",
+        default="注册 | Register",
         help_text="Label for the Register button."
     )
     register_signin_text = models.CharField(
         max_length=100,
-        default="Already have an account? Sign in | 已有账户？登录",
+        default="已有账户？登录 | Already have an account? Sign in",
         help_text="Link text to redirect to the login page."
     )
 
@@ -430,12 +430,12 @@ class SiteSetting(models.Model):
 
     subscription_title = models.CharField(
         max_length=100,
-        default="Choose the right plan for you | 选择适合您的计划",
+        default="选择适合您的计划 | Choose the right plan for you",
         help_text="Title for the Subscription Plans page."
     )
     subscription_subtitle = models.CharField(
         max_length=255,
-        default="Unlock higher commissions and exclusive features by upgrading your agent status. | 升级代理身份，解锁更高佣金和专属功能。",
+        default="升级代理身份，解锁更高佣金和专属功能。 | Unlock higher commissions and exclusive features by upgrading your agent status.",
         help_text="Subtitle for the Subscription Plans page."
     )
     # Table Headers
