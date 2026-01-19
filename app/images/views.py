@@ -30,24 +30,49 @@ def ajax_get_images(request):
     optionally filtered by category.
     """
     category_id = request.GET.get('category_id')
-    images_query = MediaImage.objects.all()
+
+    # 1. Prefetch all relationships to avoid N+1 query performance issues
+    images_query = MediaImage.objects.all().select_related('category').prefetch_related(
+        'featured_in_products',
+        'product_galleries',
+        'featured_in_posts',
+        'post_galleries'
+    )
 
     if category_id:
         images_query = images_query.filter(category_id=category_id)
 
-    images = images_query.select_related('category') # Optimize query
+    data = []
+    for img in images_query:
+        # 2. Build the list of assignments
+        assigned_to = []
 
-    data = [
-        {
+        # Product: Featured
+        for p in img.featured_in_products.all():
+            assigned_to.append({'type': 'F.Product', 'name': p.name})
+
+        # Product: Gallery
+        for p in img.product_galleries.all():
+            assigned_to.append({'type': 'Product', 'name': p.name})
+
+        # Post: Featured
+        for p in img.featured_in_posts.all():
+            assigned_to.append({'type': 'F.Post', 'name': p.title})
+
+        # Post: Gallery
+        for p in img.post_galleries.all():
+            assigned_to.append({'type': 'Post', 'name': p.title})
+
+        data.append({
             'id': img.id,
             'title': img.title,
             'url': img.image.url,
             'alt_text': img.alt_text,
             'category_id': img.category_id,
             'category_name': img.category.name if img.category else 'Uncategorized',
-        }
-        for img in images
-    ]
+            'assigned_to': assigned_to, # <--- Add this field
+        })
+
     categories = list(ImageCategory.objects.values('id', 'name'))
     return JsonResponse({'images': data, 'categories': categories})
 
@@ -104,6 +129,7 @@ def ajax_upload_image(request):
                 'alt_text': image_instance.alt_text,
                 'category_id': image_instance.category_id,
                 'category_name': image_instance.category.name if image_instance.category else 'Uncategorized',
+                'assigned_to': [], # <--- New images have no assignments
             })
 
         return JsonResponse({
@@ -140,8 +166,9 @@ def ajax_delete_image(request, image_id):
 @transaction.atomic
 def ajax_assign_to_products(request):
     """
-    Handles POST request to assign a MediaImage to multiple Products,
-    either as a featured_image or by adding to gallery_images.
+    Handles POST request to assign a MediaImage to multiple Products.
+    Featured: Sets image as featured (exclusive).
+    Gallery: Syncs image in gallery (Adds to selected, Removes from unselected).
     """
     if request.method != 'POST' or not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
@@ -169,12 +196,17 @@ def ajax_assign_to_products(request):
             logger.info(f"Assign Featured Image to Products: Set {set_count}, Cleared {cleared_count} for Image {image_id}")
 
         elif assignment_type == 'gallery':
-            # 1. Add this image to the gallery for all selected products
-            products_to_add_to = Product.objects.filter(id__in=product_ids)
-            for product in products_to_add_to:
+            # 1. Add image to Selected Products
+            products_to_set = Product.objects.filter(id__in=product_ids)
+            for product in products_to_set:
                 product.gallery_images.add(image_instance)
 
-            logger.info(f"Added Image {image_id} to Gallery for {len(product_ids)} products.")
+            # 2. Remove image from Unselected Products (that previously had it)
+            products_to_remove = Product.objects.filter(gallery_images=image_instance).exclude(id__in=product_ids)
+            for product in products_to_remove:
+                product.gallery_images.remove(image_instance)
+
+            logger.info(f"Gallery Sync for Image {image_id}: Added to {products_to_set.count()}, Removed from {products_to_remove.count()}")
 
         else:
             return JsonResponse({'success': False, 'error': 'Invalid assignment_type.'}, status=400)
@@ -188,6 +220,7 @@ def ajax_assign_to_products(request):
                 'name': p.name,
                 'sku': p.sku or '-',
                 'featured_image_id': p.featured_image_id,
+                'featured_image_title': p.featured_image.title if p.featured_image else None, # <--- ADD THIS
                 'gallery_image_ids': list(p.gallery_images.all().values_list('id', flat=True))
             } for p in all_products_qs
         ]
@@ -209,8 +242,9 @@ def ajax_assign_to_products(request):
 @transaction.atomic
 def ajax_assign_to_posts(request):
     """
-    Handles POST request to assign a MediaImage to multiple Blog Posts,
-    either as a featured_image or by adding to gallery_images.
+    Handles POST request to assign a MediaImage to multiple Blog Posts.
+    Featured: Sets image as featured.
+    Gallery: Syncs image in gallery (Adds to selected, Removes from unselected).
     """
     if request.method != 'POST' or not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
@@ -238,14 +272,17 @@ def ajax_assign_to_posts(request):
             logger.info(f"Assign Featured Image to Posts: Set {set_count}, Cleared {cleared_count} for Image {image_id}")
 
         elif assignment_type == 'gallery':
-            # 1. Add this image to the gallery for all selected posts
-            posts_to_add_to = Post.objects.filter(id__in=post_ids)
-            for post in posts_to_add_to:
-                post.gallery_images.add(image_instance) # .add() is safe to call multiple times
+            # 1. Add image to Selected Posts
+            posts_to_set = Post.objects.filter(id__in=post_ids)
+            for post in posts_to_set:
+                post.gallery_images.add(image_instance)
 
-            # Note: We don't remove from gallery, as "assign" here means "add to".
-            # Removing would require a different UI.
-            logger.info(f"Added Image {image_id} to Gallery for {len(post_ids)} posts.")
+            # 2. Remove image from Unselected Posts
+            posts_to_remove = Post.objects.filter(gallery_images=image_instance).exclude(id__in=post_ids)
+            for post in posts_to_remove:
+                post.gallery_images.remove(image_instance)
+
+            logger.info(f"Gallery Sync for Image {image_id}: Added to {posts_to_set.count()}, Removed from {posts_to_remove.count()}")
 
         else:
             return JsonResponse({'success': False, 'error': 'Invalid assignment_type.'}, status=400)
@@ -322,13 +359,14 @@ def ajax_bulk_assign(request):
             } for p in all_products_qs
         ]
 
-        all_posts_qs = Post.objects.all().prefetch_related('gallery_images').select_related('featured_image')
-        all_posts_list = [
+        all_products_qs = Product.objects.all().prefetch_related('gallery_images').select_related('featured_image')
+        all_products_list = [
             {
-                'id': p.id, 'title': p.title,
+                'id': p.id, 'name': p.name, 'sku': p.sku or '-',
                 'featured_image_id': p.featured_image_id,
+                'featured_image_title': p.featured_image.title if p.featured_image else None, # <--- ADD THIS
                 'gallery_image_ids': list(p.gallery_images.all().values_list('id', flat=True))
-            } for p in all_posts_qs
+            } for p in all_products_qs
         ]
 
         return JsonResponse({
@@ -386,6 +424,7 @@ def ajax_edit_image(request, image_id):
             'alt_text': image.alt_text,
             'category_id': image.category_id,
             'category_name': image.category.name if image.category else 'Uncategorized',
+            'assigned_to': [], # <--- Maintain structure (assignments don't change on edit details)
         }
 
         return JsonResponse({'success': True, 'image': serialized_image})

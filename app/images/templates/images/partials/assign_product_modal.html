@@ -52,22 +52,34 @@
                            :value="product.id"
                            x-model="$store.images.assignProductModalSelectedProducts"
                            class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+
                     <span class="ml-3 text-sm font-medium text-gray-700">
                         <span x-text="product.name"></span>
                         <span x-text="product.sku ? `(${product.sku})` : ''" class="text-xs text-gray-500"></span>
                     </span>
 
-                    <span x-show="$store.images.assignProductModalAssignmentType === 'featured' && product.featured_image_id && $store.images.selectedImageToAssign && product.featured_image_id !== $store.images.selectedImageToAssign.id"
-                          class="ml-auto text-xs font-semibold text-yellow-600"
-                          title="This product already has a different featured image.">
-                        (Has other image)
+                    <span x-show="$store.images.assignProductModalAssignmentType === 'featured' && product.featured_image_id"
+                          class="ml-auto text-xs flex items-center gap-1">
+
+                        <span x-show="$store.images.selectedImageToAssign && product.featured_image_id === $store.images.selectedImageToAssign.id"
+                              class="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded border border-green-200">
+                            Current
+                        </span>
+
+                        <span x-show="!$store.images.selectedImageToAssign || product.featured_image_id !== $store.images.selectedImageToAssign.id"
+                              class="text-gray-500 italic truncate max-w-[120px]"
+                              :title="'Current: ' + (product.featured_image_title || 'Untitled')">
+                            <span class="text-gray-400 mr-1">Has:</span>
+                            <span x-text="product.featured_image_title || 'Untitled'"></span>
+                        </span>
                     </span>
+
                     <span x-show="$store.images.assignProductModalAssignmentType === 'gallery' && $store.images.selectedImageToAssign && product.gallery_image_ids.includes($store.images.selectedImageToAssign.id)"
                           class="ml-auto text-xs font-semibold text-green-600"
                           title="This image is already in this post's gallery.">
-                        (Already in gallery)
+                        (In gallery)
                     </span>
-                    </label>
+                </label>
             </template>
         </div>
 

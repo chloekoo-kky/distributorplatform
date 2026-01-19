@@ -540,6 +540,9 @@ def api_manage_products(request):
 
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
             'featured_image_alt': product.featured_image.alt_text if product.featured_image else product.name,
+            'featured_image_id': product.featured_image_id, # FIX: Required for checkbox logic
+            'featured_image_title': product.featured_image.title if product.featured_image else None, # FIX: For displaying name
+            
             'gallery_image_ids': list(product.gallery_images.all().values_list('id', flat=True))
         }
         serialized_products.append(product_data)

@@ -25,7 +25,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis: # <-- Add this dependency
+      redis: 
         condition: service_started
 
   db:
@@ -42,12 +42,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- Add this new service ---
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-  # --- End of new service ---
 
 volumes:
   db-data:

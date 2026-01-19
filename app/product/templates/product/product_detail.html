@@ -399,7 +399,7 @@ function productDetail() {
 
         // --- WhatsApp Links ---
         getWhatsAppEnquiryLink() {
-            const phoneNumber = '60123456789'; // Replace with your actual number
+            const phoneNumber = "{{ site_settings.customer_service_whatsapp|default:'60199333030' }}"; // Replace with your actual number
             const productName = this.product.name || 'Product';
             const productSku = this.product.sku || 'N/A';
             const message = `Hi, I am interested in ${productName} (SKU: ${productSku}). Could you please provide more information?`;

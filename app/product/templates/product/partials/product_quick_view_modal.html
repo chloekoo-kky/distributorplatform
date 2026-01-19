@@ -263,7 +263,7 @@ function productQuickView() {
         getWhatsAppEnquiryLink() {
             // ------------------------------------------------------
             // TODO: Replace with your actual support number
-            const phoneNumber = '60123456789';
+            const phoneNumber = "{{ site_settings.customer_service_whatsapp|default:'60199333030' }}";
             // ------------------------------------------------------
 
             const productName = this.product.name || 'Product';
