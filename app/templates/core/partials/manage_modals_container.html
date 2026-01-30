@@ -1,0 +1,24 @@
+{% include 'inventory/partials/upload_quotation_modal.html' %}
+{% include 'inventory/partials/create_quotation_modal.html' %}
+{% include 'inventory/partials/edit_invoice_modal.html' %}
+{% include 'inventory/partials/upload_batch_modal.html' %}
+{% include 'inventory/partials/receive_stock_modal.html' %}
+<div x-show="$store.images.showAssignProductModal">
+    {% include 'images/partials/assign_product_modal.html' %}
+</div>
+<div x-show="$store.images.showAssignPostModal">
+    {% include 'images/partials/assign_post_modal.html' %}
+</div>
+<div x-show="$store.images.showBulkAssignModal">
+    {% include 'images/partials/bulk_assign_modal.html' %}
+</div>
+{% include 'product/partials/product_edit_modal.html' %}
+{% include 'product/product_pricing_modal.html' %}
+{% include 'product/partials/upload_product_modal.html' %}
+<div x-show="$store.images.showImageEditModal">
+    {% include 'images/partials/edit_image_modal.html' %}
+</div>
+{% include 'core/partials/edit_banner_modal.html' %}
+{% include 'seo/partials/manage_seo_modal.html' %}
+{% include 'product/partials/manage_category_modal.html' %}
+{% include 'blog/partials/manage_blog_modal.html' %}

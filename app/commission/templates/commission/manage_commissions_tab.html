@@ -2,13 +2,78 @@
 
 <div x-data="commissionManager()" x-init="init()">
 
+    {# --- Header --- #}
     <div class="mb-6 flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
             <h3 class="text-2xl font-semibold text-gray-700">Commission Management</h3>
-            <p class="text-sm text-gray-500 mt-1">Overview of agent earnings and payouts for the current month.</p>
+            <p class="text-sm text-gray-500 mt-1">Overview of agent earnings and payouts.</p>
         </div>
     </div>
 
+        {# --- Filters & Action Bar --- #}
+    <div class="bg-white rounded-lg shadow mb-6 p-4">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+
+            {# 1. Period Selector (Month/Year) #}
+            <div class="md:col-span-3">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Period</label>
+                <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2">
+                    <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <span class="text-sm font-semibold text-gray-700 select-none min-w-[8rem] text-center" x-text="currentMonthLabel"></span>
+                    <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Next Month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            {# 2. Search #}
+            <div class="md:col-span-3">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Search Agent/Order</label>
+                <div class="relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <input type="text" x-model.debounce.500ms="searchQuery" @input="fetchCommissions()"
+                           class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md h-10"
+                           placeholder="Search...">
+                </div>
+            </div>
+
+            {# 3. Status Filter #}
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select x-model="filterStatus" @change="fetchCommissions()"
+                        class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md h-10">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="PAID">Paid</option>
+                    <option value="CANCELLED">Cancelled</option>
+                </select>
+            </div>
+
+            {# 4. Actions #}
+            <div class="md:col-span-4 flex space-x-2 justify-end">
+                <button @click="showExportModal = true"
+                        class="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none">
+                    <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Export
+                </button>
+
+                <button @click="openPaymentModal()"
+                        x-show="selectedIds.length > 0"
+                        x-transition
+                        class="inline-flex justify-center items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 h-10 focus:outline-none">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    Pay Selected (<span x-text="selectedIds.length"></span>)
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    {# --- Statistics Cards --- #}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-white overflow-hidden shadow rounded-lg">
             <div class="p-5">
@@ -21,7 +86,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">
-                                Total Payout (This Month)
+                                Payouts (Selected Month)
                             </dt>
                             <dd class="text-2xl font-semibold text-gray-900" x-text="'RM ' + stats.month_payout.toFixed(2)">
                                 RM 0.00
@@ -43,7 +108,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">
-                                Total Orders (This Month)
+                                Orders with Comm. (Selected)
                             </dt>
                             <dd class="text-2xl font-semibold text-gray-900" x-text="stats.month_orders">
                                 0
@@ -65,7 +130,7 @@
                     <div class="ml-5 w-0 flex-1">
                         <dl>
                             <dt class="text-sm font-medium text-gray-500 truncate">
-                                Total Commission Items
+                                Commission Items (Selected)
                             </dt>
                             <dd class="text-2xl font-semibold text-gray-900" x-text="stats.month_items">
                                 0
@@ -77,35 +142,8 @@
         </div>
     </div>
 
-    <div class="mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div class="w-full md:w-1/3">
-             </div>
 
-        <div class="flex gap-2 w-full md:w-auto justify-end">
-            <select x-model="filterStatus" @change="fetchCommissions()"
-                    class="border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
-                <option value="">All Statuses</option>
-                <option value="PENDING">Pending Payment</option>
-                <option value="PAID">Paid History</option>
-                <option value="CANCELLED">Cancelled</option>
-            </select>
-
-            <button @click="showExportModal = true"
-                    class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition flex items-center shadow-sm">
-                <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                Export Statement
-            </button>
-
-            <button @click="openPaymentModal()"
-                    x-show="selectedIds.length > 0"
-                    x-cloak
-                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition flex items-center shadow-sm">
-                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                Pay Selected (<span x-text="selectedIds.length"></span>)
-            </button>
-        </div>
-    </div>
-
+    {# --- Table (SORTABLE) --- #}
     <div class="bg-white shadow-lg rounded-lg overflow-hidden">
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -115,16 +153,58 @@
                             <input type="checkbox" x-model="selectAll" @change="toggleSelectAll()"
                                    class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
                         </th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Earned</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
+
+                        {# Date Header #}
+                        <th @click="sortByColumn('date')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 hover:text-gray-700 transition-colors group select-none">
+                            <div class="flex items-center">
+                                Date Earned
+                                <span class="ml-1" :class="{'opacity-100': sortCol === 'date', 'opacity-0 group-hover:opacity-50': sortCol !== 'date'}">
+                                    <svg x-show="sortCol === 'date' && sortAsc" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                                    <svg x-show="!(sortCol === 'date' && sortAsc)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </span>
+                            </div>
+                        </th>
+
+                        {# Agent Header #}
+                        <th @click="sortByColumn('agent')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 hover:text-gray-700 transition-colors group select-none">
+                            <div class="flex items-center">
+                                Agent
+                                <span class="ml-1" :class="{'opacity-100': sortCol === 'agent', 'opacity-0 group-hover:opacity-50': sortCol !== 'agent'}">
+                                    <svg x-show="sortCol === 'agent' && sortAsc" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                                    <svg x-show="!(sortCol === 'agent' && sortAsc)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </span>
+                            </div>
+                        </th>
+
+                        {# Order Info (Not Sortable) #}
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Info</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+
+                        {# Amount Header #}
+                        <th @click="sortByColumn('amount')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 hover:text-gray-700 transition-colors group select-none">
+                            <div class="flex items-center">
+                                Amount
+                                <span class="ml-1" :class="{'opacity-100': sortCol === 'amount', 'opacity-0 group-hover:opacity-50': sortCol !== 'amount'}">
+                                    <svg x-show="sortCol === 'amount' && sortAsc" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                                    <svg x-show="!(sortCol === 'amount' && sortAsc)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </span>
+                            </div>
+                        </th>
+
+                        {# Status Header #}
+                        <th @click="sortByColumn('status')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 hover:text-gray-700 transition-colors group select-none">
+                            <div class="flex items-center">
+                                Status
+                                <span class="ml-1" :class="{'opacity-100': sortCol === 'status', 'opacity-0 group-hover:opacity-50': sortCol !== 'status'}">
+                                    <svg x-show="sortCol === 'status' && sortAsc" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                                    <svg x-show="!(sortCol === 'status' && sortAsc)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                </span>
+                            </div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="commissions.length === 0">
-                        <tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No records found.</td></tr>
+                        <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">No commissions found for <span x-text="currentMonthLabel"></span> matching your filters.</td></tr>
                     </template>
                     <template x-for="item in commissions" :key="item.id">
                         <tr :class="{'bg-indigo-50': selectedIds.some(id => id == item.id)}">
@@ -159,18 +239,19 @@
         </div>
     </div>
 
+    {# --- Export Modal --- #}
     <div x-show="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50"
          x-transition.opacity style="display: none;" x-cloak>
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative" @click.away="showExportModal = false">
 
             <h3 class="text-xl font-bold text-gray-800 mb-4">Export Monthly Statement</h3>
-            <p class="text-sm text-gray-600 mb-6">Select the month and year for the commission statement you wish to download.</p>
+            <p class="text-sm text-gray-600 mb-6">Select the month and year for the commission statement.</p>
 
             <form action="{% url 'commission:export_commission_statement' %}" method="GET">
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                        <select name="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <select name="month" x-model="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
                             <option value="1">January</option>
                             <option value="2">February</option>
                             <option value="3">March</option>
@@ -187,7 +268,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                        <input type="number" name="year" value="{{ today_date|date:'Y' }}"
+                        <input type="number" name="year" x-model="year"
                                class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
                 </div>
@@ -215,6 +296,7 @@
         </div>
     </div>
 
+    {# --- Payment Modal --- #}
     <div x-show="showPaymentModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50"
          x-transition.opacity style="display: none;" x-cloak>
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative" @click.away="showPaymentModal = false">
@@ -264,10 +346,20 @@ function commissionManager() {
         },
         selectedIds: [],
         selectAll: false,
-        filterStatus: '',
 
+        // Filters
+        filterStatus: '',
+        searchQuery: '',
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear(),
+
+        // Sorting
+        sortCol: 'date',
+        sortAsc: false, // Default desc
+
+        // Modal States
         showPaymentModal: false,
-        showExportModal: false, // New State for Export Modal
+        showExportModal: false,
         paymentDate: new Date().toISOString().split('T')[0],
         isSubmitting: false,
 
@@ -275,9 +367,56 @@ function commissionManager() {
             this.fetchCommissions();
         },
 
+        // --- Date Navigation Logic ---
+        get currentMonthLabel() {
+            const date = new Date(this.year, this.month - 1, 1);
+            return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+        },
+
+        prevMonth() {
+            if (this.month === 1) {
+                this.month = 12;
+                this.year--;
+            } else {
+                this.month--;
+            }
+            this.fetchCommissions();
+        },
+
+        nextMonth() {
+            if (this.month === 12) {
+                this.month = 1;
+                this.year++;
+            } else {
+                this.month++;
+            }
+            this.fetchCommissions();
+        },
+
+        // --- Sorting Logic ---
+        sortByColumn(col) {
+            if (this.sortCol === col) {
+                this.sortAsc = !this.sortAsc; // Toggle direction
+            } else {
+                this.sortCol = col;
+                this.sortAsc = true; // Default asc for new column
+            }
+            this.fetchCommissions();
+        },
+
         async fetchCommissions() {
             try {
-                const url = `{% url 'commission:api_get_commissions' %}?status=${this.filterStatus}`;
+                // Pass month/year/search/status/sort to API
+                const params = new URLSearchParams({
+                    status: this.filterStatus,
+                    search: this.searchQuery,
+                    month: this.month,
+                    year: this.year,
+                    sort: this.sortCol,
+                    dir: this.sortAsc ? 'asc' : 'desc'
+                });
+
+                const url = `{% url 'commission:api_get_commissions' %}?${params.toString()}`;
                 const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
                 const data = await response.json();
                 this.commissions = data.commissions;
@@ -286,10 +425,12 @@ function commissionManager() {
                     this.stats = data.stats;
                 }
 
+                // Reset Selection on filter change
                 this.selectedIds = [];
                 this.selectAll = false;
             } catch (e) {
                 console.error("Error fetching commissions", e);
+                Alpine.store('globals').showToast("Error fetching data", "error");
             }
         },
 
@@ -335,15 +476,15 @@ function commissionManager() {
                 const res = await response.json();
 
                 if (res.success) {
-                    alert(res.message);
+                    Alpine.store('globals').showToast(res.message);
                     this.showPaymentModal = false;
                     this.fetchCommissions();
                 } else {
-                    alert(res.error || "Payment failed");
+                    Alpine.store('globals').showToast(res.error || "Payment failed", "error");
                 }
             } catch (e) {
                 console.error(e);
-                alert("An error occurred");
+                Alpine.store('globals').showToast("An error occurred", "error");
             } finally {
                 this.isSubmitting = false;
             }

@@ -199,7 +199,6 @@
 
                         {% if user.is_staff %}
                             <a href="{% url 'order:manage_orders' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Orders</a>
-                            <a href="{% url 'manage_dashboard' %}#commissions" class="hidden md:inline text-gray-500 hover:text-gray-900">Commissions</a>
                             <a href="{% url 'manage_dashboard' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Manage</a>
                         {% endif %}
 
@@ -387,10 +386,12 @@
     {% endif %}
     {% endblock %}
 
+    {% block main_container %}
     <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-20">
         {% block content %}
         {% endblock %}
     </main>
+    {% endblock %}
 
     <nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 shadow-lg bottom-nav z-40">
         <div class="max-w-7xl mx-auto px-4 h-full">

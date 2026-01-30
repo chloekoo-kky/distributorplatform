@@ -1,0 +1,74 @@
+{% load static %}
+<script src="{% static 'tinymce/tinymce.min.js' %}"></script>
+
+{# 1. Load JSON Data #}
+{% include 'core/partials/scripts/manage_json_data.html' %}
+
+{# 2. Initialize Stores (Global State) #}
+{% include 'core/partials/scripts/manage_stores.html' %}
+
+{# 3. Initialize Components (Logic) #}
+{% include 'core/partials/scripts/manage_components.html' %}
+
+{# 4. DOM Event Listeners (Form Submissions outside Alpine) #}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const receiveStockForm = document.getElementById('receive-stock-form');
+        if (receiveStockForm) {
+            const errorContainer = document.getElementById('receive-stock-error-container');
+            const errorMessage = document.getElementById('receive-stock-error-message');
+            receiveStockForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const csrfToken = Alpine.store('globals').csrfToken;
+                const formData = new FormData(receiveStockForm);
+                const submitButton = receiveStockForm.querySelector('button[type=submit]');
+                submitButton.disabled = true; submitButton.textContent = 'Saving...';
+                errorContainer.classList.add('hidden');
+                try {
+                    const response = await fetch(receiveStockForm.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        const rootComponent = document.getElementById('manage-tools-root');
+                        if (rootComponent && rootComponent.__x) {
+                            const rootData = rootComponent.__x.data;
+                            const fullInvoiceId = rootData.receiveStockData.invoiceId;
+
+                            Alpine.store('globals').showToast('Stock received successfully! Reloading...');
+
+                            setTimeout(() => {
+                                if (fullInvoiceId) {
+                                    const newUrl = window.location.origin + window.location.pathname + '#invoices?open=' + fullInvoiceId;
+                                    window.location.href = newUrl;
+                                    window.location.reload();
+                                } else {
+                                    window.location.reload();
+                                }
+                            }, 1000);
+
+                        } else {
+                            Alpine.store('globals').showToast('Stock received successfully! Reloading...');
+                            setTimeout(() => window.location.reload(), 1000);
+                        }
+                    } else {
+                        let errorText = data.error || (data.errors ? JSON.stringify(data.errors) : 'An error occurred.');
+                        errorMessage.textContent = errorText;
+                        errorContainer.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    errorMessage.textContent = `Error: ${error.message}.`;
+                    errorContainer.classList.remove('hidden');
+                } finally {
+                    submitButton.disabled = false; submitButton.textContent = 'Confirm Stock Received';
+                }
+            });
+        }
+    });
+</script>
