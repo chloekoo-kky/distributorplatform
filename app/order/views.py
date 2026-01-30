@@ -1,5 +1,5 @@
 # distributorplatform/app/order/views.py
-import csv  # Added import
+import csv
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -7,7 +7,7 @@ from django.db import transaction, IntegrityError
 from django.urls import reverse
 from django.utils import timezone
 from decimal import Decimal
-from django.http import JsonResponse, HttpResponse # Added HttpResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from django.core.paginator import Paginator
@@ -77,23 +77,17 @@ def place_order_view(request):
 
             if is_agent:
                 # --- 2. Calculate Agent's Commission ---
-                # Logic: Selling Price * Profit Margin * Agent Commission %
-
                 commission_value = Decimal('0.00')
 
-                # A. Determine the 'Profit Base' (The pool from which commission is taken)
+                # A. Determine the 'Profit Base'
                 if p.profit_margin is not None:
-                    # Preferred: Use explicit Product Profit Margin
-                    # Profit Base = Selling Price * (Product Margin / 100)
                     profit_base = selling_price * (p.profit_margin / Decimal('100.00'))
                 elif base_cost is not None:
-                    # Fallback: Use actual Gross Profit (Selling - Cost) if margin is missing
                     profit_base = selling_price - base_cost
                 else:
                     profit_base = Decimal('0.00')
 
                 # B. Apply Agent's Commission Percentage
-                # Commission = Profit Base * (Agent Group % / 100)
                 if profit_base > 0:
                     commission_value = profit_base * (agent_commission_percent / Decimal('100.00'))
 
@@ -176,11 +170,8 @@ def api_submit_order(request):
         if not items_to_create:
             raise IntegrityError("No valid items were found in the cart.")
 
-        # --- FIX: Use save() in a loop instead of bulk_create to trigger signals ---
-        # OrderItem.objects.bulk_create(items_to_create) <--- REPLACED
         for item in items_to_create:
             item.save()
-        # --------------------------------------------------------------------------
 
         success_url = reverse('order:order_success', kwargs={'order_id': new_order.id})
         return JsonResponse({'success': True, 'redirect_url': success_url})
@@ -197,15 +188,14 @@ def api_submit_order(request):
 def order_success_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, agent=request.user)
 
-    # Calculate totals for the template (if not already done by model)
+    # Calculate totals for the template
     order_items = order.items.select_related('product')
     subtotal = sum(item.total_price for item in order_items)
 
-    # --- ADD THIS BLOCK: Prepare WhatsApp Message ---
+    # Prepare WhatsApp Message
     site_settings = SiteSetting.load()
     cs_phone = site_settings.customer_service_whatsapp
 
-    # Build the message line by line
     msg_lines = [
         f"*New Order Placed!*",
         f"Order ID: #{order.id}",
@@ -222,7 +212,6 @@ def order_success_view(request, order_id):
     msg_lines.append(f"*Total Amount: RM {subtotal:.2f}*")
     msg_lines.append(f"Status: {order.get_status_display()}")
 
-    # Join and encode for URL
     full_message = "\n".join(msg_lines)
     encoded_message = urllib.parse.quote(full_message)
     whatsapp_url = f"https://wa.me/{cs_phone}?text={encoded_message}"
@@ -231,44 +220,24 @@ def order_success_view(request, order_id):
         'order': order,
         'order_items': order_items,
         'subtotal': subtotal,
-        'whatsapp_url': whatsapp_url, # Pass to template
+        'whatsapp_url': whatsapp_url,
     }
     return render(request, 'order/order_success.html', context)
 
 @staff_member_required
 def manage_orders_dashboard(request):
     """Renders the dedicated Order Management Dashboard with Statistics."""
-
-    # 1. Calculate Statistics
-    orders = Order.objects.all()
-
-    # UPDATED: Total Orders excludes CANCELLED
-    total_orders = orders.exclude(status=Order.OrderStatus.CANCELLED).count()
-
-    # Count "Pending Action" as anything NOT Completed or Cancelled
-    pending_orders = orders.exclude(status__in=[
-        Order.OrderStatus.COMPLETED,
-        Order.OrderStatus.CANCELLED
-    ]).count()
-
-    completed_orders = orders.filter(status=Order.OrderStatus.COMPLETED).count()
-
-    # Calculate Total Revenue
-    revenue = Decimal('0.00')
-    if request.user.is_superuser:
-        financials = OrderItem.objects.exclude(order__status=Order.OrderStatus.CANCELLED).aggregate(
-            total_revenue=Sum(F('selling_price') * F('quantity'), output_field=DecimalField())
-        )
-        revenue = financials['total_revenue'] or Decimal('0.00')
+    # We pass empty stats initially; they will be populated by the Alpine.js API call
+    # which defaults to the current month on load.
 
     context = {
         'title': 'Manage Orders',
         'order_statuses': Order.OrderStatus.choices,
         'stats': {
-            'total_orders': total_orders,
-            'pending_orders': pending_orders,
-            'completed_orders': completed_orders,
-            'revenue': revenue,
+            'total_orders': 0,
+            'pending_orders': 0,
+            'completed_orders': 0,
+            'revenue': 0,
         }
     }
     return render(request, 'order/manage_orders.html', context)
@@ -282,19 +251,67 @@ def api_manage_orders(request):
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
 
+    # --- Date Filter Params ---
+    try:
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
+    except ValueError:
+        month = 0
+        year = 0
+
     orders = Order.objects.select_related('agent').prefetch_related('items').order_by('-created_at')
 
+    # 1. Apply Date Filter (if provided)
+    if month and year:
+        orders = orders.filter(created_at__year=year, created_at__month=month)
+
+    # 2. Apply Status Filter
     if status_filter:
         orders = orders.filter(status=status_filter)
 
-    # --- UPDATED SEARCH LOGIC ---
+    # 3. Apply Search Filter
     if search_query:
-        # Search by ID (contains) OR Username (contains)
         orders = orders.filter(
             Q(id__icontains=search_query) |
             Q(agent__username__icontains=search_query)
         )
 
+    # --- Statistics Calculation (Scoped to current Month/Search filters) ---
+    # We create a separate queryset for stats to respect Date/Search filters
+    # but IGNORE Pagination and usually ignore status filter (to show full overview of the month).
+    stats_qs = Order.objects.all()
+
+    if month and year:
+        stats_qs = stats_qs.filter(created_at__year=year, created_at__month=month)
+
+    if search_query:
+        stats_qs = stats_qs.filter(
+            Q(id__icontains=search_query) |
+            Q(agent__username__icontains=search_query)
+        )
+
+    total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()
+    pending_orders = stats_qs.exclude(status__in=[
+        Order.OrderStatus.COMPLETED,
+        Order.OrderStatus.CANCELLED
+    ]).count()
+    completed_orders = stats_qs.filter(status=Order.OrderStatus.COMPLETED).count()
+
+    revenue = 0
+    if request.user.is_superuser:
+        # Calculate revenue for non-cancelled orders in this scope
+        rev_qs = OrderItem.objects.filter(order__in=stats_qs).exclude(order__status=Order.OrderStatus.CANCELLED)
+        rev_agg = rev_qs.aggregate(t=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()))
+        revenue = float(rev_agg['t'] or 0)
+
+    stats = {
+        'total_orders': total_orders,
+        'pending_orders': pending_orders,
+        'completed_orders': completed_orders,
+        'revenue': revenue,
+    }
+
+    # --- Pagination & Serialization ---
     paginator = Paginator(orders, limit)
     page_obj = paginator.get_page(page_number)
 
@@ -317,23 +334,6 @@ def api_manage_orders(request):
             'total_profit': float(gross_profit),
             'total_commission': float(order.total_commission),
         })
-
-    # --- UPDATED: Stats to include all non-terminal statuses in "Pending Action" and Exclude Cancelled from Total ---
-    stats = {
-        'total_orders': Order.objects.exclude(status=Order.OrderStatus.CANCELLED).count(),
-        'pending_orders': Order.objects.exclude(status__in=[
-            Order.OrderStatus.COMPLETED,
-            Order.OrderStatus.CANCELLED
-        ]).count(),
-        'completed_orders': Order.objects.filter(status=Order.OrderStatus.COMPLETED).count(),
-        'revenue': 0,
-    }
-
-    if request.user.is_superuser:
-        rev_agg = OrderItem.objects.exclude(order__status=Order.OrderStatus.CANCELLED).aggregate(
-            t=Sum(F('selling_price') * F('quantity'), output_field=DecimalField())
-        )
-        stats['revenue'] = float(rev_agg['t'] or 0)
 
     return JsonResponse({
         'items': data,
@@ -407,7 +407,6 @@ def api_prepare_checkout(request):
 
         checkout_cart = []
 
-        # Recalculate agent commission for session storage
         max_commission_data = request.user.user_groups.aggregate(Max('commission_percentage'))
         agent_commission_percent = max_commission_data['commission_percentage__max'] or Decimal('0.00')
         is_agent = agent_commission_percent > 0
@@ -423,7 +422,6 @@ def api_prepare_checkout(request):
             selling_price = product.selling_price if product.selling_price is not None else Decimal('0.00')
             base_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
 
-            # Calculate Agent Commission
             estimated_commission = Decimal('0.00')
             if is_agent:
                 if product.profit_margin is not None:
@@ -512,7 +510,6 @@ def api_confirm_checkout(request):
         return JsonResponse({'success': False, 'error': 'Session expired.'}, status=400)
 
     try:
-        # 1. Create Parent Order
         order = Order.objects.create(
             agent=request.user,
             status=Order.OrderStatus.PENDING
@@ -520,7 +517,6 @@ def api_confirm_checkout(request):
 
         items_to_create = []
 
-        # 2. Create Items from Session Data
         for item in checkout_data:
             qty = int(item['quantity'])
             sp = Decimal(item['selling_price'])
@@ -537,13 +533,9 @@ def api_confirm_checkout(request):
                 profit=db_profit
             ))
 
-        # --- FIX: Use save() in loop to trigger signals for each item ---
-        # OrderItem.objects.bulk_create(items_to_create) <--- REPLACED
         for item in items_to_create:
             item.save()
-        # ---------------------------------------------------------------
 
-        # 3. Clear Session
         del request.session['checkout_data']
 
         return JsonResponse({
@@ -557,9 +549,6 @@ def api_confirm_checkout(request):
 
 @login_required
 def payment_view(request, order_id):
-    """
-    Handles payment selection. Expects POST from the profile modal.
-    """
     order = get_object_or_404(Order, id=order_id, agent=request.user)
 
     if order.status != Order.OrderStatus.TO_PAY:
@@ -574,9 +563,7 @@ def payment_view(request, order_id):
             messages.error(request, "Invalid payment method selected.")
             return redirect('user:profile')
 
-        # Logic Branching based on Option Type
         if payment_option.option_type == 'GATEWAY':
-            # --- Existing Gateway Logic ---
             amount_rm = sum(item.selling_price * item.quantity for item in order.items.all())
             if amount_rm <= 0:
                 messages.error(request, "Invalid order amount.")
@@ -594,7 +581,6 @@ def payment_view(request, order_id):
                 return redirect('user:profile')
 
         elif payment_option.option_type == 'COD':
-            # --- Cash On Delivery Logic ---
             order.payment_method = payment_option.name
             order.status = Order.OrderStatus.TO_SHIP
             order.save()
@@ -602,7 +588,6 @@ def payment_view(request, order_id):
             return redirect('user:profile')
 
         elif payment_option.option_type == 'MANUAL':
-             # --- Manual / Bank Transfer Logic ---
             order.payment_method = payment_option.name
             order.status = Order.OrderStatus.TO_SHIP
             order.save()
@@ -614,17 +599,13 @@ def payment_view(request, order_id):
 
 
 def _initiate_order_senangpay(request, order, amount_rm, config):
-    # SenangPay requires the amount in standard decimal format (e.g., 10.00)
     amount_str = f"{amount_rm:.2f}"
-
-    # 1. Clean inputs (Strip whitespace)
     merchant_id = str(config.payment_category_code).strip()
     secret_key = str(config.payment_api_key).strip()
 
     detail = f"Order_{order.id}"
     order_id_ref = str(order.id)
 
-    # 2. Calculate Hash
     data_to_hash = f"{secret_key}{detail}{amount_str}{order_id_ref}"
     hashed_value = hashlib.md5(data_to_hash.encode()).hexdigest()
 
@@ -643,8 +624,6 @@ def _initiate_order_senangpay(request, order, amount_rm, config):
     }
 
     query_string = urllib.parse.urlencode(params)
-
-    # 3. Construct URL robustly
     base_url = config.payment_gateway_url.strip().rstrip('/')
     payment_url = f"{base_url}/{merchant_id}?{query_string}"
 
@@ -652,11 +631,7 @@ def _initiate_order_senangpay(request, order, amount_rm, config):
 
 
 def payment_callback_view(request):
-    """
-    User returns here after payment via SenangPay (Redirect URL).
-    GET params: status_id, order_id, msg, transaction_id, hash
-    """
-    status_id = request.GET.get('status_id')  # '1' = Success, '0' = Fail
+    status_id = request.GET.get('status_id')
     order_id = request.GET.get('order_id')
     msg = request.GET.get('msg')
     transaction_id = request.GET.get('transaction_id')
@@ -691,10 +666,6 @@ def payment_callback_view(request):
 
 @csrf_exempt
 def payment_webhook_view(request):
-    """
-    Server-to-server update from SenangPay (Webhook).
-    POST params: status_id, order_id, msg, transaction_id, hash
-    """
     if request.method == 'POST':
         data = request.POST
         status_id = data.get('status_id')
@@ -722,36 +693,26 @@ def payment_webhook_view(request):
 
     return HttpResponse("Invalid Method", status=405)
 
-# --- NEW: Export Order Statement View ---
 @staff_member_required
 def export_order_statement(request):
-    """
-    Export orders to CSV based on Month/Year.
-    Rows are split by Order Item.
-    Order Total is only shown on the LAST item row of each order.
-    """
     try:
         month = int(request.GET.get('month', timezone.now().month))
         year = int(request.GET.get('year', timezone.now().year))
         status = request.GET.get('status', '')
 
-        # Filter by Month/Year
         orders = Order.objects.filter(
             created_at__year=year,
             created_at__month=month
         ).select_related('agent').prefetch_related('items__product').order_by('created_at')
 
-        # Optional Status Filter
         if status:
             orders = orders.filter(status=status)
 
-        # Prepare Response
         response = HttpResponse(content_type='text/csv')
         filename = f"order_statement_{year}_{month:02d}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         writer = csv.writer(response)
-        # Header Row
         writer.writerow([
             'Date', 'Order ID', 'Customer', 'Type', 'Status', 'Payment Method',
             'Product Name', 'SKU', 'Quantity', 'Unit Price (RM)', 'Line Total (RM)', 'Order Total (RM)'
@@ -761,7 +722,6 @@ def export_order_statement(request):
             is_agent = order.agent.user_groups.filter(commission_percentage__gt=0).exists()
             user_type = "Agent" if is_agent else "Customer"
 
-            # Fetch all items to a list to check length
             items = list(order.items.all())
             order_total = sum(item.selling_price * item.quantity for item in items)
             total_items_count = len(items)
@@ -769,11 +729,10 @@ def export_order_statement(request):
             for index, item in enumerate(items):
                 line_total = item.selling_price * item.quantity
 
-                # --- LOGIC UPDATE: Show Order Total ONLY on the LAST row ---
                 if index == total_items_count - 1:
                     row_order_total = f"{order_total:.2f}"
                 else:
-                    row_order_total = "" # Empty for previous rows
+                    row_order_total = ""
 
                 writer.writerow([
                     order.created_at.strftime('%Y-%m-%d %H:%M'),
@@ -787,7 +746,7 @@ def export_order_statement(request):
                     item.quantity,
                     f"{item.selling_price:.2f}",
                     f"{line_total:.2f}",
-                    row_order_total  # Only populated for last item
+                    row_order_total
                 ])
 
         return response

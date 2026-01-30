@@ -16,38 +16,40 @@ from .models import CommissionLedger
 @staff_required
 def api_get_commissions(request):
     """
-    Fetch commissions with optional filtering and return dashboard stats.
+    Fetch commissions filtered by Month/Year/Search/Status AND Sorted by Column.
     """
-    status_filter = request.GET.get('status', '') # Default to empty for 'All' or specific filter
-    if status_filter == 'null': status_filter = '' # Handle potential JS null string
-
+    status_filter = request.GET.get('status', '')
+    if status_filter == 'null': status_filter = ''
     search_query = request.GET.get('search', '').strip()
 
-    # --- 1. Dashboard Statistics (Current Month Context) ---
-    # These are calculated independently of the table filters to provide a consistent monthly overview.
-    now = timezone.now()
-    current_year = now.year
-    current_month = now.month
+    # Sorting Parameters
+    sort_by = request.GET.get('sort', 'date')  # Default sort column
+    sort_dir = request.GET.get('dir', 'desc')  # Default direction
 
-    # A. Total Payout: Sum of amounts for commissions PAID in the current month
+    # --- Date Filter Params ---
+    try:
+        month = int(request.GET.get('month', timezone.now().month))
+        year = int(request.GET.get('year', timezone.now().year))
+    except ValueError:
+        now = timezone.now()
+        month = now.month
+        year = now.year
+
+    # --- 1. Dashboard Statistics (Scoped to Selected Month) ---
     payout_stats = CommissionLedger.objects.filter(
         status=CommissionLedger.CommissionStatus.PAID,
-        paid_at__year=current_year,
-        paid_at__month=current_month
+        paid_at__year=year,
+        paid_at__month=month
     ).aggregate(total_payout=Sum('amount'))
 
     month_payout = payout_stats['total_payout'] or 0.0
 
-    # B. Sales Activity: Orders and Items that GENERATED commissions in the current month (Created Date)
     activity_qs = CommissionLedger.objects.filter(
-        created_at__year=current_year,
-        created_at__month=current_month
+        created_at__year=year,
+        created_at__month=month
     )
 
-    # Count total commission records (1 record = 1 order item)
     month_items = activity_qs.count()
-
-    # Count unique orders associated with these commissions
     month_orders = activity_qs.values('order_item__order').distinct().count()
 
     stats = {
@@ -56,12 +58,15 @@ def api_get_commissions(request):
         'month_items': month_items
     }
 
-    # --- 2. Table Data Query ---
-    commissions_qs = CommissionLedger.objects.select_related(
+    # --- 2. Table Data Query (Scoped to Selected Month) ---
+    commissions_qs = CommissionLedger.objects.filter(
+        created_at__year=year,
+        created_at__month=month
+    ).select_related(
         'agent', 'order_item__order', 'order_item__product'
-    ).order_by('-created_at')
+    )
 
-    # Apply Table Filters
+    # Apply Filters
     if status_filter:
         commissions_qs = commissions_qs.filter(status=status_filter)
 
@@ -71,6 +76,20 @@ def api_get_commissions(request):
             Q(order_item__order__id__icontains=search_query) |
             Q(order_item__product__name__icontains=search_query)
         )
+
+    # Apply Sorting
+    sort_map = {
+        'date': 'created_at',
+        'agent': 'agent__username',
+        'amount': 'amount',
+        'status': 'status'
+    }
+
+    db_sort_field = sort_map.get(sort_by, 'created_at')
+    if sort_dir == 'desc':
+        db_sort_field = '-' + db_sort_field
+
+    commissions_qs = commissions_qs.order_by(db_sort_field)
 
     # Serialize List
     data = []
@@ -97,7 +116,6 @@ def api_get_commissions(request):
 def api_pay_commissions(request):
     """
     Bulk pay selected commissions.
-    Expects JSON: { "ids": [1, 2], "payment_date": "2023-10-27" }
     """
     try:
         data = json.loads(request.body)
@@ -114,7 +132,6 @@ def api_pay_commissions(request):
         if not payment_date:
             return JsonResponse({'success': False, 'error': 'Invalid date format.'}, status=400)
 
-        # Update only PENDING items to avoid re-paying
         updated_count = CommissionLedger.objects.filter(
             id__in=commission_ids,
             status=CommissionLedger.CommissionStatus.PENDING
@@ -135,16 +152,13 @@ def api_pay_commissions(request):
 @require_GET
 def export_commission_statement(request):
     """
-    Export commissions to CSV based on Month/Year/Status.
+    Export commissions to CSV.
     """
     try:
         month = int(request.GET.get('month', timezone.now().month))
         year = int(request.GET.get('year', timezone.now().year))
-        status = request.GET.get('status', '') # Empty = All
+        status = request.GET.get('status', '')
 
-        # Filter by Creation Date (Earnings) or Paid Date?
-        # Usually Statements are based on earnings created in that month,
-        # OR payments made in that month. Let's default to 'Created Date' for the statement context.
         qs = CommissionLedger.objects.filter(
             created_at__year=year,
             created_at__month=month
@@ -153,7 +167,6 @@ def export_commission_statement(request):
         if status:
             qs = qs.filter(status=status)
 
-        # Create CSV Response
         response = HttpResponse(content_type='text/csv')
         filename = f"commission_statement_{year}_{month:02d}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'

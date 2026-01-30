@@ -1,0 +1,292 @@
+<script>
+    document.addEventListener('alpine:init', () => {
+        // --- 1. Global Store ---
+        Alpine.store('globals', {
+            allCategoriesFlat: JSON.parse(document.getElementById('all-categories-data').textContent),
+            groupCategoriesMap: JSON.parse(document.getElementById('group-categories-data').textContent),
+            allCategoriesList: JSON.parse(document.getElementById('all-categories-list-data').textContent),
+            allSuppliersList: JSON.parse(document.getElementById('all-suppliers-list-data').textContent),
+            allImageCategories: JSON.parse(document.getElementById('all-image-categories-data').textContent),
+            allUserGroupsList: JSON.parse(document.getElementById('all-user-groups-data').textContent),
+            allBanners: JSON.parse(document.getElementById('all-banners-data') ? document.getElementById('all-banners-data').textContent : '[]'),
+            csrfToken: '',
+            selectedCategoryId: null,
+            invoiceToOpen: null,
+
+            // --- HELPER: Toast Message ---
+            showToast(message, icon = 'success') {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        text: message,
+                        icon: icon,
+                        toast: true,
+                        position: 'top-end',
+                        showConfirmButton: false,
+                        timer: 3000,
+                        timerProgressBar: true
+                    });
+                } else {
+                    alert(message);
+                }
+            }
+        });
+
+        // --- 2. Global Store for Image Management ---
+        Alpine.store('images', {
+            galleryImages: [],
+            allProducts: [],
+            allPosts: [],
+            selectedImageToAssign: null,
+            bulkSelectedImageIds: [],
+
+            // Modal States
+            showAssignProductModal: false,
+            assignProductModalSearchTerm: '',
+            assignProductModalSelectedProducts: [],
+            assignProductModalAssignmentType: 'featured',
+            assignProductModalIsSubmitting: false,
+
+            showAssignPostModal: false,
+            assignPostModalSearchTerm: '',
+            assignPostModalSelectedPosts: [],
+            assignPostModalAssignmentType: 'featured',
+            assignPostModalIsSubmitting: false,
+
+            showBulkAssignModal: false,
+            bulkAssignTargetType: 'product',
+            bulkAssignSearchTerm: '',
+            bulkAssignTargetId: null,
+            bulkAssignIsSubmitting: false,
+
+            showImageEditModal: false,
+            isSubmittingImageEdit: false,
+            currentImageToEdit: { id: null, title: '', alt_text: '', category_id: null, url: '' },
+
+            // --- Getters ---
+            get filteredImages() {
+                if (Alpine.store('globals').selectedCategoryId === null) return this.galleryImages;
+                return this.galleryImages.filter(img => img.category_id == Alpine.store('globals').selectedCategoryId);
+            },
+            get filteredProductsForModal() {
+                if (!this.assignProductModalSearchTerm) return this.allProducts;
+                const search = this.assignProductModalSearchTerm.toLowerCase();
+                return this.allProducts.filter(p => p.name.toLowerCase().includes(search) || (p.sku && p.sku.toLowerCase().includes(search)));
+            },
+            get filteredPostsForModal() {
+                if (!this.assignPostModalSearchTerm) return this.allPosts;
+                const search = this.assignPostModalSearchTerm.toLowerCase();
+                return this.allPosts.filter(p => p.title.toLowerCase().includes(search));
+            },
+            get filteredProductsForBulkAssign() {
+                if (!this.bulkAssignSearchTerm) return this.allProducts;
+                const search = this.bulkAssignSearchTerm.toLowerCase();
+                return this.allProducts.filter(p => p.name.toLowerCase().includes(search) || (p.sku && p.sku.toLowerCase().includes(search)));
+            },
+            get filteredPostsForBulkAssign() {
+                if (!this.bulkAssignSearchTerm) return this.allPosts;
+                const search = this.bulkAssignSearchTerm.toLowerCase();
+                return this.allPosts.filter(p => p.title.toLowerCase().includes(search));
+            },
+
+            // --- Methods ---
+            async handleImageUpload(event) {
+                const form = event.target;
+                const formData = new FormData(form);
+                const submitButton = form.querySelector('button[type=submit]');
+                if (!form.querySelector('input[type=file]').files.length) return;
+                submitButton.disabled = true;
+                submitButton.textContent = 'Uploading...';
+                try {
+                    const response = await fetch(`{% url 'images:ajax_upload_image' %}`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json' },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        data.images.forEach(img => this.galleryImages.unshift(img));
+                        form.reset();
+                        Alpine.store('globals').showToast('Image(s) uploaded successfully!');
+                    } else { throw new Error(data.errors || 'Upload failed'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Upload error: ' + err.message, 'error');
+                }
+                finally { submitButton.disabled = false; submitButton.textContent = 'Upload Image(s)'; }
+            },
+            async deleteImage(imageId) {
+                if (!confirm('Are you sure you want to delete this image?')) return;
+                try {
+                    const response = await fetch(`/images/api/delete-image/${imageId}/`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.galleryImages.splice(this.galleryImages.findIndex(img => img.id === imageId), 1);
+                        Alpine.store('globals').showToast(data.message);
+                    } else { throw new Error(data.error || 'Failed to delete'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Delete error: ' + err.message, 'error');
+                }
+            },
+            // ... (Assign/Bulk/Edit methods passthrough as previously defined) ...
+            openAssignProductModal(image) {
+                this.selectedImageToAssign = image;
+                this.assignProductModalSearchTerm = '';
+                this.assignProductModalAssignmentType = 'featured';
+                this.updateProductModalSelections();
+                this.showAssignProductModal = true;
+            },
+            updateProductModalSelections() {
+                if (!this.selectedImageToAssign) return;
+                const imageId = this.selectedImageToAssign.id;
+                if (this.assignProductModalAssignmentType === 'featured') {
+                    this.assignProductModalSelectedProducts = this.allProducts
+                        .filter(p => p.featured_image_id === imageId).map(p => p.id);
+                } else {
+                    this.assignProductModalSelectedProducts = this.allProducts
+                        .filter(p => p.gallery_image_ids.includes(imageId)).map(p => p.id);
+                }
+            },
+            async submitProductAssignment() {
+                this.assignProductModalIsSubmitting = true;
+                const payload = {
+                    image_id: this.selectedImageToAssign.id,
+                    product_ids: this.assignProductModalSelectedProducts,
+                    assignment_type: this.assignProductModalAssignmentType
+                };
+                try {
+                    const response = await fetch(`{% url 'images:ajax_assign_to_products' %}`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.allProducts = data.all_products; // Update local state
+                        this.showAssignProductModal = false;
+                        Alpine.store('globals').showToast('Product assignments updated!');
+                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
+                    } else { throw new Error(data.error || 'Failed to save'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Error: ' + err.message, 'error');
+                }
+                finally { this.assignProductModalIsSubmitting = false; }
+            },
+            openAssignPostModal(image) {
+                this.selectedImageToAssign = image;
+                this.assignPostModalSearchTerm = '';
+                this.assignPostModalAssignmentType = 'featured';
+                this.updatePostModalSelections();
+                this.showAssignPostModal = true;
+            },
+            updatePostModalSelections() {
+                if (!this.selectedImageToAssign) return;
+                const imageId = this.selectedImageToAssign.id;
+                if (this.assignPostModalAssignmentType === 'featured') {
+                    this.assignPostModalSelectedPosts = this.allPosts
+                        .filter(p => p.featured_image_id === imageId).map(p => p.id);
+                } else {
+                    this.assignPostModalSelectedPosts = this.allPosts
+                        .filter(p => p.gallery_image_ids.includes(imageId)).map(p => p.id);
+                }
+            },
+            async submitPostAssignment() {
+                this.assignPostModalIsSubmitting = true;
+                const payload = {
+                    image_id: this.selectedImageToAssign.id,
+                    post_ids: this.assignPostModalSelectedPosts,
+                    assignment_type: this.assignPostModalAssignmentType
+                };
+                try {
+                    const response = await fetch(`{% url 'images:ajax_assign_to_posts' %}`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.allPosts = data.all_posts;
+                        this.showAssignPostModal = false;
+                        Alpine.store('globals').showToast('Post assignments updated!');
+                    } else { throw new Error(data.error || 'Failed to save'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Error: ' + err.message, 'error');
+                }
+                finally { this.assignPostModalIsSubmitting = false; }
+            },
+            openBulkAssignModal() {
+                if (this.bulkSelectedImageIds.length === 0) {
+                    Alpine.store('globals').showToast('Please select one or more images first.', 'warning');
+                    return;
+                }
+                this.bulkAssignTargetType = 'product';
+                this.bulkAssignSearchTerm = '';
+                this.bulkAssignTargetId = null;
+                this.showBulkAssignModal = true;
+            },
+            async submitBulkAssignment() {
+                if (this.bulkAssignIsSubmitting || !this.bulkAssignTargetId || this.bulkSelectedImageIds.length === 0) return;
+                this.bulkAssignIsSubmitting = true;
+                const payload = {
+                    image_ids: this.bulkSelectedImageIds,
+                    target_id: this.bulkAssignTargetId,
+                    target_type: this.bulkAssignTargetType
+                };
+                try {
+                    const response = await fetch(`{% url 'images:ajax_bulk_assign' %}`, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.allProducts = data.all_products;
+                        this.allPosts = data.all_posts;
+                        this.showBulkAssignModal = false;
+                        this.bulkSelectedImageIds = [];
+                        Alpine.store('globals').showToast('Images successfully assigned to gallery!');
+                    } else { throw new Error(data.error || 'Failed to save'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Error: ' + err.message, 'error');
+                }
+                finally { this.bulkAssignIsSubmitting = false; }
+            },
+            openImageEditModal(image) {
+                this.currentImageToEdit = { ...image };
+                this.isSubmittingImageEdit = false;
+                this.showImageEditModal = true;
+            },
+            async submitImageEdit() {
+                if (this.isSubmittingImageEdit) return;
+                this.isSubmittingImageEdit = true;
+                const payload = {
+                    title: this.currentImageToEdit.title,
+                    alt_text: this.currentImageToEdit.alt_text,
+                    category_id: this.currentImageToEdit.category_id
+                };
+                try {
+                    const response = await fetch(`/images/api/edit-image/${this.currentImageToEdit.id}/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        const index = this.galleryImages.findIndex(img => img.id === data.image.id);
+                        if (index > -1) { this.galleryImages[index] = data.image; }
+                        this.showImageEditModal = false;
+                        Alpine.store('globals').showToast('Image updated successfully!');
+                    } else { throw new Error(data.error || 'Failed to update image.'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Error: ' + err.message, 'error');
+                }
+                finally { this.isSubmittingImageEdit = false; }
+            }
+        });
+    });
+</script>

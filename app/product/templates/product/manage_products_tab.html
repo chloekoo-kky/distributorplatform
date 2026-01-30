@@ -3,65 +3,80 @@
      @refresh-data.window="if ($event.detail.tab === 'products') fetchProducts()"
      id="product-table-wrapper"
 >
-    <div class="flex justify-between items-center mb-6">
-        <h3 class="text-2xl font-semibold text-gray-700">Manage Products</h3>
-        <div class="flex space-x-2">
-            <button @click="$dispatch('open-upload-product-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+    {# --- Header Section --- #}
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+
+        {# Left Side: Title and Search #}
+        <div class="flex flex-col md:flex-row items-start md:items-center gap-4 flex-1 w-full">
+            <h3 class="text-2xl font-semibold text-gray-700 whitespace-nowrap">Manage Products</h3>
+
+            <div class="relative w-full md:w-72">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <input type="text"
+                       x-model.debounce.500ms="filterText"
+                       @keydown.enter.prevent="fetchProducts(1)"
+                       placeholder="Search SKU or product name..."
+                       class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+
+            {# Filter: Clear Button #}
+            <div class="flex-shrink-0">
+                <button @click.prevent="clearFilters()" class="inline-flex justify-center items-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                    <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear Filters
+                </button>
+            </div>
+        </div>
+
+        {# Right Side: Actions #}
+        <div class="flex space-x-2 shrink-0">
+            <button @click="$dispatch('open-upload-product-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">
                 Upload Products
             </button>
-            <a href="{% url 'product:export_products_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700">
+            <a href="{% url 'product:export_products_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors">
                 Export All Products
             </a>
         </div>
     </div>
 
+    {# --- Filters Section --- #}
     <div class="p-4 bg-gray-50 border-b border-gray-200">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-            <div class="space-y-2">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+
+            <div class="space-y-2 flex-1">
+
+                {# Filter: Categories #}
                 <div>
                     <div class="flex flex-wrap gap-2">
-                        <button @click="setGroupFilter('')" :class="{ 'bg-indigo-600 text-white': filterGroup === '', 'bg-white text-gray-700 hover:bg-gray-50': filterGroup !== '' }"
-                                class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium">
-                            All Groups
-                        </button>
-                        {% for group in all_category_groups %}
-                            <button @click="setGroupFilter('{{ group|escapejs }}')" :class="{ 'bg-indigo-600 text-white': filterGroup === '{{ group|escapejs }}', 'bg-white text-gray-700 hover:bg-gray-50': filterGroup !== '{{ group|escapejs }}' }"
-                                    class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium">
-                                {{ group }}
-                            </button>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div>
-                    <div class="flex flex-wrap gap-2">
-                        <button @click="setCategoryFilter('')" :class="{ 'bg-indigo-600 text-white': filterCategory === '', 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== '' }"
-                                class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium">
+                        <button @click.prevent="setCategoryFilter('')" :class="{ 'bg-indigo-600 text-white': filterCategory === '', 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== '' }"
+                                class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium transition-colors">
                             All Categories
                         </button>
                         <template x-for="category in availableCategories" :key="category">
-                            <button @click="setCategoryFilter(category)" :class="{ 'bg-indigo-600 text-white': filterCategory === category, 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== category }"
-                                    class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium"
+                            <button @click.prevent="setCategoryFilter(category)" :class="{ 'bg-indigo-600 text-white': filterCategory === category, 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== category }"
+                                    class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium transition-colors"
                                     x-text="category">
                             </button>
                         </template>
                     </div>
                 </div>
             </div>
-            <div>
-                <div class="flex items-end space-x-2">
-                    <input type="text" x-model.debounce.500ms="filterText" @keydown.enter.prevent="fetchProducts(1)" placeholder="Enter SKU or product name..."
-                           class="flex-grow mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
-                    <button @click="clearFilters()" class="flex-shrink-0 mt-1 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                        Clear
-                    </button>
-                </div>
-            </div>
+
         </div>
     </div>
+
+    {# --- Loading State --- #}
     <div x-show="isLoading" class="p-6 text-center text-gray-500">
         Loading products...
     </div>
 
+    {# --- Data Table --- #}
     <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden">
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -84,7 +99,7 @@
                         <tr><td colspan="8" class="px-6 py-4 text-center text-gray-500">No products match the current filters.</td></tr>
                     </template>
                     <template x-for="product in items" :key="product.id">
-                        <tr>
+                        <tr class="hover:bg-gray-50 transition-colors">
                             <td class="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="product.sku"></td>
 
                             <td class="px-3 py-4 text-sm text-gray-900">
@@ -101,13 +116,12 @@
                                 </div>
                             </td>
 
-
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 <template x-if="product.featured_image_url">
-                                    <img :src="product.featured_image_url" :alt="product.featured_image_alt" class="h-10 w-10 rounded-md object-cover">
+                                    <img :src="product.featured_image_url" :alt="product.featured_image_alt" class="h-10 w-10 rounded-md object-cover border border-gray-200">
                                 </template>
                                 <template x-if="!product.featured_image_url">
-                                    <span>-</span>
+                                    <span class="text-gray-400">-</span>
                                 </template>
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500" x-text="product.categories.join(', ') || '-'"></td>
@@ -117,17 +131,18 @@
                                     <span x-show="product.profit_margin === null || product.profit_margin === undefined">-</span>
                                 </td>
                             {% endif %}
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                                x-text="formatPrice(parseFloat(product.selling_price) - parseFloat(product.base_cost))">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {# Calculate Profit on the fly (Selling - Cost) or display dash #}
+                                <span x-text="product.base_cost ? formatPrice(parseFloat(product.selling_price) - parseFloat(product.base_cost)) : '-'"></span>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 {% if user.is_superuser %}
-                                <button type="button" @click="$dispatch('open-pricing-modal', product)" class="text-green-600 hover:text-green-900 mr-3">
+                                <button type="button" @click="$dispatch('open-pricing-modal', product)" class="text-green-600 hover:text-green-900 mr-3 transition-colors">
                                     Pricing
                                 </button>
                                 {% endif %}
-                                <button type="button" @click="$dispatch('open-product-edit-modal', product.id)" class="text-indigo-600 hover:text-indigo-900">
+                                <button type="button" @click="$dispatch('open-product-edit-modal', product.id)" class="text-indigo-600 hover:text-indigo-900 transition-colors">
                                     Edit
                                 </button>
                             </td>
@@ -152,4 +167,3 @@
         </div>
     </div>
 </div>
-
