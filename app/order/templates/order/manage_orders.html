@@ -19,46 +19,23 @@
             </div>
         </div>
 
-        {# --- Statistics Cards --- #}
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</dd>
-                </div>
-            </div>
 
-            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-yellow-400">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Pending Action</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-yellow-600" x-text="stats.pending_orders">{{ stats.pending_orders|default:"0" }}</dd>
-                </div>
-            </div>
-
-            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-green-500">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Completed</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-green-600" x-text="stats.completed_orders">{{ stats.completed_orders|default:"0" }}</dd>
-                </div>
-            </div>
-
-           {% if request.user.is_superuser %}
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
-                    <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-
-        {# --- Filters (RESTRUCTURED) --- #}
+        {# --- Filters --- #}
         <div class="bg-white rounded-lg shadow mb-6 p-4">
             <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
 
                 {# 1. Month Selector (Col span 3) #}
                 <div class="md:col-span-3">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Period</label>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-sm font-medium text-gray-700">Period</label>
+                        <button type="button"
+                                x-show="filters.month !== 0"
+                                @click="resetPeriod()"
+                                class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
+                                x-cloak>
+                            Reset
+                        </button>
+                    </div>
                     <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2">
                         <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -101,12 +78,47 @@
                         Refresh
                     </button>
 
-                    <button @click="showExportModal = true" class="inline-flex justify-center items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" title="Export CSV">
+                    <button @click="openExportModal()" class="inline-flex justify-center items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" title="Export CSV">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     </button>
                 </div>
             </div>
         </div>
+
+
+        {# --- Statistics Cards --- #}
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-yellow-400">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Pending Action</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-yellow-600" x-text="stats.pending_orders">{{ stats.pending_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-green-500">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Completed</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-green-600" x-text="stats.completed_orders">{{ stats.completed_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+           {% if request.user.is_superuser %}
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
+                    <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
 
         {# --- Orders Table --- #}
         <div class="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -275,11 +287,11 @@
             </div>
 
             <form action="{% url 'order:export_order_statement' %}" method="GET" class="p-6">
-                {# SYNC EXPORT MODAL WITH CURRENT FILTER YEAR/MONTH #}
+                {# USE SEPARATE EXPORT FILTERS #}
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                        <select name="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500" x-model="filters.month">
+                        <select name="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500" x-model="exportFilters.month">
                             <option value="1">January</option>
                             <option value="2">February</option>
                             <option value="3">March</option>
@@ -296,7 +308,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                        <input type="number" name="year" x-model="filters.year"
+                        <input type="number" name="year" x-model="exportFilters.year"
                                class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
                 </div>
@@ -339,6 +351,11 @@
                 month: new Date().getMonth() + 1,
                 year: new Date().getFullYear()
             },
+            // Separate filters for the export modal to prevent issues when main view is "All Time"
+            exportFilters: {
+                month: new Date().getMonth() + 1,
+                year: new Date().getFullYear()
+            },
             stats: {
                 total_orders: {{ stats.total_orders|default:0 }},
                 pending_orders: {{ stats.pending_orders|default:0 }},
@@ -360,13 +377,19 @@
 
             // --- COMPUTED: Month Display ---
             get currentMonthLabel() {
+                if (this.filters.month === 0 || this.filters.year === 0) return 'All Periods';
                 const date = new Date(this.filters.year, this.filters.month - 1, 1);
                 return date.toLocaleString('default', { month: 'long', year: 'numeric' });
             },
 
             // --- METHODS: Date Navigation ---
             prevMonth() {
-                if (this.filters.month === 1) {
+                if (this.filters.month === 0) {
+                    // Recover from "All Periods" -> set to current month
+                    const now = new Date();
+                    this.filters.month = now.getMonth() + 1;
+                    this.filters.year = now.getFullYear();
+                } else if (this.filters.month === 1) {
                     this.filters.month = 12;
                     this.filters.year--;
                 } else {
@@ -376,13 +399,32 @@
             },
 
             nextMonth() {
-                if (this.filters.month === 12) {
+                if (this.filters.month === 0) {
+                    // Recover from "All Periods" -> set to current month
+                    const now = new Date();
+                    this.filters.month = now.getMonth() + 1;
+                    this.filters.year = now.getFullYear();
+                } else if (this.filters.month === 12) {
                     this.filters.month = 1;
                     this.filters.year++;
                 } else {
                     this.filters.month++;
                 }
                 this.fetchOrders(1);
+            },
+
+            resetPeriod() {
+                this.filters.month = 0;
+                this.filters.year = 0;
+                this.fetchOrders(1);
+            },
+
+            openExportModal() {
+                // Pre-fill export modal. If in "All Periods" mode (0), default to current month.
+                // Otherwise, use the currently selected month.
+                this.exportFilters.month = this.filters.month === 0 ? new Date().getMonth() + 1 : this.filters.month;
+                this.exportFilters.year = this.filters.year === 0 ? new Date().getFullYear() : this.filters.year;
+                this.showExportModal = true;
             },
 
             async fetchOrders(page = 1) {
