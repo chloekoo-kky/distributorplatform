@@ -146,8 +146,18 @@ def api_manage_quotations(request):
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
-    search_query = request.GET.get('search', '')
+    # --- 1. Get Params ---
+    search_query = request.GET.get('search', '').strip()
     page_number = request.GET.get('page', 1)
+    status_filter = request.GET.get('status', '') # 'OPEN' or 'INVOICED'
+
+    # Date Filter
+    try:
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
+    except ValueError:
+        month = 0
+        year = 0
 
     total_value_calc = Sum(F('items__quantity') * F('items__quoted_price'), output_field=DecimalField())
 
@@ -155,31 +165,52 @@ def api_manage_quotations(request):
         annotated_item_count=Count('items'),
         annotated_total_value=total_value_calc
     ).select_related('supplier').prefetch_related(
-        'invoice' # For status property
-    ).order_by('-created_at')
+        'invoice'
+    ).order_by('-date_quoted', '-created_at')
 
+    # --- 2. Apply Filters ---
+
+    # Date Filter (date_quoted) - Only filter if month/year are non-zero (All Time logic)
+    if month and year:
+        queryset = queryset.filter(date_quoted__year=year, date_quoted__month=month)
+
+    # Search Filter
     if search_query:
         queryset = queryset.filter(
-            Q(quotation_id__icontains=search_query) | Q(supplier__name__icontains=search_query)
+            Q(quotation_id__icontains=search_query) |
+            Q(supplier__name__icontains=search_query)
         )
 
+    # Status Filter
+    if status_filter:
+        if status_filter == 'INVOICED':
+            queryset = queryset.filter(invoice__isnull=False)
+        elif status_filter == 'OPEN':
+            queryset = queryset.filter(invoice__isnull=True)
+
+    # --- 3. Pagination ---
     paginator = Paginator(queryset, 50)
     try:
         page_obj = paginator.page(page_number)
     except EmptyPage:
         return JsonResponse({'items': [], 'pagination': {}})
 
-    serialized_items = [{
-        'quotation_id': q.quotation_id,
-        'supplier_name': q.supplier.name,
-        'date_quoted': q.date_quoted,
-        'status': q.status,
-        'item_count': q.annotated_item_count,
-        'total_value': q.annotated_total_value or 0,
-        'transportation_cost': q.transportation_cost or 0,
-        'detail_url': reverse('inventory:quotation_detail', kwargs={'quotation_id': q.quotation_id}),
-        'invoice_id': q.invoice.invoice_id if hasattr(q, 'invoice') and q.invoice else None,
-    } for q in page_obj.object_list]
+    serialized_items = []
+    for q in page_obj.object_list:
+        # Determine status string for frontend
+        status_label = 'Invoiced' if hasattr(q, 'invoice') and q.invoice else 'Open'
+
+        serialized_items.append({
+            'quotation_id': q.quotation_id,
+            'supplier_name': q.supplier.name,
+            'date_quoted': q.date_quoted,
+            'status': status_label,
+            'item_count': q.annotated_item_count,
+            'total_value': q.annotated_total_value or 0,
+            'transportation_cost': q.transportation_cost or 0,
+            'detail_url': reverse('inventory:quotation_detail', kwargs={'quotation_id': q.quotation_id}),
+            'invoice_id': q.invoice.invoice_id if hasattr(q, 'invoice') and q.invoice else None,
+        })
 
     return JsonResponse({
         'items': serialized_items,

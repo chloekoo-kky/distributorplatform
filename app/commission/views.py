@@ -28,26 +28,24 @@ def api_get_commissions(request):
 
     # --- Date Filter Params ---
     try:
-        month = int(request.GET.get('month', timezone.now().month))
-        year = int(request.GET.get('year', timezone.now().year))
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
     except ValueError:
-        now = timezone.now()
-        month = now.month
-        year = now.year
+        month = 0
+        year = 0
 
-    # --- 1. Dashboard Statistics (Scoped to Selected Month) ---
-    payout_stats = CommissionLedger.objects.filter(
-        status=CommissionLedger.CommissionStatus.PAID,
-        paid_at__year=year,
-        paid_at__month=month
-    ).aggregate(total_payout=Sum('amount'))
+    # --- 1. Dashboard Statistics (Scoped to Filter) ---
+    # Base querysets for stats
+    payout_qs = CommissionLedger.objects.filter(status=CommissionLedger.CommissionStatus.PAID)
+    activity_qs = CommissionLedger.objects.all()
 
+    # Apply Date Filter if provided (month=0 means All Time)
+    if month and year:
+        payout_qs = payout_qs.filter(paid_at__year=year, paid_at__month=month)
+        activity_qs = activity_qs.filter(created_at__year=year, created_at__month=month)
+
+    payout_stats = payout_qs.aggregate(total_payout=Sum('amount'))
     month_payout = payout_stats['total_payout'] or 0.0
-
-    activity_qs = CommissionLedger.objects.filter(
-        created_at__year=year,
-        created_at__month=month
-    )
 
     month_items = activity_qs.count()
     month_orders = activity_qs.values('order_item__order').distinct().count()
@@ -58,18 +56,20 @@ def api_get_commissions(request):
         'month_items': month_items
     }
 
-    # --- 2. Table Data Query (Scoped to Selected Month) ---
-    commissions_qs = CommissionLedger.objects.filter(
-        created_at__year=year,
-        created_at__month=month
-    ).select_related(
+    # --- 2. Table Data Query (Scoped to Filter) ---
+    commissions_qs = CommissionLedger.objects.select_related(
         'agent', 'order_item__order', 'order_item__product'
     )
 
-    # Apply Filters
+    # Apply Date Filter
+    if month and year:
+        commissions_qs = commissions_qs.filter(created_at__year=year, created_at__month=month)
+
+    # Apply Status Filter
     if status_filter:
         commissions_qs = commissions_qs.filter(status=status_filter)
 
+    # Apply Search
     if search_query:
         commissions_qs = commissions_qs.filter(
             Q(agent__username__icontains=search_query) |

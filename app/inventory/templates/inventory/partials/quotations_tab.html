@@ -2,56 +2,126 @@
      x-init="init()"
      @refresh-data.window="if ($event.detail.tab === 'quotations') fetchQuotations()"
 >
-    <div class="flex justify-between items-center mb-6">
-        <h3 class="text-2xl font-semibold text-gray-700">Manage Quotations</h3>
+    {# --- Header with Actions --- #}
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div>
+            <h3 class="text-2xl font-semibold text-gray-700">Manage Quotations</h3>
+            <p class="text-sm text-gray-500 mt-1">Track and manage supplier price quotations.</p>
+        </div>
         <div class="flex space-x-2">
-            <button @click="$dispatch('open-create-quotation-modal')" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700">
-                Create Quotation
+            <button @click="$dispatch('open-create-quotation-modal')" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 shadow-sm transition-colors text-sm font-medium">
+                + Create New
             </button>
-            <button @click="$dispatch('open-upload-quotation-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                Upload Quotations
+            <button @click="$dispatch('open-upload-quotation-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium">
+                Upload CSV
             </button>
-            <a href="{% url 'inventory:export_quotations_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700">
-                Export All Quotations
-            </a>
         </div>
     </div>
 
-    <div x-show="isLoading" class="p-6 text-center text-gray-500">
-        Loading quotations...
+    {# --- Filters Bar --- #}
+    <div class="bg-white rounded-lg shadow mb-6 p-4">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+
+            {# 1. Period Selector (Month/Year) #}
+            <div class="md:col-span-3">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="block text-sm font-medium text-gray-700">Period</label>
+                    <button type="button"
+                            x-show="filters.month !== 0"
+                            @click="resetPeriod()"
+                            class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
+                            x-cloak>
+                        Reset
+                    </button>
+                </div>
+                <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2 hover:border-gray-400 transition-colors">
+                    <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <span class="text-sm font-semibold text-gray-700 select-none min-w-[8rem] text-center" x-text="currentMonthLabel"></span>
+                    <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Next Month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            {# 2. Search #}
+            <div class="md:col-span-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                <div class="relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <input type="text" x-model.debounce.500ms="filters.search" @input="fetchQuotations(1)"
+                           class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md h-10"
+                           placeholder="Quotation ID or Supplier...">
+                </div>
+            </div>
+
+            {# 3. Status Filter #}
+            <div class="md:col-span-3">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select x-model="filters.status" @change="fetchQuotations(1)"
+                        class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md h-10">
+                    <option value="">All Statuses</option>
+                    <option value="OPEN">Open</option>
+                    <option value="INVOICED">Invoiced</option>
+                </select>
+            </div>
+
+            {# 4. Export / Actions #}
+            <div class="md:col-span-2 flex justify-end">
+                <a href="{% url 'inventory:export_quotations_csv' %}" class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none" title="Export CSV">
+                    <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Export
+                </a>
+            </div>
+        </div>
     </div>
 
+    {# --- Loading State --- #}
+    <div x-show="isLoading" class="p-12 text-center">
+        <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="text-gray-500">Loading quotations...</span>
+    </div>
+
+    {# --- Data Table --- #}
     <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden">
         <div class="overflow-x-auto">
            <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-2 py-3 w-12"></th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quotation ID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Quoted</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item Count</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport Cost</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Landed Cost</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quotation ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Quoted</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Count</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transport Cost</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Landed Cost</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="items.length === 0">
                         <tr>
-                            <td colspan="8" class="px-6 py-4 text-center text-gray-500">No quotations match the current filters.</td>
-                            </tr>
+                            <td colspan="8" class="px-6 py-8 text-center text-gray-500">
+                                No quotations found for <span x-text="currentMonthLabel" class="font-medium"></span> matching your filters.
+                            </td>
+                        </tr>
                     </template>
                     <template x-for="q in items" :key="q.quotation_id">
-                        <tbody x-data="quotationAccordionRow(q.quotation_id)" class="contents">
-                            <tr @click="toggle()" class="cursor-pointer hover:bg-gray-50">
+                        <tbody x-data="quotationAccordionRow(q.quotation_id)" class="contents group">
+                            <tr @click="toggle()" class="cursor-pointer hover:bg-gray-50 transition-colors">
                                 <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-400 text-center">
                                     <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <a :href="q.detail_url" @click.stop class="text-indigo-600 hover:text-indigo-900" x-text="q.quotation_id"></a>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                                    <a :href="q.detail_url" @click.stop class="text-indigo-600 hover:text-indigo-900 underline decoration-indigo-200 hover:decoration-indigo-900" x-text="q.quotation_id"></a>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.supplier_name"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium" x-text="q.supplier_name"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">
                                     <span x-show="q.status === 'Invoiced'"
@@ -65,36 +135,33 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.item_count"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.transportation_cost)"></td>
-
-                                {# --- START MODIFICATION --- #}
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice((parseFloat(q.total_value) || 0) + (parseFloat(q.transportation_cost) || 0))"></td>
-                                {# --- END MODIFICATION --- #}
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="formatPrice((parseFloat(q.total_value) || 0) + (parseFloat(q.transportation_cost) || 0))"></td>
                             </tr>
 
-                            <tr x-show="open" x-transition class="bg-gray-50">
+                            <tr x-show="open" x-transition class="bg-gray-50 shadow-inner">
                                 <td colspan="8" class="p-0">
-                                    <div class="p-4">
+                                    <div class="px-6 py-4">
                                         <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading items...</div>
                                         <div x-show="!isLoading && items.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No items found for this quotation.</div>
 
-                                        <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200">
+                                        <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md overflow-hidden">
                                             <thead class="bg-gray-100">
                                                 <tr>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product Name</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price (RM)</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Price (RM)</th>
+                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                                                 </tr>
                                             </thead>
                                             <tbody class="bg-white">
                                                 <template x-for="item in items" :key="item.product_sku">
                                                     <tr>
-                                                        <td class="px-4 py-2 text-sm text-gray-900" x-text="item.product_sku"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.product_name"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.quantity"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(item.quoted_price)"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(item.total_price)"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.product_sku"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-900 font-medium" x-text="item.product_name"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-900 text-right" x-text="item.quantity"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-900 text-right" x-text="formatPrice(item.quoted_price)"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-900 font-bold text-right" x-text="formatPrice(item.total_price)"></td>
                                                     </tr>
                                                 </template>
                                             </tbody>
@@ -108,5 +175,113 @@
             </table>
         </div>
 
+        {# --- Pagination --- #}
+        <div x-show="!isLoading && items.length > 0" class="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <button @click="fetchQuotations(pagination.current_page - 1)" :disabled="!pagination.has_previous"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                Previous
+            </button>
+            <span class="text-sm text-gray-700">
+                Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span>
+            </span>
+            <button @click="fetchQuotations(pagination.current_page + 1)" :disabled="!pagination.has_next"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                Next
+            </button>
         </div>
+    </div>
 </div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('quotationsTableData', () => ({
+            items: [],
+            isLoading: true,
+            pagination: {},
+            filters: {
+                search: '',
+                status: '',
+                month: new Date().getMonth() + 1,
+                year: new Date().getFullYear()
+            },
+
+            init() {
+                this.fetchQuotations(1);
+            },
+
+            // --- Date Navigation ---
+            get currentMonthLabel() {
+                if (this.filters.month === 0 || this.filters.year === 0) return 'All Periods';
+                const date = new Date(this.filters.year, this.filters.month - 1, 1);
+                return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+            },
+
+            prevMonth() {
+                if (this.filters.month === 0) {
+                     // Recover from 'All Time'
+                     const now = new Date();
+                     this.filters.month = now.getMonth() + 1;
+                     this.filters.year = now.getFullYear();
+                } else if (this.filters.month === 1) {
+                    this.filters.month = 12;
+                    this.filters.year--;
+                } else {
+                    this.filters.month--;
+                }
+                this.fetchQuotations(1);
+            },
+
+            nextMonth() {
+                if (this.filters.month === 0) {
+                     // Recover from 'All Time'
+                     const now = new Date();
+                     this.filters.month = now.getMonth() + 1;
+                     this.filters.year = now.getFullYear();
+                } else if (this.filters.month === 12) {
+                    this.filters.month = 1;
+                    this.filters.year++;
+                } else {
+                    this.filters.month++;
+                }
+                this.fetchQuotations(1);
+            },
+
+            resetPeriod() {
+                this.filters.month = 0;
+                this.filters.year = 0;
+                this.fetchQuotations(1);
+            },
+
+            async fetchQuotations(page = 1) {
+                this.isLoading = true;
+                const params = new URLSearchParams({
+                    page: page,
+                    search: this.filters.search,
+                    status: this.filters.status,
+                    month: this.filters.month,
+                    year: this.filters.year
+                });
+
+                try {
+                    const response = await fetch(`{% url 'inventory:api_manage_quotations' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    this.items = data.items;
+                    this.pagination = data.pagination;
+                } catch (error) {
+                    console.error('Failed to fetch quotations:', error);
+                    Alpine.store('globals').showToast('Error loading quotations', 'error');
+                }
+                finally {
+                    this.isLoading = false;
+                }
+            },
+
+            formatPrice(value) {
+                if (value === null || value === undefined) return 'RM 0.00';
+                return `RM ${Number(value).toFixed(2)}`;
+            }
+        }));
+    });
+</script>

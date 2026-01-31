@@ -262,6 +262,7 @@ def api_manage_orders(request):
     orders = Order.objects.select_related('agent').prefetch_related('items').order_by('-created_at')
 
     # 1. Apply Date Filter (if provided)
+    # logic: 0 acts as False in Python, so if month=0, this block is skipped (All Time)
     if month and year:
         orders = orders.filter(created_at__year=year, created_at__month=month)
 
@@ -345,6 +346,7 @@ def api_manage_orders(request):
         },
         'stats': stats
     })
+
 
 @staff_member_required
 def api_get_order_items(request, order_id):
