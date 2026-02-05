@@ -18,3 +18,5 @@ django-redis>=5.4.0
 django-import-export>=3.3
 
 django-tinymce>=4.0.0
+
+gunicorn>=21.2.0

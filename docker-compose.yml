@@ -1,20 +1,32 @@
-# distributorplatform/docker-compose.yml
+version: "3.9"
 
 services:
   app:
     build:
       context: .
-    env_file:
-      - .env
+      args:
+        - DEV=true
     ports:
       - "8000:8000"
     volumes:
       - ./app:/app
       - static-data:/vol/web
+    # Smart command: Checks DJANGO_DEBUG.
+    # If True: Runs standard dev server (auto-reload, serves static files).
+    # If False: Runs Gunicorn (production optimized).
     command: >
-      sh -c "/py/bin/python manage.py migrate && /py/bin/python manage.py runserver 0.0.0.0:8000"
+      sh -c "
+      /py/bin/python manage.py migrate &&
+      /py/bin/python manage.py collectstatic --noinput &&
+      if [ \"$$DJANGO_DEBUG\" = \"True\" ]; then
+        echo 'Running in DEVELOPMENT mode (runserver)' &&
+        /py/bin/python manage.py runserver 0.0.0.0:8000;
+      else
+        echo 'Running in PRODUCTION mode (gunicorn)' &&
+        /py/bin/gunicorn core.wsgi:application --bind 0.0.0.0:8000;
+      fi"
     environment:
-      - DB_HOST=${DB_HOST}
+      - DB_HOST=db
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
@@ -22,10 +34,18 @@ services:
       - DJANGO_DEBUG=${DJANGO_DEBUG}
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
       - DJANGO_CSRF_TRUSTED_ORIGINS=${DJANGO_CSRF_TRUSTED_ORIGINS}
+      # Email settings mapped from .env
+      - EMAIL_BACKEND=${EMAIL_BACKEND}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
     depends_on:
       db:
         condition: service_healthy
-      redis: 
+      redis:
         condition: service_started
 
   db:
@@ -44,8 +64,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: always
 
 volumes:
   db-data:
