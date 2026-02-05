@@ -38,4 +38,4 @@ RUN mkdir -p /vol/web/media && \
 USER django-user
 
 # Expose the port
-EXPOSE 8000
+EXPOSE 8324
