@@ -17,12 +17,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'fallback-insecure-key')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
+
+csrf_trusted_origins_env = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS')
+if csrf_trusted_origins_env:
+    CSRF_TRUSTED_ORIGINS = csrf_trusted_origins_env.split(',')
+else:
+    CSRF_TRUSTED_ORIGINS = []
 
 if allowed_hosts_env:
     ALLOWED_HOSTS = allowed_hosts_env.split(',')
 else:
     ALLOWED_HOSTS = []
+
+
 
 # Application definition
 
