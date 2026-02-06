@@ -34,6 +34,8 @@ from commission.models import CommissionLedger
 from .forms import UserSettingsForm
 
 logger = logging.getLogger(__name__)
+ALLOWED_SUBSCRIPTION_GROUP = "Distributor"
+
 
 # Key function for rate limiting based on email
 def get_email_key(group, request):
@@ -252,6 +254,8 @@ def profile_view(request):
     # 1. Check if user is an Agent (has a group with > 0% commission)
     is_agent = user.user_groups.filter(commission_percentage__gt=0).exists()
 
+    can_manage_subscription = user.user_groups.filter(name=ALLOWED_SUBSCRIPTION_GROUP).exists()
+
     # 2. Get Order History (For everyone)
     orders = Order.objects.filter(agent=user).prefetch_related('items__product').order_by('-created_at')
 
@@ -279,6 +283,7 @@ def profile_view(request):
         'plans': plans,
         'current_plan_id': current_plan_id,
         'payment_options': payment_options, # Passed to template
+        'can_manage_subscription': can_manage_subscription,
     }
 
     # 3. Get Commission Data (Agent Only)
@@ -327,6 +332,14 @@ def api_update_subscription(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
 
+    # --- 1. ACCESS CONTROL CHECK ---
+    if not request.user.user_groups.filter(name=ALLOWED_SUBSCRIPTION_GROUP).exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Permission denied. You are not authorized to manage subscriptions.'
+        }, status=403)
+    # -------------------------------
+
     try:
         data = json.loads(request.body)
         plan_id = data.get('plan_id')
@@ -336,7 +349,6 @@ def api_update_subscription(request):
         user = request.user
 
         # --- UPDATE: Calculate Annual Price ---
-        # Assuming plan.price is the monthly rate
         annual_price = selected_plan.price * 12
 
         # Handle FREE Plans
@@ -353,24 +365,20 @@ def api_update_subscription(request):
 
         ref_id = f"SUB-{uuid.uuid4().hex[:12].upper()}"
 
-        # Create Payment Record with Annual Amount
+        # Create Payment Record
         payment = SubscriptionPayment.objects.create(
             user=user,
             plan=selected_plan,
-            amount=annual_price, # Store total paid (12 months)
+            amount=annual_price,
             reference_id=ref_id,
             status='PENDING'
         )
 
-        # 4. Payment Gateway Logic
+        # Payment Gateway Logic
         if config.payment_provider == 'SENANGPAY':
-            # Updated to call SenangPay helper
             return _initiate_senangpay_subscription_payment(request, user, selected_plan, config, ref_id, annual_price)
-
         elif config.payment_provider == 'BILLPLZ':
-            # Placeholder for Billplz logic
-            return _initiate_billplz_payment(request, user, selected_plan, config, ref_id)
-
+            return _initiate_billplz_payment(request, user, selected_plan, config, ref_id, annual_price) # Ensure args match your helper
         else:
             return JsonResponse({'success': False, 'error': 'Invalid payment provider configuration.'}, status=500)
 
@@ -491,25 +499,33 @@ def _initiate_billplz_payment(request, user, plan, config, ref_id, amount):
         logger.error(f"Gateway Connection Error: {e}")
         return JsonResponse({'success': False, 'error': 'Could not connect to payment gateway.'}, status=502)
 
+@login_required  # Ensure they are logged in first
 def subscription_plans_view(request):
     """
-    Public page to display all active subscription plans.
+    Page to display all active subscription plans.
+    Restricted to specific user group.
     """
+    # --- 1. ACCESS CONTROL CHECK ---
+    if not request.user.user_groups.filter(name=ALLOWED_SUBSCRIPTION_GROUP).exists():
+        messages.error(request, "You do not have permission to view subscription plans.")
+        return redirect('user:profile')
+    # -------------------------------
+
     plans = SubscriptionPlan.objects.filter(is_active=True)
     current_plan_id = None
 
-    # If logged in, identify their current plan
-    if request.user.is_authenticated:
-        for plan in plans:
-            if request.user.user_groups.filter(id=plan.target_group.id).exists():
-                current_plan_id = plan.id
-                break
+    # Identify their current plan
+    for plan in plans:
+        if request.user.user_groups.filter(id=plan.target_group.id).exists():
+            current_plan_id = plan.id
+            break
 
     context = {
         'plans': plans,
         'current_plan_id': current_plan_id
     }
     return render(request, 'user/subscription_plans.html', context)
+
 
 @csrf_exempt
 def payment_webhook(request):
@@ -562,11 +578,15 @@ def payment_callback(request):
 def checkout_view(request, plan_id):
     """
     Displays a confirmation page before initiating payment/subscription switch.
+    Restricted to specific user group.
     """
-    plan = get_object_or_404(SubscriptionPlan, pk=plan_id, is_active=True)
+    # --- 1. ACCESS CONTROL CHECK ---
+    if not request.user.user_groups.filter(name=ALLOWED_SUBSCRIPTION_GROUP).exists():
+        messages.error(request, "You do not have permission to purchase a subscription.")
+        return redirect('user:profile')
+    # -------------------------------
 
-    # Optional: Check if user is already on this plan
-    # (Logic similar to profile_view or subscription_plans_view)
+    plan = get_object_or_404(SubscriptionPlan, pk=plan_id, is_active=True)
 
     context = {
         'plan': plan,

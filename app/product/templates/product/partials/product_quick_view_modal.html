@@ -80,7 +80,7 @@
                 <div class="flex-1 overflow-y-auto my-4 prose max-w-none" x-text="product.description"></div>
 
                 {# --- Icon Row (Enquiry, Share, & View Details) --- #}
-                <div class="flex items-center space-x-6 mb-6 pt-2 border-t border-gray-100">
+                <div class="flex items-center space-x-4 md:space-x-6 mb-6 pt-2 border-t border-gray-100">
                     <a :href="getWhatsAppEnquiryLink()" target="_blank"
                     class="group flex items-center text-gray-500 hover:text-green-600 transition-colors"
                     title="Enquire about this product">
@@ -91,7 +91,7 @@
                         </div>
 
                         {# CHANGED: Dual Line Text #}
-                        <div class="flex flex-col ml-2">
+                        <div class="flex flex-col ml-2 whitespace-nowrap">
                             {% with lines=site_settings.product_action_enquire_lines %}
                                 <span class="text-sm font-medium leading-none">{{ lines.0 }}</span>
                                 {% if lines|length > 1 %}
@@ -111,7 +111,7 @@
                         </div>
 
                         {# CHANGED: Dual Line Text #}
-                        <div class="flex flex-col ml-2">
+                        <div class="flex flex-col ml-2 whitespace-nowrap">
                             {% with lines=site_settings.product_action_share_lines %}
                                 <span class="text-sm font-medium leading-none">{{ lines.0 }}</span>
                                 {% if lines|length > 1 %}
@@ -132,7 +132,7 @@
                         </div>
 
                         {# CHANGED: Dual Line Text #}
-                        <div class="flex flex-col ml-2">
+                        <div class="flex flex-col ml-2 whitespace-nowrap">
                             {% with lines=site_settings.product_action_details_lines %}
                                 <span class="text-sm font-medium leading-none">{{ lines.0 }}</span>
                                 {% if lines|length > 1 %}
