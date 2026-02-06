@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+    {% if site_settings.favicon %}
+        <link rel="icon" type="image/x-icon" href="{{ site_settings.favicon.url }}">
+    {% endif %}
+    
     <meta name="description" content="{{ meta_description }}">
     <title>{% block title %}{{ meta_title }}{% endblock %}</title>
 

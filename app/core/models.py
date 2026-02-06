@@ -18,6 +18,12 @@ class SiteSetting(models.Model):
         null=True,
         help_text="Upload a logo to display next to the site name in the navigation bar."
     )
+    favicon = models.ImageField(
+        upload_to='site_branding/favicons/',
+        blank=True,
+        null=True,
+        help_text="Upload a 16x16 or 32x32 pixel image (PNG/ICO/WEBP) to use as the browser tab icon."
+    )
     customer_service_whatsapp = models.CharField(
         max_length=20,
         default="60199333030",
