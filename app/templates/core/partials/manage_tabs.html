@@ -9,73 +9,73 @@
     {% if is_subpage %}
         {# --- SUBPAGE MODE: Links navigate back to the main dashboard anchor --- #}
 
-        <a href="{% url 'manage_dashboard' %}#quotations"
+        <a href="{% url 'core:manage_dashboard' %}#quotations"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
             <span>Quotations</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#invoices"
+        <a href="{% url 'core:manage_dashboard' %}#invoices"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"></path></svg>
             <span>Invoices</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#inventory"
+        <a href="{% url 'core:manage_dashboard' %}#inventory"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
             <span>Inventory</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#products"
+        <a href="{% url 'core:manage_dashboard' %}#products"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9.75l-9-5.25M12 17.25v-9.75"></path></svg>
             <span>Products</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#categories"
+        <a href="{% url 'core:manage_dashboard' %}#categories"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
             <span>Categories</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#blog"
+        <a href="{% url 'core:manage_dashboard' %}#blog"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h6M7 8h6"></path></svg>
             <span>Blog</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#seo"
+        <a href="{% url 'core:manage_dashboard' %}#seo"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10m0-2s.657-1.343 2-2m0 2s.657 1.343 2 2m6.657 4.657A8 8 0 0118 7m-2 2s-1-2-2-2m-2-2s-1.343-.657-2-2m0 0s-1.343.657-2 2m-2 2s-2-1-2-2m6.657 4.657s-1.343.657-2 2m-2 2s-1.343-.657-2-2m0 0s-.657-1.343-2-2"></path></svg>
             <span>SEO</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#images"
+        <a href="{% url 'core:manage_dashboard' %}#images"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             <span>Images</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#banners"
+        <a href="{% url 'core:manage_dashboard' %}#banners"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
             <span>Banners</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#agents"
+        <a href="{% url 'core:manage_dashboard' %}#agents"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
             <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.106-1.283-.301-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.106-1.283.301-1.857m0 0a5.002 5.002 0 019.398 0M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
             <span>Agents</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#commissions"
+        <a href="{% url 'core:manage_dashboard' %}#commissions"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
            <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
            <span>Commissions</span>
         </a>
 
-        <a href="{% url 'manage_dashboard' %}#orders"
+        <a href="{% url 'core:manage_dashboard' %}#orders"
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
            <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
            <span>Orders</span>

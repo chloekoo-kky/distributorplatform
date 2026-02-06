@@ -6,6 +6,8 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from tablib import Dataset
+from decimal import Decimal, InvalidOperation
+
 import datetime
 import logging
 import json
@@ -463,7 +465,10 @@ def manage_product_edit(request, product_id):
 
 @staff_required
 def api_manage_products(request):
-    # Add header check
+    """
+    API to fetch products for the management dashboard.
+    Includes DEBUG logging for supplier cost calculation.
+    """
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
@@ -472,26 +477,21 @@ def api_manage_products(request):
     group_filter = request.GET.get('group', '')
     category_filter = request.GET.get('category', '')
     page_number = request.GET.get('page', 1)
-    limit = request.GET.get('limit', 50) # <-- Add limit parameter
+    limit = request.GET.get('limit', 50)
 
     # --- 2. Build Base Queryset ---
     queryset = Product.objects.annotate(
-        # --- START REMOVAL ---
-        # annotated_base_cost=Subquery(latest_item_price_sq) # <-- *** ADD THIS ANNOTATION ***
-        # --- END REMOVAL ---
+        # annotations if needed...
     ).select_related('featured_image').prefetch_related(
         Prefetch('categories', queryset=Category.objects.select_related('group')),
-
-        # --- START ADDITION (This prefetch works with the property change) ---
+        'suppliers', # --- NEW: Prefetch suppliers ---
         Prefetch(
             'quotationitem_set',
-            queryset=QuotationItem.objects.select_related('quotation')
+            queryset=QuotationItem.objects.select_related('quotation', 'quotation__supplier')
                                           .prefetch_related('quotation__items')
                                           .order_by('-quotation__date_quoted'),
-            to_attr='latest_quotation_items' # This must match the property check
+            to_attr='latest_quotation_items'
         )
-        # --- END ADDITION ---
-
     ).order_by('name')
 
     # --- 3. Apply Filters ---
@@ -507,7 +507,7 @@ def api_manage_products(request):
     queryset = queryset.distinct()
 
     # --- 4. Paginate ---
-    paginator = Paginator(queryset, limit) # <-- Use limit variable
+    paginator = Paginator(queryset, limit)
     try:
         page_obj = paginator.page(page_number)
     except EmptyPage:
@@ -515,9 +515,50 @@ def api_manage_products(request):
 
     # --- 5. Serialize ---
     serialized_products = []
+
+    # [DEBUG] Start serialization loop
+    logger.debug(f"[api_manage_products] Serializing {len(page_obj.object_list)} products...")
+
     for product in page_obj.object_list:
         category_list = [cat.name for cat in product.categories.all()]
         group_list = [cat.group.name for cat in product.categories.all() if cat.group]
+
+        # --- NEW: Get Supplier List ---
+        supplier_list = [s.name for s in product.suppliers.all()]
+
+        # --- NEW: Extract latest cost per supplier ---
+        supplier_costs = []
+        seen_suppliers = set()
+
+        if hasattr(product, 'latest_quotation_items'):
+             # [DEBUG] Log found items for this product
+             # logger.debug(f"[Product {product.sku}] Found {len(product.latest_quotation_items)} quotation items.")
+
+             for item in product.latest_quotation_items:
+                 sup_id = item.quotation.supplier_id
+                 sup_name = item.quotation.supplier.name
+
+                 if sup_id not in seen_suppliers:
+                     seen_suppliers.add(sup_id)
+
+                     cost = item.landed_cost_per_unit
+
+                     # [DEBUG] Log calculated cost
+                     # logger.debug(f"  -> Supplier: {sup_name}, Date: {item.quotation.date_quoted}, Cost: {cost}")
+
+                     if cost is not None:
+                         supplier_costs.append({
+                             'supplier_name': sup_name or "Unknown",
+                             'cost': cost, # Kept as Decimal for Encoder
+                             'date': item.quotation.date_quoted # Kept as Date for Encoder
+                         })
+        else:
+             logger.warning(f"[Product {product.sku}] 'latest_quotation_items' attribute missing.")
+
+        # [DEBUG] Log final list for this product
+        if len(supplier_costs) > 1:
+            logger.info(f"[Product {product.sku}] Generated multiple supplier options: {supplier_costs}")
+        # ---------------------------------------------
 
         product_data = {
             'id': product.pk,
@@ -526,28 +567,22 @@ def api_manage_products(request):
             'selling_price': product.selling_price,
             'is_promotion': product.is_promotion,
             'promotion_rate': product.promotion_rate,
-
-            # --- START ADDITIONS ---
             'profit_margin': product.profit_margin,
-            'base_cost': product.base_cost, # This now calls the optimized @property
-            # --- END ADDITIONS ---
-
+            'base_cost': product.base_cost,
+            'supplier_costs': supplier_costs,
+            'suppliers': supplier_list, # --- NEW: Included in response ---
             'category_groups': sorted(list(set(group_list))),
-
-            # --- START ADDITION ---
             'categories': sorted(list(set(category_list))),
-            # --- END ADDITION ---
-
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
             'featured_image_alt': product.featured_image.alt_text if product.featured_image else product.name,
-            'featured_image_id': product.featured_image_id, # FIX: Required for checkbox logic
-            'featured_image_title': product.featured_image.title if product.featured_image else None, # FIX: For displaying name
-            
+            'featured_image_id': product.featured_image_id,
+            'featured_image_title': product.featured_image.title if product.featured_image else None,
             'gallery_image_ids': list(product.gallery_images.all().values_list('id', flat=True))
         }
         serialized_products.append(product_data)
 
-    # --- 6. Return JSON ---
+    # --- 6. Return JSON with Encoder ---
+    # FIXED: Added DjangoJSONEncoder to handle Decimal and Date objects
     return JsonResponse({
         'items': serialized_products,
         'pagination': {
@@ -556,10 +591,9 @@ def api_manage_products(request):
             'has_next': page_obj.has_next(),
             'has_previous': page_obj.has_previous(),
         }
-    })
+    }, encoder=DjangoJSONEncoder)
 
 
-from decimal import Decimal, InvalidOperation
 
 @staff_required
 def api_manage_pricing(request, product_id):

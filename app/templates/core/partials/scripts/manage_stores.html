@@ -2,14 +2,16 @@
     document.addEventListener('alpine:init', () => {
         // --- 1. Global Store ---
         Alpine.store('globals', {
-            allCategoriesFlat: JSON.parse(document.getElementById('all-categories-data').textContent),
-            groupCategoriesMap: JSON.parse(document.getElementById('group-categories-data').textContent),
-            allCategoriesList: JSON.parse(document.getElementById('all-categories-list-data').textContent),
-            allSuppliersList: JSON.parse(document.getElementById('all-suppliers-list-data').textContent),
-            allImageCategories: JSON.parse(document.getElementById('all-image-categories-data').textContent),
-            allUserGroupsList: JSON.parse(document.getElementById('all-user-groups-data').textContent),
-            allBanners: JSON.parse(document.getElementById('all-banners-data') ? document.getElementById('all-banners-data').textContent : '[]'),
-            csrfToken: '',
+            // Added safety checks for all JSON data sources
+            allCategoriesFlat: document.getElementById('all-categories-data') ? JSON.parse(document.getElementById('all-categories-data').textContent) : [],
+            groupCategoriesMap: document.getElementById('group-categories-data') ? JSON.parse(document.getElementById('group-categories-data').textContent) : {},
+            allCategoriesList: document.getElementById('all-categories-list-data') ? JSON.parse(document.getElementById('all-categories-list-data').textContent) : [],
+            allSuppliersList: document.getElementById('all-suppliers-list-data') ? JSON.parse(document.getElementById('all-suppliers-list-data').textContent) : [],
+            allImageCategories: document.getElementById('all-image-categories-data') ? JSON.parse(document.getElementById('all-image-categories-data').textContent) : [],
+            allUserGroupsList: document.getElementById('all-user-groups-data') ? JSON.parse(document.getElementById('all-user-groups-data').textContent) : [],
+            allBanners: document.getElementById('all-banners-data') ? JSON.parse(document.getElementById('all-banners-data').textContent) : [],
+
+            csrfToken: '{{ csrf_token }}', // Ensure this is populated if not handled elsewhere
             selectedCategoryId: null,
             invoiceToOpen: null,
 
@@ -26,7 +28,8 @@
                         timerProgressBar: true
                     });
                 } else {
-                    alert(message);
+                    // Fallback if SweetAlert2 is not loaded
+                    console.log(`[${icon}] ${message}`);
                 }
             }
         });
@@ -65,6 +68,7 @@
             // --- Getters ---
             get filteredImages() {
                 if (Alpine.store('globals').selectedCategoryId === null) return this.galleryImages;
+                // Ensure comparison handles string/number mismatch
                 return this.galleryImages.filter(img => img.category_id == Alpine.store('globals').selectedCategoryId);
             },
             get filteredProductsForModal() {
@@ -94,17 +98,27 @@
                 const formData = new FormData(form);
                 const submitButton = form.querySelector('button[type=submit]');
                 if (!form.querySelector('input[type=file]').files.length) return;
+
                 submitButton.disabled = true;
                 submitButton.textContent = 'Uploading...';
+
                 try {
                     const response = await fetch(`{% url 'images:ajax_upload_image' %}`, {
                         method: 'POST',
-                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json' },
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Accept': 'application/json'
+                        },
                         body: formData
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
-                        data.images.forEach(img => this.galleryImages.unshift(img));
+                        // Prevent duplicates when adding new images
+                        data.images.forEach(img => {
+                            if (!this.galleryImages.some(existing => existing.id === img.id)) {
+                                this.galleryImages.unshift(img);
+                            }
+                        });
                         form.reset();
                         Alpine.store('globals').showToast('Image(s) uploaded successfully!');
                     } else { throw new Error(data.errors || 'Upload failed'); }
@@ -113,12 +127,16 @@
                 }
                 finally { submitButton.disabled = false; submitButton.textContent = 'Upload Image(s)'; }
             },
+
             async deleteImage(imageId) {
                 if (!confirm('Are you sure you want to delete this image?')) return;
                 try {
                     const response = await fetch(`/images/api/delete-image/${imageId}/`, {
                         method: 'POST',
-                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json' }
+                        headers: {
+                             'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                             'Accept': 'application/json'
+                        }
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
@@ -129,7 +147,9 @@
                     Alpine.store('globals').showToast('Delete error: ' + err.message, 'error');
                 }
             },
-            // ... (Assign/Bulk/Edit methods passthrough as previously defined) ...
+
+            // ... (Rest of methods remain unchanged) ...
+
             openAssignProductModal(image) {
                 this.selectedImageToAssign = image;
                 this.assignProductModalSearchTerm = '';
@@ -158,7 +178,10 @@
                 try {
                     const response = await fetch(`{% url 'images:ajax_assign_to_products' %}`, {
                         method: 'POST',
-                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'
+                        },
                         body: JSON.stringify(payload)
                     });
                     const data = await response.json();
@@ -201,7 +224,10 @@
                 try {
                     const response = await fetch(`{% url 'images:ajax_assign_to_posts' %}`, {
                         method: 'POST',
-                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        headers: {
+                             'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                             'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'
+                        },
                         body: JSON.stringify(payload)
                     });
                     const data = await response.json();
@@ -236,7 +262,10 @@
                 try {
                     const response = await fetch(`{% url 'images:ajax_bulk_assign' %}`, {
                         method: 'POST',
-                        headers: { 'X-CSRFToken': Alpine.store('globals').csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'
+                        },
                         body: JSON.stringify(payload)
                     });
                     const data = await response.json();
@@ -269,7 +298,7 @@
                     const response = await fetch(`/images/api/edit-image/${this.currentImageToEdit.id}/`, {
                         method: 'POST',
                         headers: {
-                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
                             'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
                             'Content-Type': 'application/json'
                         },

@@ -8,195 +8,209 @@
 
 {% block content %}
 
-{% include 'core/partials/manage_tabs.html' with active_manage_tab='quotations' %}
+{# WRAPPER: Matches manage_tools.html layout for Sidebar + Content #}
+<div class="flex flex-col md:flex-row min-h-screen bg-gray-50">
 
-<div class="w-full max-w-6xl mx-auto pt-8"
-     x-data="quotationEditorData()"
-     x-init="init()"
-     id="quotation-editor"
-     data-items='{{ supplier_products_json|safe }}'
-     data-transport-cost="{{ initial_transport_cost|safe }}"
-     data-is-locked="{{ quotation.invoice|yesno:'true,false' }}"
-     data-update-url="{% url 'inventory:quotation_detail' quotation.quotation_id %}"
-     data-csrf-token="{{ csrf_token }}"
->
-
-    {% if messages %}
-    <div class="mb-4 space-y-2">
-        {% for message in messages %}
-         <div class="px-4 py-3 rounded relative
-            {% if message.tags == 'success' %} bg-green-100 border border-green-400 text-green-700
-            {% elif message.tags == 'warning' %} bg-yellow-100 border border-yellow-400 text-yellow-700
-            {% elif message.tags == 'error' %} bg-red-100 border border-red-400 text-red-700
-            {% else %} bg-blue-100 border border-blue-400 text-blue-700
-            {% endif %}" role="alert">
-            <span class="block sm:inline">{{ message }}</span>
+    {# SIDEBAR #}
+    <aside class="w-full md:w-64 bg-white border-r border-gray-200 flex-shrink-0 z-30">
+        <div class="sticky top-16 md:h-[calc(100vh-4rem)] overflow-y-auto py-4">
+             {# Pass is_subpage=True to render 'Back' links instead of tab switching #}
+             {% include 'core/partials/manage_tabs.html' with active_manage_tab='quotations' is_subpage=True %}
         </div>
-        {% endfor %}
-    </div>
-    {% endif %}
+    </aside>
 
-    <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <div>
-            <h2 class="text-3xl font-bold text-gray-800">Quotation Details</h2>
-            <p class="text-lg text-gray-600">{{ quotation.quotation_id }}</spsn>
-        </div>
-        <div class="flex items-center space-x-2">
-            {% if not quotation.invoice %}
-                <form method="POST" action="{% url 'sales:create_invoice_from_quotation' quotation.quotation_id %}" onsubmit="return confirm('Convert to invoice? Items cannot be changed after this.');">
-                    {% csrf_token %}
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 flex items-center"
-                            :disabled="isLocked">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Convert to Invoice
-                    </button>
-                </form>
-            {% else %}
-                 <span class="px-4 py-2 text-sm font-medium text-gray-500 bg-gray-100 border border-gray-300 rounded-md flex items-center cursor-not-allowed" title="Quotation already invoiced.">
-                     <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                     Invoiced ({{ quotation.invoice.invoice_id }})
-                 </span>
+    {# MAIN CONTENT AREA #}
+    <div class="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 overflow-x-hidden">
+
+        <div class="w-full mx-auto"
+             x-data="quotationEditorData()"
+             x-init="init()"
+             id="quotation-editor"
+             data-items='{{ supplier_products_json|safe }}'
+             data-transport-cost="{{ initial_transport_cost|safe }}"
+             data-is-locked="{{ quotation.invoice|yesno:'true,false' }}"
+             data-update-url="{% url 'inventory:quotation_detail' quotation.quotation_id %}"
+             data-csrf-token="{{ csrf_token }}"
+        >
+
+            {% if messages %}
+            <div class="mb-4 space-y-2">
+                {% for message in messages %}
+                 <div class="px-4 py-3 rounded relative
+                    {% if message.tags == 'success' %} bg-green-100 border border-green-400 text-green-700
+                    {% elif message.tags == 'warning' %} bg-yellow-100 border border-yellow-400 text-yellow-700
+                    {% elif message.tags == 'error' %} bg-red-100 border border-red-400 text-red-700
+                    {% else %} bg-blue-100 border border-blue-400 text-blue-700
+                    {% endif %}" role="alert">
+                    <span class="block sm:inline">{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
             {% endif %}
-            <a href="{% url 'manage_dashboard' %}#quotations" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                Back to Manage Tools
-            </a>
+
+            <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800">Quotation Details</h2>
+                    <p class="text-lg text-gray-600">{{ quotation.quotation_id }}</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    {% if not quotation.invoice %}
+                        <form method="POST" action="{% url 'sales:create_invoice_from_quotation' quotation.quotation_id %}" onsubmit="return confirm('Convert to invoice? Items cannot be changed after this.');">
+                            {% csrf_token %}
+                            <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 flex items-center"
+                                    :disabled="isLocked">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Convert to Invoice
+                            </button>
+                        </form>
+                    {% else %}
+                         <span class="px-4 py-2 text-sm font-medium text-gray-500 bg-gray-100 border border-gray-300 rounded-md flex items-center cursor-not-allowed" title="Quotation already invoiced.">
+                             <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                             Invoiced ({{ quotation.invoice.invoice_id }})
+                         </span>
+                    {% endif %}
+                    <a href="{% url 'core:manage_dashboard' %}#quotations" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                        Back to Manage Tools
+                    </a>
+                </div>
+            </div>
+
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden p-6 mb-8">
+                 <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">Summary & Rates</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500">Supplier</dt>
+                        <dd class="mt-1 text-md text-gray-900">{{ quotation.supplier.name }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500">Date Quoted</dt>
+                        <dd class="mt-1 text-md text-gray-900">
+                             <input type="date" id="date-quoted-input" x-model="dateQuoted" :disabled="isLocked"
+                                    class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500">Transportation (RM)</dt>
+                        <dd class="mt-1 text-md text-gray-900">
+                             <input type="number" step="0.01" min="0" id="transport-cost-input" x-model.number="transportCost" @change="formatTransportCost" :disabled="isLocked"
+                                    class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                        </dd>
+                    </div>
+                     <div></div>
+
+                     <div>
+                        <dt class="text-sm font-medium text-gray-500">Rate (1 EUR to MYR)</dt>
+                        <dd class="mt-1 text-md text-gray-900">
+                             <input type="number" step="0.1" min="0" id="rate-eur-input" x-model.number="rateEUR" @change="formatRateEUR(); updateAllPrices();" :disabled="isLocked"
+                                    class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                        </dd>
+                    </div>
+                     <div>
+                        <dt class="text-sm font-medium text-gray-500">Rate (1 USD to MYR)</dt>
+                        <dd class="mt-1 text-md text-gray-900">
+                             <input type="number" step="0.1" min="0" id="rate-usd-input" x-model.number="rateUSD" @change="formatRateUSD(); updateAllPrices();" :disabled="isLocked"
+                                    class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                        </dd>
+                    </div>
+                </div>
+
+                <div class="mt-6 border-t pt-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="md:col-span-2 space-y-2">
+                            <div class="flex justify-between items-baseline">
+                                <dt class="text-sm font-medium text-gray-700">Subtotal (Items - RM):</dt>
+                                <dd class="text-sm font-bold text-gray-900" id="subtotal-display" x-text="formatPrice(subtotal)"></dd>
+                            </div>
+                            <div class="flex justify-between items-baseline">
+                                <dt class="text-sm font-medium text-gray-700">Transportation Cost (RM):</dt>
+                                <dd class="text-sm font-bold text-gray-900" id="transport-cost-display" x-text="formatPrice(transportCost)"></dd>
+                            </div>
+                            <div class="flex justify-between items-baseline border-t pt-2 mt-2">
+                                <dt class="text-base font-semibold text-gray-900">Total Landed Cost (RM):</dt>
+                                <dd class="text-base font-bold text-indigo-700" id="total-landed-cost-display" x-text="formatPrice(totalLandedCost)"></dd>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-1 flex items-end justify-end">
+                            {% if not quotation.invoice %}
+                                <button id="update-quotation-button"
+                                        @click="submitUpdate"
+                                        :disabled="isLocked || isSaving"
+                                        class="w-full md:w-auto px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                                     <span x-show="!isSaving">Update Quotation Items</span>
+                                     <span x-show="isSaving">Saving...</span>
+                                </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                <h3 class="text-xl font-semibold text-gray-700 p-6 border-b">Products from {{ quotation.supplier.name }}</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('sku')">
+                                    <span class="flex items-center">SKU<span x-html="sortIcon('sku')"></span></span>
+                                </th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('name')">
+                                     <span class="flex items-center">Product<span x-html="sortIcon('name')"></span></span>
+                                </th>
+                                <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('previous_quoted_price')">
+                                     <span class="flex items-center justify-end">Previous Price (RM)<span x-html="sortIcon('previous_quoted_price')"></span></span>
+                                </th>
+                                <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Quantity</th>
+                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (EUR)</th>
+                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (USD)</th>
+                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('quoted_price')">
+                                    <span class="flex items-center">Input Price (MYR)<span x-html="sortIcon('quoted_price')"></span></span>
+                                </th>
+                                <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('line_total')">
+                                    <span class="flex items-center justify-end">Line Total (RM)<span x-html="sortIcon('line_total')"></span></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="product-table-body">
+                            <template x-if="items.length === 0">
+                                <tr><td colspan="8" class="px-6 py-4 text-center text-gray-500">No products found for this supplier.</td></tr>
+                            </template>
+                            <template x-for="(item, index) in sortedItems" :key="item.product_id">
+                                <tr>
+                                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="item.sku || '-'"></td>
+                                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="item.name"></td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500 text-right" x-text="formatPrice(item.previous_quoted_price)"></td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <div class="flex items-center justify-center">
+                                            <button type="button" @click="updateItemQuantity(index, -1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-l text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> - </button>
+                                            <input type="number" min="0" :value="item.quantity" @change="setItemQuantity(index, $event.target.value)" :disabled="isLocked" class="qty-input w-16 p-1 text-center border-t border-b border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                            <button type="button" @click="updateItemQuantity(index, 1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-r text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> + </button>
+                                        </div>
+                                    </td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'EUR')" @change="updateItemPrice(index, $event.target.value, 'EUR')" :disabled="isLocked"
+                                               class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    </td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'USD')" @change="updateItemPrice(index, $event.target.value, 'USD')" :disabled="isLocked"
+                                               class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    </td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <input type="number" step="0.01" min="0" :value="calculatePrice(item.quoted_price, 'MYR')" @change="updateItemPrice(index, $event.target.value, 'MYR')" :disabled="isLocked"
+                                               class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    </td>
+                                    <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-900 text-right line-total" x-text="formatPrice(lineTotal(item))"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                         </table>
+                </div>
+            </div>
+
         </div>
     </div>
-
-    <div class="bg-white shadow-lg rounded-lg overflow-hidden p-6 mb-8">
-         <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">Summary & Rates</h3>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-                <dt class="text-sm font-medium text-gray-500">Supplier</dt>
-                <dd class="mt-1 text-md text-gray-900">{{ quotation.supplier.name }}</dd>
-            </div>
-            <div>
-                <dt class="text-sm font-medium text-gray-500">Date Quoted</dt>
-                <dd class="mt-1 text-md text-gray-900">
-                     <input type="date" id="date-quoted-input" x-model="dateQuoted" :disabled="isLocked"
-                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                </dd>
-            </div>
-            <div>
-                <dt class="text-sm font-medium text-gray-500">Transportation (RM)</dt>
-                <dd class="mt-1 text-md text-gray-900">
-                     <input type="number" step="0.01" min="0" id="transport-cost-input" x-model.number="transportCost" @change="formatTransportCost" :disabled="isLocked"
-                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                </dd>
-            </div>
-             <div></div>
-
-             <div>
-                <dt class="text-sm font-medium text-gray-500">Rate (1 EUR to MYR)</dt>
-                <dd class="mt-1 text-md text-gray-900">
-                     <input type="number" step="0.1" min="0" id="rate-eur-input" x-model.number="rateEUR" @change="formatRateEUR(); updateAllPrices();" :disabled="isLocked"
-                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                </dd>
-            </div>
-             <div>
-                <dt class="text-sm font-medium text-gray-500">Rate (1 USD to MYR)</dt>
-                <dd class="mt-1 text-md text-gray-900">
-                     <input type="number" step="0.1" min="0" id="rate-usd-input" x-model.number="rateUSD" @change="formatRateUSD(); updateAllPrices();" :disabled="isLocked"
-                            class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                </dd>
-            </div>
-        </div>
-
-        <div class="mt-6 border-t pt-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="md:col-span-2 space-y-2">
-                    <div class="flex justify-between items-baseline">
-                        <dt class="text-sm font-medium text-gray-700">Subtotal (Items - RM):</dt>
-                        <dd class="text-sm font-bold text-gray-900" id="subtotal-display" x-text="formatPrice(subtotal)"></dd>
-                    </div>
-                    <div class="flex justify-between items-baseline">
-                        <dt class="text-sm font-medium text-gray-700">Transportation Cost (RM):</dt>
-                        <dd class="text-sm font-bold text-gray-900" id="transport-cost-display" x-text="formatPrice(transportCost)"></dd>
-                    </div>
-                    <div class="flex justify-between items-baseline border-t pt-2 mt-2">
-                        <dt class="text-base font-semibold text-gray-900">Total Landed Cost (RM):</dt>
-                        <dd class="text-base font-bold text-indigo-700" id="total-landed-cost-display" x-text="formatPrice(totalLandedCost)"></dd>
-                    </div>
-                </div>
-
-                <div class="md:col-span-1 flex items-end justify-end">
-                    {% if not quotation.invoice %}
-                        <button id="update-quotation-button"
-                                @click="submitUpdate"
-                                :disabled="isLocked || isSaving"
-                                class="w-full md:w-auto px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                             <span x-show="!isSaving">Update Quotation Items</span>
-                             <span x-show="isSaving">Saving...</span>
-                        </button>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        </div>
-
-    <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-        <h3 class="text-xl font-semibold text-gray-700 p-6 border-b">Products from {{ quotation.supplier.name }}</h3>
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('sku')">
-                            <span class="flex items-center">SKU<span x-html="sortIcon('sku')"></span></span>
-                        </th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" @click="sortTable('name')">
-                             <span class="flex items-center">Product<span x-html="sortIcon('name')"></span></span>
-                        </th>
-                        <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('previous_quoted_price')">
-                             <span class="flex items-center justify-end">Previous Price (RM)<span x-html="sortIcon('previous_quoted_price')"></span></span>
-                        </th>
-                        <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Quantity</th>
-                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (EUR)</th>
-                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Input Price (USD)</th>
-                        <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('quoted_price')">
-                            <span class="flex items-center">Input Price (MYR)<span x-html="sortIcon('quoted_price')"></span></span>
-                        </th>
-                        <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('line_total')">
-                            <span class="flex items-center justify-end">Line Total (RM)<span x-html="sortIcon('line_total')"></span></span>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200" id="product-table-body">
-                    <template x-if="items.length === 0">
-                        <tr><td colspan="8" class="px-6 py-4 text-center text-gray-500">No products found for this supplier.</td></tr>
-                    </template>
-                    <template x-for="(item, index) in sortedItems" :key="item.product_id">
-                        <tr>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="item.sku || '-'"></td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="item.name"></td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500 text-right" x-text="formatPrice(item.previous_quoted_price)"></td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <div class="flex items-center justify-center">
-                                    <button type="button" @click="updateItemQuantity(index, -1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-l text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> - </button>
-                                    <input type="number" min="0" :value="item.quantity" @change="setItemQuantity(index, $event.target.value)" :disabled="isLocked" class="qty-input w-16 p-1 text-center border-t border-b border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                    <button type="button" @click="updateItemQuantity(index, 1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-r text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> + </button>
-                                </div>
-                            </td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'EUR')" @change="updateItemPrice(index, $event.target.value, 'EUR')" :disabled="isLocked"
-                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                            </td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'USD')" @change="updateItemPrice(index, $event.target.value, 'USD')" :disabled="isLocked"
-                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                            </td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <input type="number" step="0.01" min="0" :value="calculatePrice(item.quoted_price, 'MYR')" @change="updateItemPrice(index, $event.target.value, 'MYR')" :disabled="isLocked"
-                                       class="price-input w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                            </td>
-                            <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-900 text-right line-total" x-text="formatPrice(lineTotal(item))"></td>
-                        </tr>
-                    </template>
-                </tbody>
-                 </table>
-        </div>
-        </div>
-
 </div>
 
 <script>

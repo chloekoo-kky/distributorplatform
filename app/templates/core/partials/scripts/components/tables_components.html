@@ -1,0 +1,219 @@
+<script>
+    document.addEventListener('alpine:init', () => {
+
+        Alpine.data('productAccordionRow', (productId) => ({
+            id: productId,
+            open: false,
+            batches: [],
+            isLoading: false,
+            hasLoaded: false,
+            async toggle() {
+                this.open = !this.open;
+                if (this.open && !this.hasLoaded) {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch(`/inventory/api/product-batches/${this.id}/`, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                        });
+                        if (!response.ok) throw new Error('Failed to fetch batch data.');
+                        const data = await response.json();
+                        this.batches = data.batches;
+                        this.hasLoaded = true;
+                    } catch (error) { console.error(`Failed to load batches for product ${this.id}:`, error); }
+                    finally { this.isLoading = false; }
+                }
+            }
+        }));
+
+        Alpine.data('quotationAccordionRow', (quotationId) => ({
+            id: quotationId,
+            open: false,
+            items: [],
+            isLoading: false,
+            hasLoaded: false,
+            async toggle() {
+                this.open = !this.open;
+                if (this.open && !this.hasLoaded) {
+                    this.isLoading = true;
+                    try {
+                        const response = await fetch(`/inventory/api/quotation-items/${this.id}/`, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                        });
+                        if (!response.ok) throw new Error('Failed to fetch quotation items.');
+                        const data = await response.json();
+                        this.items = data.items;
+                        this.hasLoaded = true;
+                    } catch (error) { console.error(`Failed to load items for quotation ${this.id}:`, error); }
+                    finally { this.isLoading = false; }
+                }
+            }
+        }));
+
+        Alpine.data('productTableData', () => ({
+            items: [],
+            isLoading: true,
+            pagination: {},
+            filterText: '',
+            filterGroup: '',
+            filterCategory: '',
+            allCategories: [],
+            groupCategoriesMap: {},
+            init() {
+                this.allCategories = Alpine.store('globals').allCategoriesFlat;
+                this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+                this.fetchProducts(1);
+            },
+            get availableCategories() {
+                if (!this.filterGroup) return this.allCategories;
+                const globalCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+                if (globalCategoriesMap && globalCategoriesMap[this.filterGroup]) {
+                    return globalCategoriesMap[this.filterGroup] || [];
+                }
+                return [];
+            },
+            async fetchProducts(page = 1) {
+                this.isLoading = true;
+                const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
+                try {
+                    const response = await fetch(`{% url 'product:api_manage_products' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    this.items = data.items; this.pagination = data.pagination;
+                } catch (error) { console.error('Failed to fetch products:', error); }
+                finally { this.isLoading = false; }
+            },
+            clearFilters() {
+                this.filterText = ''; this.filterGroup = ''; this.filterCategory = '';
+                this.fetchProducts(1);
+            },
+            setGroupFilter(groupName) {
+                this.filterGroup = groupName;
+                this.filterCategory = '';
+                this.fetchProducts(1);
+            },
+            setCategoryFilter(categoryName) {
+                this.filterCategory = categoryName;
+                this.fetchProducts(1);
+            },
+            formatPrice(value) {
+                if (value === null || value === undefined) return 'N/A';
+                return `RM ${Number(value).toFixed(2)}`;
+            }
+        }));
+
+        Alpine.data('inventoryTableData', () => ({
+            items: [],
+            isLoading: true,
+            pagination: {},
+            filterText: '',
+            filterGroup: '',
+            filterCategory: '',
+            allCategories: [],
+            groupCategoriesMap: {},
+            init() {
+                this.allCategories = Alpine.store('globals').allCategoriesFlat;
+                this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+                this.fetchInventory(1);
+            },
+            get availableCategories() {
+                if (!this.filterGroup) return this.allCategories;
+                const globalCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+                if (globalCategoriesMap && globalCategoriesMap[this.filterGroup]) {
+                    return globalCategoriesMap[this.filterGroup] || [];
+                }
+                return [];
+            },
+            async fetchInventory(page = 1) {
+                this.isLoading = true;
+                const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
+                try {
+                    const response = await fetch(`{% url 'inventory:api_manage_inventory' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    this.items = data.items; this.pagination = data.pagination;
+                } catch (error) { console.error('Failed to fetch inventory:', error); }
+                finally { this.isLoading = false; }
+            },
+            clearFilters() {
+                this.filterText = ''; this.filterGroup = ''; this.filterCategory = ''; this.fetchInventory(1);
+            },
+            setGroupFilter(groupName) {
+                this.filterGroup = groupName; this.filterCategory = ''; this.fetchInventory(1);
+            },
+            setCategoryFilter(categoryName) {
+                this.filterCategory = categoryName;
+                this.fetchInventory(1);
+            },
+            formatPrice(value) {
+                if (value === null || value === undefined) return 'N/A';
+                return `RM ${Number(value).toFixed(2)}`;
+            }
+        }));
+
+        Alpine.data('quotationsTableData', () => ({
+            items: [],
+            isLoading: true,
+            pagination: {},
+            filterText: '',
+            init() { this.fetchQuotations(1); },
+            async fetchQuotations(page = 1) {
+                this.isLoading = true;
+                const params = new URLSearchParams({ page, search: this.filterText });
+                try {
+                    const response = await fetch(`{% url 'inventory:api_manage_quotations' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    this.items = data.items; this.pagination = data.pagination;
+                } catch (error) { console.error('Failed to fetch quotations:', error); }
+                finally { this.isLoading = false; }
+            },
+            clearFilters() { this.filterText = ''; this.fetchQuotations(1); },
+            formatPrice(value) {
+                if (value === null || value === undefined) return 'N/A';
+                return `RM ${Number(value).toFixed(2)}`;
+            }
+        }));
+
+        Alpine.data('imageTabManager', () => ({
+            isLoading: true,
+            init() {
+                if (Alpine.store('images').galleryImages.length > 0) {
+                    this.isLoading = false;
+                    return; // Already loaded
+                }
+                this.fetchInitialImageData();
+            },
+            async fetchInitialImageData() {
+                this.isLoading = true;
+                const apiHeaders = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
+                try {
+                    const [imagesRes, productsRes, postsRes] = await Promise.all([
+                        fetch(`{% url 'images:ajax_get_images' %}`, { headers: apiHeaders }),
+                        fetch(`{% url 'product:api_manage_products' %}?page=1&limit=10000`, { headers: apiHeaders }),
+                        fetch(`{% url 'blog:api_manage_posts' %}?page=1&limit=10000`, { headers: apiHeaders })
+                    ]);
+
+                    if (!imagesRes.ok || !productsRes.ok || !postsRes.ok) {
+                        throw new Error('One or more API requests failed');
+                    }
+                    const imagesData = await imagesRes.json();
+                    const productsData = await productsRes.json();
+                    const postsData = await postsRes.json();
+                    Alpine.store('images').galleryImages = imagesData.images;
+                    Alpine.store('images').allProducts = productsData.items;
+                    Alpine.store('images').allPosts = postsData.items;
+                    Alpine.store('globals').allImageCategories = imagesData.categories;
+                } catch (error) {
+                    console.error('Failed to load initial image data:', error);
+                    Alpine.store('globals').showToast('Could not load image gallery data.', 'error');
+                } finally {
+                    this.isLoading = false;
+                }
+            }
+        }));
+
+    });
+</script>

@@ -1,0 +1,86 @@
+<script>
+    function manageInventoryMixin() {
+        return {
+            // Receive Stock Modal State
+            receiveStockModalOpen: false,
+            receiveStockData: {
+                invoiceItemId: '', invoiceId: '', productId: '', productName: '',
+                productSku: '', supplierId: '', supplierName: '',
+                quotationId: '', batch_number: '',
+                received_date: '{{ today_date|date:"Y-m-d" }}', expiry_date: '',
+                quantity_to_receive: '', max_receivable: ''
+            },
+
+            // Edit Invoice Modal State
+            editModalOpen: false,
+            currentInvoice: {
+                invoice_id: '', status: '', payment_date: '', notes: '', update_url: ''
+            },
+
+            // --- Invoice Methods ---
+            async fetchInvoiceData(invoiceId) {
+                try {
+                    const url = `/sales/invoice/${invoiceId}/edit/`;
+                    const response = await fetch(url, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    if (!response.ok) { throw new Error(`Network response error (${response.status})`); }
+                    this.currentInvoice = await response.json();
+                    this.editModalOpen = true;
+                } catch (error) {
+                    console.error('Fetch invoice data error:', error);
+                    Alpine.store('globals').showToast('Could not load invoice details.', 'error');
+                }
+            },
+
+            async submitInvoiceUpdate() {
+                const form = document.getElementById('edit-invoice-form'); if (!form) return;
+                const formData = new FormData(form);
+                const submitButton = form.querySelector('button[type=submit]');
+                submitButton.disabled = true; submitButton.innerHTML = 'Saving...';
+                try {
+                    const response = await fetch(this.currentInvoice.update_url, {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': Alpine.store('globals').csrfToken },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.editModalOpen = false;
+                        Alpine.store('globals').showToast('Invoice updated successfully! Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        let errorMsg = 'Update failed:\n' + (data.error || '');
+                        if (data.errors) {
+                            for (const field in data.errors) {
+                                errorMsg += `- ${field}: ${data.errors[field].join(', ')}\n`;
+                            }
+                        }
+                        Alpine.store('globals').showToast(errorMsg, 'error');
+                    }
+                } catch (error) {
+                    Alpine.store('globals').showToast('Network error during update.', 'error');
+                } finally {
+                    submitButton.disabled = false; submitButton.innerHTML = 'Save Changes';
+                }
+            },
+
+            // --- Receive Stock Methods ---
+            openReceiveStockModal(data) {
+                if (!this.receiveStockModalOpen) {
+                    this.receiveStockData.received_date = '{{ today_date|date:"Y-m-d" }}';
+                    this.receiveStockData.batch_number = '';
+                    this.receiveStockData.expiry_date = '';
+                }
+                this.receiveStockData = {
+                    ...this.receiveStockData,
+                    ...data,
+                    quantity_to_receive: data.quantity,
+                    max_receivable: data.quantity
+                };
+                this.receiveStockModalOpen = true;
+            },
+            closeReceiveStockModal() { this.receiveStockModalOpen = false; }
+        };
+    }
+</script>

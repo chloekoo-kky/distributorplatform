@@ -1,0 +1,393 @@
+<script>
+    function manageContentMixin() {
+        return {
+            // --- Banners ---
+            showBannerModal: false,
+            bannerIsSubmitting: false,
+            currentBanner: {
+                id: null, location: 'HOME_HERO', title: '', subtitle: '',
+                background_color: '#312E81', background_opacity: 90,
+                content_position: 'center-middle',
+                button_text: '', button_link: '', order: 0, is_active: true, background_image_url: ''
+            },
+
+            // --- SEO ---
+            showSeoModal: false,
+            seoIsLoading: false,
+            seoIsSubmitting: false,
+            seoFormData: { id: null, page_name: '', page_path: '', meta_title: '', meta_description: '', update_url: '' },
+            seoFormErrors: {},
+
+            // --- Categories ---
+            showCategoryModal: false,
+            categoryIsLoading: false,
+            categoryIsSubmitting: false,
+            categoryFormData: { id: null, name: '', page_title: '', description: '', sections: [], update_url: '' },
+            categoryFormErrors: {},
+            catShowGallery: false,
+            catGalleryLoading: false,
+            catGalleryImages: [],
+            catActiveEditorId: null,
+
+            // --- Blog ---
+            showBlogModal: false,
+            blogIsLoading: false,
+            blogIsSubmitting: false,
+            blogProductSearch: '',
+            blogFormData: {
+                id: null, title: '', slug: '', content: '',
+                post_type: 'NEWS', is_published: true,
+                featured_image: null, featured_image_url: '',
+                user_groups: [], related_products: [],
+                related_products_title: ''
+            },
+            blogFormErrors: {},
+            blogShowGallery: false,
+            blogGalleryLoading: false,
+            blogGalleryImages: [],
+            blogGalleryMode: 'content',
+
+            // --- Methods ---
+            initContent() {
+                // Any specific content init if needed
+            },
+
+            // ... [Banner Methods: openBannerModal, submitBanner, deleteBanner] ...
+            openBannerModal(banner = null) {
+                if (banner) {
+                    this.currentBanner = { ...banner };
+                    if (this.currentBanner.background_opacity === undefined) this.currentBanner.background_opacity = 90;
+                    if (!this.currentBanner.background_color) this.currentBanner.background_color = '#312E81';
+                } else {
+                    this.currentBanner = {
+                        id: null, location: 'HOME_HERO', title: '', subtitle: '',
+                        background_color: '#312E81', background_opacity: 90,
+                        content_position: 'center-middle',
+                        button_text: '', button_link: '', order: 0, is_active: true, background_image_url: ''
+                    };
+                }
+                this.showBannerModal = true;
+            },
+
+            async submitBanner() {
+                this.bannerIsSubmitting = true;
+                const form = document.getElementById('banner-form');
+                const formData = new FormData(form);
+                if(!form.querySelector('[name=is_active]').checked) { formData.set('is_active', 'False'); }
+                else { formData.set('is_active', 'True'); }
+
+                let url = '{% url "core:api_save_banner" %}';
+                if (this.currentBanner.id) { url = `/manage/api/save-banner/${this.currentBanner.id}/`; }
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': Alpine.store('globals').csrfToken},
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if(data.success) {
+                        Alpine.store('globals').showToast('Banner saved! Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else { Alpine.store('globals').showToast('Error saving banner', 'error'); }
+                } catch(e) { console.error(e); }
+                finally { this.bannerIsSubmitting = false; }
+            },
+
+            async deleteBanner(id) {
+                if(!confirm('Delete this banner?')) return;
+                try {
+                    const response = await fetch(`/manage/api/delete-banner/${id}/`, {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': Alpine.store('globals').csrfToken}
+                    });
+                    if(response.ok) {
+                        Alpine.store('globals').showToast('Banner deleted! Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    }
+                } catch(e) { console.error(e); }
+            },
+
+            // ... [SEO Methods: openSeoModal, submitSeoForm] ...
+            async openSeoModal(seoId = null) {
+                this.seoFormErrors = {};
+                this.showSeoModal = true;
+                if (typeof seoId === 'object') seoId = null;
+
+                if (seoId) {
+                    this.seoIsLoading = true;
+                    try {
+                        const response = await fetch(`/seo/manage/edit/${seoId}/`, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                        });
+                        if (!response.ok) throw new Error('Failed to fetch SEO data');
+                        this.seoFormData = await response.json();
+                    } catch (e) {
+                        Alpine.store('globals').showToast('Error loading data: ' + e.message, 'error');
+                        this.showSeoModal = false;
+                    } finally { this.seoIsLoading = false; }
+                } else {
+                    this.seoIsLoading = false;
+                    this.seoFormData = {
+                        id: null, page_name: '', page_path: '', meta_title: '', meta_description: '',
+                        update_url: '{% url "seo:manage_seo_create" %}'
+                    };
+                }
+            },
+
+            async submitSeoForm() {
+                if (this.seoIsSubmitting) return;
+                this.seoIsSubmitting = true;
+                this.seoFormErrors = {};
+                try {
+                    const response = await fetch(this.seoFormData.update_url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json', 'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(this.seoFormData)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        Alpine.store('globals').showToast(data.message || 'Saved successfully! Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        this.seoFormErrors = data.errors || { '__all__': [data.error || 'An unknown error occurred'] };
+                    }
+                } catch (e) { this.seoFormErrors = { '__all__': ['Network error: ' + e.message] }; }
+                finally { this.seoIsSubmitting = false; }
+            },
+
+            // ... [Category Methods] ...
+            async openCategoryModal(catId = null) {
+                if (typeof catId === 'object') catId = null;
+                this.categoryFormErrors = {};
+                this.showCategoryModal = true;
+                this.categoryIsLoading = true;
+
+                if (catId) {
+                    try {
+                        const response = await fetch(`/manage/category/edit/${catId}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                        if (!response.ok) throw new Error('Failed to fetch data');
+                        const data = await response.json();
+                        if (data.sections) { data.sections = data.sections.map(s => ({...s, uid: Date.now() + Math.random().toString(36).substr(2, 9)})); }
+                        this.categoryFormData = data;
+                    } catch (e) {
+                        Alpine.store('globals').showToast(e.message, 'error');
+                        this.showCategoryModal = false;
+                    }
+                } else {
+                    this.categoryFormData = { id: null, name: '', page_title: '', description: '', sections: [], update_url: '{% url "product:manage_category_create" %}' };
+                }
+                this.categoryIsLoading = false;
+                this.$nextTick(() => {
+                    this.initCatTinyMCE('cat-desc-editor', null);
+                    this.categoryFormData.sections.forEach((section) => { this.initCatTinyMCE('cat-section-' + section.uid, section.uid); });
+                });
+            },
+
+            closeCategoryModal() {
+                if (this.catShowGallery) { this.catShowGallery = false; return; }
+                if (confirm('Are you sure you want to close? Unsaved changes will be lost.')) {
+                    if (typeof tinymce !== 'undefined') {
+                        tinymce.remove('#cat-desc-editor');
+                        this.categoryFormData.sections.forEach((section) => { tinymce.remove('#cat-section-' + section.uid); });
+                    }
+                    this.showCategoryModal = false;
+                }
+            },
+
+            initCatTinyMCE(elementId, sectionUid) {
+                if (typeof tinymce === 'undefined') return;
+                if (tinymce.get(elementId)) tinymce.remove('#' + elementId);
+                tinymce.init({
+                    selector: '#' + elementId,
+                    height: 300, menubar: false, plugins: 'lists link image code table',
+                    toolbar: 'undo redo | bold italic | bullist numlist | link image | code',
+                    setup: (editor) => {
+                        editor.on('init', () => {
+                            if (sectionUid === null) { editor.setContent(this.categoryFormData.description || ''); }
+                            else { const section = this.categoryFormData.sections.find(s => s.uid === sectionUid); if (section) editor.setContent(section.content || ''); }
+                        });
+                        editor.on('change keyup', () => {
+                            const content = editor.getContent();
+                            if (sectionUid === null) { this.categoryFormData.description = content; }
+                            else { const section = this.categoryFormData.sections.find(s => s.uid === sectionUid); if (section) section.content = content; }
+                        });
+                    }
+                });
+            },
+
+            addCategorySection() {
+                const newUid = Date.now() + Math.random().toString(36).substr(2, 9);
+                this.categoryFormData.sections.push({title: '', content: '', uid: newUid});
+                this.$nextTick(() => { this.initCatTinyMCE('cat-section-' + newUid, newUid); });
+            },
+
+            removeCategorySection(uid) {
+                if (confirm('Remove section?')) {
+                    const index = this.categoryFormData.sections.findIndex(s => s.uid === uid);
+                    if (index > -1) {
+                        tinymce.remove('#cat-section-' + uid);
+                        this.categoryFormData.sections.splice(index, 1);
+                    }
+                }
+            },
+
+            async openCatGallery(editorId) {
+                this.catActiveEditorId = editorId;
+                this.catShowGallery = true;
+                if (this.catGalleryImages.length === 0) {
+                    this.catGalleryLoading = true;
+                    try {
+                        const res = await fetch("{% url 'images:ajax_get_images' %}", {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                        const data = await res.json();
+                        this.catGalleryImages = data.images;
+                    } catch(e) { console.error(e); } finally { this.catGalleryLoading = false; }
+                }
+            },
+
+            insertCatImage(url, alt) {
+                const imgTag = `<img src="${url}" alt="${alt}" style="max-width:100%;" />`;
+                const editor = tinymce.get(this.catActiveEditorId);
+                if (editor) { editor.focus(); editor.insertContent(imgTag); }
+                this.catShowGallery = false;
+            },
+
+            async submitCategoryForm() {
+                this.categoryIsSubmitting = true;
+                this.categoryFormErrors = {};
+                if (typeof tinymce !== 'undefined') tinymce.triggerSave();
+                if (tinymce.get('cat-desc-editor')) { this.categoryFormData.description = tinymce.get('cat-desc-editor').getContent(); }
+                this.categoryFormData.sections.forEach((section) => {
+                    const editor = tinymce.get('cat-section-' + section.uid);
+                    if (editor) { section.content = editor.getContent(); }
+                });
+
+                try {
+                    const res = await fetch(this.categoryFormData.update_url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': Alpine.store('globals').csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify(this.categoryFormData)
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        Alpine.store('globals').showToast(data.message + ' Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else { this.categoryFormErrors = data.errors || {'__all__': [data.error]}; }
+                } catch (e) { Alpine.store('globals').showToast('Error: ' + e.message, 'error'); }
+                finally { this.categoryIsSubmitting = false; }
+            },
+
+             // ... [Blog Methods] ...
+            async openBlogModal(postId = null) {
+                if(typeof postId === 'object') postId = null;
+                this.blogFormErrors = {};
+                this.blogProductSearch = '';
+                this.showBlogModal = true;
+
+                if (postId) {
+                    this.blogIsLoading = true;
+                    try {
+                        const res = await fetch(`/blog/api/get-details/${postId}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                        const data = await res.json();
+                        this.blogFormData = data;
+                    } catch(e) {
+                        Alpine.store('globals').showToast('Error loading post: ' + e.message, 'error');
+                        this.showBlogModal = false;
+                    } finally { this.blogIsLoading = false; }
+                } else {
+                    this.blogFormData = {
+                        id: null, title: '', slug: '', content: '',
+                        post_type: 'NEWS', is_published: true,
+                        featured_image: null, featured_image_url: '',
+                        user_groups: [], related_products: [],
+                        related_products_title: 'Related Products'
+                    };
+                }
+                this.$nextTick(() => { this.initBlogTinyMCE(); });
+            },
+
+            closeBlogModal() {
+                if(confirm('Unsaved changes will be lost. Close?')) {
+                    if (typeof tinymce !== 'undefined') tinymce.remove('#blog-content-editor');
+                    this.showBlogModal = false;
+                }
+            },
+
+            initBlogTinyMCE() {
+                if (typeof tinymce === 'undefined') return;
+                if (tinymce.get('blog-content-editor')) tinymce.remove('#blog-content-editor');
+                tinymce.init({
+                    selector: '#blog-content-editor',
+                    height: 400, menubar: false, plugins: 'lists link image code table wordcount',
+                    toolbar: 'undo redo | bold italic | bullist numlist | link | code',
+                    setup: (editor) => {
+                        editor.on('init', () => { editor.setContent(this.blogFormData.content || ''); });
+                        editor.on('change keyup', () => { this.blogFormData.content = editor.getContent(); });
+                    }
+                });
+            },
+
+            async openBlogGallery(editorId) {
+                this.blogGalleryMode = 'content';
+                this.blogShowGallery = true;
+                await this.loadBlogGalleryImages();
+            },
+
+            openBlogGalleryForFeatured() {
+                this.blogGalleryMode = 'featured';
+                this.blogShowGallery = true;
+                this.loadBlogGalleryImages();
+            },
+
+            async loadBlogGalleryImages() {
+                 if (this.blogGalleryImages.length === 0) {
+                    this.blogGalleryLoading = true;
+                    try {
+                        const res = await fetch("{% url 'images:ajax_get_images' %}", {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+                        const data = await res.json();
+                        this.blogGalleryImages = data.images;
+                    } catch(e) { console.error(e); } finally { this.blogGalleryLoading = false; }
+                }
+            },
+
+            insertBlogImage(img) {
+                if (this.blogGalleryMode === 'featured') {
+                    this.blogFormData.featured_image = img.id;
+                    this.blogFormData.featured_image_url = img.url;
+                } else {
+                    const html = `<img src="${img.url}" alt="${img.alt_text}" style="max-width:100%; height:auto;" class="my-4 rounded-lg shadow-sm"/>`;
+                    const editor = tinymce.get('blog-content-editor');
+                    if (editor) editor.insertContent(html);
+                }
+                this.blogShowGallery = false;
+            },
+
+            async submitBlogForm() {
+                if(this.blogIsSubmitting) return;
+                this.blogIsSubmitting = true;
+                this.blogFormErrors = {};
+                if (typeof tinymce !== 'undefined' && tinymce.get('blog-content-editor')) {
+                    this.blogFormData.content = tinymce.get('blog-content-editor').getContent();
+                }
+                const url = this.blogFormData.id ? `/blog/api/save/${this.blogFormData.id}/` : `/blog/api/save/`;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': Alpine.store('globals').csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify(this.blogFormData)
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        Alpine.store('globals').showToast(data.message + ' Reloading...');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else { this.blogFormErrors = data.errors || {'__all__': [data.error]}; }
+                } catch(e) { Alpine.store('globals').showToast('Network error: ' + e.message, 'error'); }
+                finally { this.blogIsSubmitting = false; }
+            }
+        };
+    }
+</script>

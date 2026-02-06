@@ -31,11 +31,52 @@
                 </div>
 
                 <div>
-                    <span class="font-semibold text-gray-700 block mb-1">Latest Quoted Cost (Base Cost)</span>
-                    <p class="text-lg font-mono"
-                       :class="pricingData.base_cost ? 'text-gray-900' : 'text-red-500'"
-                       x-text="pricingData.base_cost ? `RM ${pricingData.base_cost.toFixed(2)}` : 'N/A (No quote found)'">
-                    </p>
+                    <span class="font-semibold text-gray-700 block mb-2">Latest Quoted Cost (Base Cost)</span>
+
+                    {# --- RADIO BUTTON SELECTOR --- #}
+                    <div class="mb-4" x-show="pricingData.supplier_costs && pricingData.supplier_costs.length > 1">
+                        <label class="text-xs text-gray-500 mb-2 block uppercase tracking-wide font-bold">Select Source:</label>
+
+                        <div class="space-y-2 max-h-48 overflow-y-auto p-1">
+                            <template x-for="(costInfo, idx) in pricingData.supplier_costs" :key="idx">
+                                <label class="relative flex items-start p-3 border rounded-lg cursor-pointer transition-all duration-200"
+                                       :class="{ 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500': pricingData.base_cost == costInfo.cost, 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50': pricingData.base_cost != costInfo.cost }">
+
+                                    <div class="flex items-center h-5">
+                                        <input type="radio"
+                                               name="base_cost_source"
+                                               :value="costInfo.cost"
+                                               x-model="pricingData.base_cost"
+                                               @change="calculatePriceFromMargin()"
+                                               class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                                    </div>
+
+                                    <div class="ml-3 text-sm w-full">
+                                        <div class="flex justify-between">
+                                            <span class="font-medium text-gray-900" x-text="costInfo.supplier_name"></span>
+                                            <span class="font-bold text-indigo-700" x-text="`RM ${parseFloat(costInfo.cost).toFixed(2)}`"></span>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-0.5" x-text="costInfo.date"></p>
+                                    </div>
+                                </label>
+                            </template>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2">Changing the base cost source will recalculate the selling price based on the current profit margin.</p>
+                    </div>
+                    {# ----------------------------- #}
+
+                    <div class="flex items-baseline space-x-2 mt-2">
+                        <span class="text-sm text-gray-600">Current Base Cost:</span>
+                        <p class="text-lg font-mono"
+                           :class="pricingData.base_cost ? 'text-gray-900' : 'text-red-500'"
+                           x-text="pricingData.base_cost ? `RM ${parseFloat(pricingData.base_cost).toFixed(2)}` : 'N/A (No quote found)'">
+                        </p>
+                        <span x-show="pricingData.supplier_costs && pricingData.supplier_costs.length <= 1 && pricingData.base_cost"
+                              class="text-xs text-gray-500">
+                             (Single Source)
+                        </span>
+                    </div>
+
                     <p x-show="!pricingData.base_cost" class="text-xs text-red-500 mt-1">
                         A price cannot be calculated without a base cost.
                     </p>
@@ -112,7 +153,6 @@
                          x-transition:enter-end="opacity-100 h-auto"
                          class="mt-4 pt-4 border-t border-gray-200 space-y-4">
 
-                        {# --- UPDATED: Consistent Input Field --- #}
                         <div>
                             <label for="id_promotion_rate" class="font-semibold text-gray-700 block mb-1">
                                 Discount Rate (%)

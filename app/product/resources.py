@@ -56,9 +56,23 @@ class ProductResource(resources.ModelResource):
         cost = product.base_cost
         return cost if cost is not None else None # Or return 0.00 if preferred
 
+    # --- NEW METHOD TO CLEAN DATA BEFORE IMPORT ---
+    def before_import_row(self, row, **kwargs):
+        """
+        Clean data before looking up or importing the instance.
+        """
+        # Convert empty strings in SKU to None (NULL).
+        # This prevents unique constraint violations because DBs allow multiple NULLs but only one empty string.
+        if 'sku' in row:
+            sku_val = row['sku']
+            # Check for empty string or string containing only whitespace
+            if sku_val == '' or (isinstance(sku_val, str) and not sku_val.strip()):
+                row['sku'] = None
+
     class Meta:
         model = Product
-        import_id_fields = ['sku']
+        # --- FIXED: Changed from 'sku' to 'id' to prevent UPDATE crashes on rows with empty SKUs ---
+        import_id_fields = ['id']
         fields = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost', 'selling_price', 'profit_margin')
         export_order = ('id', 'sku', 'name', 'description', 'members_only', 'categories', 'suppliers', 'base_cost', 'selling_price', 'profit_margin', 'created_at')
         skip_unchanged = True

@@ -1,0 +1,16 @@
+<script>
+    function manageImageMixin() {
+        return {
+            handleImageUpload(event) { Alpine.store('images').handleImageUpload(event); },
+            deleteImage(id) { Alpine.store('images').deleteImage(id); },
+            openAssignProductModal(image) { Alpine.store('images').openAssignProductModal(image); },
+            openAssignPostModal(image) { Alpine.store('images').openAssignPostModal(image); },
+            openBulkAssignModal() { Alpine.store('images').openBulkAssignModal(); },
+            submitProductAssignment() { Alpine.store('images').submitProductAssignment(); },
+            submitPostAssignment() { Alpine.store('images').submitPostAssignment(); },
+            submitBulkAssignment() { Alpine.store('images').submitBulkAssignment(); },
+            updateProductModalSelections() { Alpine.store('images').updateProductModalSelections(); },
+            updatePostModalSelections() { Alpine.store('images').updatePostModalSelections(); }
+        };
+    }
+</script>

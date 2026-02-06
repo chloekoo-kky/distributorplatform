@@ -47,6 +47,8 @@ class ProductContentSectionInline(admin.TabularInline):
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
     list_display = ('sku', 'name', 'featured_image', 'display_categories', 'display_suppliers', 'base_cost', 'members_only')
+    # Add this line to make both SKU and Name clickable
+    list_display_links = ('sku', 'name')
     list_filter = ('members_only', 'categories', 'suppliers', 'created_at')
     search_fields = ('sku', 'name', 'description', 'suppliers__name')
     readonly_fields = ('base_cost',)
@@ -64,7 +66,6 @@ class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
         """
         return ", ".join([supplier.code or supplier.name for supplier in obj.suppliers.all()])
     display_suppliers.short_description = 'Suppliers'
-
 # Register all models
 admin.site.register(Product, ProductAdmin)
 admin.site.register(Category, CategoryAdmin)

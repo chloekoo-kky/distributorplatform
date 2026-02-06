@@ -1,0 +1,33 @@
+<script>
+    function manageCoreMixin() {
+        return {
+            // --- State ---
+            tab: window.location.hash || '#quotations',
+
+            // Simple Modal Flags
+            uploadQuotationModalOpen: false,
+            createQuotationModalOpen: false,
+            uploadBatchModalOpen: false,
+            uploadProductModalOpen: false,
+
+            initCore() {
+                const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+                if (tokenInput) {
+                    Alpine.store('globals').csrfToken = tokenInput.value;
+                } else {
+                    console.error('CSRF token not found on page.');
+                }
+
+                // Handle Tab Changes
+                this.$watch('tab', (val) => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+
+                window.addEventListener('hashchange', () => {
+                    this.tab = window.location.hash || '#quotations';
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            }
+        };
+    }
+</script>

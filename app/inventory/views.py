@@ -629,7 +629,16 @@ def quotation_detail(request, quotation_id):
 
     # --- GET Request (Existing logic) ---
     logger.debug("[quotation_detail GET] Preparing data for template...")
-    supplier_products = Product.objects.filter(suppliers=supplier).order_by('name')
+
+    # --- START FIX: Show products for supplier OR products already in quotation ---
+    # This ensures that if a product is removed from the supplier list but is still in the quotation,
+    # it doesn't disappear from the view.
+    quotation_product_ids = quotation.items.values_list('product_id', flat=True)
+    supplier_products = Product.objects.filter(
+        Q(suppliers=supplier) | Q(id__in=quotation_product_ids)
+    ).distinct().order_by('name')
+    # --- END FIX ---
+
     logger.debug(f"[quotation_detail GET] Found {supplier_products.count()} products for supplier {supplier.name}")
 
     current_items = {item.product_id: item for item in quotation.items.select_related('product').all()}

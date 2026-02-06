@@ -63,6 +63,20 @@ class Category(models.Model):
             return [line.strip() for line in self.name.split('|')]
         return [self.name]
 
+    # --- MOVED HERE FROM CategoryContentSection ---
+    @property
+    def display_title_lines(self):
+        """
+        Returns the lines for the Page Title if set, otherwise falls back to Name.
+        Supports 'Title | Subtitle' format.
+        """
+        # Prioritize page_title, fallback to name
+        text = self.page_title if self.page_title else self.name
+
+        if text and '|' in text:
+            return [line.strip() for line in text.split('|')]
+        return [text] if text else []
+
 # --- NEW MODEL: CategoryContentSection ---
 class CategoryContentSection(models.Model):
     category = models.ForeignKey(Category, related_name='content_sections', on_delete=models.CASCADE)
@@ -72,22 +86,10 @@ class CategoryContentSection(models.Model):
 
     @property
     def display_name_lines(self):
-        """Splits the category name by '|'."""
-        if '|' in self.name:
-            return [line.strip() for line in self.name.split('|')]
-        return [self.name]
-
-    # --- ADD THIS PROPERTY ---
-    @property
-    def display_title_lines(self):
-        """
-        Returns the lines for the Page Title if set, otherwise falls back to Name.
-        Supports 'Title | Subtitle' format.
-        """
-        text = self.page_title if self.page_title else self.name
-        if text and '|' in text:
-            return [line.strip() for line in text.split('|')]
-        return [text] if text else []
+        """Splits the section title by '|'."""
+        if '|' in self.title:
+            return [line.strip() for line in self.title.split('|')]
+        return [self.title]
 
     class Meta:
         ordering = ['order']
@@ -160,7 +162,7 @@ class Product(models.Model):
         related_name="product_galleries"
     )
     suppliers = models.ManyToManyField(
-        'inventory.Supplier', # <-- Use string 'app_name.ModelName'
+        'inventory.Supplier',
         related_name='products',
         blank=True,
         help_text="Suppliers who provide this product."
@@ -196,7 +198,6 @@ class Product(models.Model):
         # Import here to avoid circular dependency
         from inventory.models import QuotationItem
 
-        # --- START MODIFICATION ---
         # Check if data was prefetched by an API view
         if hasattr(self, 'latest_quotation_items'):
             # This attribute is created by the Prefetch in the API views
@@ -208,7 +209,6 @@ class Product(models.Model):
             latest_item = QuotationItem.objects.filter(
                 product=self
             ).select_related('quotation').prefetch_related('quotation__items').order_by('-quotation__date_quoted').first()
-        # --- END MODIFICATION ---
 
         if latest_item:
             # Use the new property from QuotationItem
@@ -217,7 +217,6 @@ class Product(models.Model):
             return latest_item.landed_cost_per_unit
 
         return None # Return None if no quotation has been logged
-    # --- END MODIFIED PROPERTY ---
 
     def get_absolute_url(self):
         """
