@@ -1,4 +1,3 @@
-# distributorplatform/app/product/resources.py
 import logging
 from import_export import resources, fields
 from import_export.widgets import BooleanWidget, ManyToManyWidget, ForeignKeyWidget
@@ -8,21 +7,36 @@ from inventory.models import Supplier
 # --- SETUP LOGGER ---
 logger = logging.getLogger(__name__)
 
-# --- CUSTOM WIDGET: HANDLES DUAL LANGUAGE (English | Chinese) ---
 class DualLanguageManyToManyWidget(ManyToManyWidget):
     """
     Extends ManyToManyWidget to:
     1. EXPORT: Return only the English part (ASCII) to prevent encoding errors.
     2. IMPORT: Robustly match categories by English name or Full name.
+    3. SAFETY: Handles None values to prevent 'NoneType' object has no attribute 'all' crashes.
     """
 
     def render(self, value, obj=None):
         """
         Export logic:
-        Takes the list of categories (e.g., "肉毒 | Toxins" or "Skin Care | 护肤")
-        and returns only the English part.
+        Takes the list of categories and returns only the English part.
+        Includes safety check for None values.
         """
-        ids = [related.pk for related in value.all()]
+        # --- FIX: Safety Check for None ---
+        if value is None:
+            return ""
+        # ----------------------------------
+
+        # Handle case where value might be a list (from clean) instead of Manager
+        if isinstance(value, list):
+            ids = [item.pk for item in value]
+        else:
+            # Assume it's a Manager or QuerySet
+            try:
+                ids = [related.pk for related in value.all()]
+            except (AttributeError, ValueError):
+                # Fallback for edge cases (e.g. unsaved instance)
+                return ""
+
         objects = self.model.objects.filter(pk__in=ids)
 
         names = []
@@ -33,26 +47,17 @@ class DualLanguageManyToManyWidget(ManyToManyWidget):
             if '|' in original_name:
                 parts = [p.strip() for p in original_name.split('|')]
 
-                # --- INTELLIGENT SELECTION ---
                 # Loop through parts and find the first one that is ASCII (English)
                 english_part = None
                 for p in parts:
-                    if all(ord(c) < 128 for c in p): # Check if characters are standard ASCII
+                    if all(ord(c) < 128 for c in p):
                         english_part = p
                         break
 
-                # If an English part was found, use it. Otherwise fallback to the first part.
                 if english_part:
                     final_name = english_part
                 else:
                     final_name = parts[0]
-
-            # --- LOGGING ---
-            # This helps trace what was chosen
-            if final_name != original_name.strip():
-                logger.info(f"[EXPORT DEBUG] Original: '{original_name}' -> Exporting: '{final_name}'")
-            else:
-                logger.info(f"[EXPORT DEBUG] Original: '{original_name}' -> Exporting: '{final_name}' (No split needed)")
 
             names.append(final_name)
 
@@ -87,7 +92,7 @@ class DualLanguageManyToManyWidget(ManyToManyWidget):
             if obj:
                 found_objects.append(obj)
             else:
-                logger.warning(f"[IMPORT DEBUG] Could not find category match for: '{raw_val}'")
+                logger.warning(f"[IMPORT DEBUG] Could not find match for: '{raw_val}'")
 
         return found_objects
 
@@ -126,7 +131,7 @@ class ProductResource(resources.ModelResource):
         readonly=True,
     )
 
-    # --- UPDATED: Use Custom Widget ---
+    # --- UPDATED: Use DualLanguageManyToManyWidget ---
     categories = fields.Field(
         column_name='categories',
         attribute='categories',
@@ -137,13 +142,16 @@ class ProductResource(resources.ModelResource):
         attribute='suppliers',
         widget=DualLanguageManyToManyWidget(Supplier, field='name', separator=',')
     )
-    # ----------------------------------
+    # -------------------------------------------------
 
     def dehydrate_base_cost(self, product):
         cost = product.base_cost
         return cost if cost is not None else None
 
     def before_import_row(self, row, **kwargs):
+        """
+        Clean data before looking up or importing the instance.
+        """
         if 'sku' in row:
             sku_val = row['sku']
             if sku_val == '' or (isinstance(sku_val, str) and not sku_val.strip()):
