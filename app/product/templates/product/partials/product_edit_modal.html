@@ -61,7 +61,45 @@
                     <h4 class="font-bold text-gray-800 mb-4">Product Description & Sections</h4>
 
                     {# Main Description Block #}
-                    <div class="mb-4 bg-white p-4 rounded shadow-sm">
+                    <div class="mb-4 bg-white p-4 rounded shadow-sm"
+                         x-data="{
+                             initTinyMCE() {
+                                 // Remove existing instance if any to avoid conflicts
+                                 if (tinymce.get('product-description-editor')) {
+                                     tinymce.get('product-description-editor').remove();
+                                 }
+
+                                 // Initialize TinyMCE
+                                 tinymce.init({
+                                     selector: '#product-description-editor',
+                                     height: 300,
+                                     menubar: false,
+                                     statusbar: false,
+                                     plugins: 'lists link code',
+                                     toolbar: 'undo redo | blocks | bold italic | alignleft aligncenter alignright | bullist numlist outdent indent | removeformat | code',
+                                     setup: (editor) => {
+                                         // 1. Set initial content when editor loads
+                                         editor.on('init', () => {
+                                             if (productEditData.description) {
+                                                 editor.setContent(productEditData.description);
+                                             }
+                                         });
+
+                                         // 2. Sync content back to Alpine.js variable on change
+                                         editor.on('Change KeyUp', () => {
+                                             productEditData.description = editor.getContent();
+                                         });
+                                     }
+                                 });
+                             }
+                         }"
+                         x-init="$watch('productEditIsLoading', value => {
+                             // Initialize editor only when loading finishes and modal is shown
+                             if (!value && showProductEditModal) {
+                                 setTimeout(() => initTinyMCE(), 100);
+                             }
+                         })">
+
                         <div class="mb-2">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Section Title</label>
                             <input type="text" name="description_title" x-model="productEditData.description_title" placeholder="e.g., Product Description"
@@ -69,7 +107,8 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Content</label>
-                            <textarea name="description" x-model="productEditData.description" rows="4"
+                            {# Removed x-model here because TinyMCE handles the syncing manually #}
+                            <textarea id="product-description-editor" name="description" rows="4"
                                       class="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500"></textarea>
                         </div>
                     </div>

@@ -77,7 +77,7 @@
                     <p class="text-sm text-gray-500 mb-4">SKU: <span x-text="product.sku"></span></p>
                 </div>
 
-                <div class="flex-1 overflow-y-auto my-4 prose max-w-none" x-text="product.description"></div>
+                <div class="flex-1 overflow-y-auto my-4 prose max-w-none" x-html="product.description"></div>
 
                 {# --- Icon Row (Enquiry, Share, & View Details) --- #}
                 <div class="flex items-center space-x-4 md:space-x-6 mb-6 pt-2 border-t border-gray-100">

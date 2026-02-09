@@ -114,7 +114,7 @@ class Product(models.Model):
         blank=True,
         help_text="Header for the main description section."
     )
-    description = models.TextField(null=True, blank=True)
+    description = HTMLField(null=True, blank=True)
 
     is_promotion = models.BooleanField(
         default=False,
