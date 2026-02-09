@@ -116,6 +116,13 @@ class Product(models.Model):
     )
     description = HTMLField(null=True, blank=True)
 
+    origin_country = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Country of origin for the product (e.g., 'Malaysia', 'Korea')."
+    )
+    
     is_promotion = models.BooleanField(
         default=False,
         help_text="Check if this product is currently on promotion (triggers promotional styling)."

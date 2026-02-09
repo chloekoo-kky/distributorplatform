@@ -445,9 +445,10 @@ def manage_product_edit(request, product_id):
             'id': product.id,
             'name': product.name,
             'sku': product.sku,
-            'description_title': product.description_title, # Send title
+            'description_title': product.description_title,
             'description': product.description,
-            'sections': sections, # Send sections
+            'origin_country': product.origin_country, # --- NEW ---
+            'sections': sections,
             'members_only': product.members_only,
             'is_featured': product.is_featured,
             'categories': list(product.categories.all().values_list('id', flat=True)),
@@ -718,6 +719,7 @@ def api_get_product_details(request, sku):
         'name': product.name,
         'sku': product.sku,
         'description': product.description,
+        'origin_country': product.origin_country,
         'featured_image_url': product.featured_image.image.url if product.featured_image else None,
         'gallery_images': gallery,
         'selling_price': selling_price,

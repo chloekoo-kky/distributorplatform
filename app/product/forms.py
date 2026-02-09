@@ -48,7 +48,7 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = [
-            'name', 'sku', 'description_title', 'description', 'members_only', 'is_featured',
+            'name', 'sku', 'description_title', 'description', 'origin_country', 'members_only', 'is_featured', # Added origin_country
             'categories', 'suppliers', 'featured_image', 'gallery_images'
         ]
         widgets = {
@@ -56,7 +56,7 @@ class ProductForm(forms.ModelForm):
             'sku': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'description_title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold', 'placeholder': 'Section Title (e.g. Description)'}),
 
-            # --- CHANGE THIS WIDGET ---
+            'origin_country': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500', 'placeholder': 'e.g. Korea'}),
             'description': TinyMCE(attrs={'cols': 80, 'rows': 10, 'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             # --------------------------
 

@@ -25,7 +25,19 @@
 
             <div class="p-6">
                 {# Image Section #}
-                <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                {# --- FIX: Added 'relative' class here so the bubble stays inside the image area --- #}
+                <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden relative">
+
+                    {# --- ORIGIN BUBBLE --- #}
+                    {# Only show if origin_country exists #}
+                    <div x-show="product.origin_country"
+                         class="absolute top-3 right-3 z-10 pointer-events-none">
+                        <span class="bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-gray-700 shadow-sm border border-gray-100"
+                              x-text="product.origin_country">
+                        </span>
+                    </div>
+                    {# --------------------- #}
+
                     {# FIX: x-if must be on a template tag #}
                     <template x-if="currentImageUrl">
                         <img :src="currentImageUrl"

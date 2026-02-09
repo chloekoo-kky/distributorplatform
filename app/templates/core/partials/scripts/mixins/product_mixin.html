@@ -15,7 +15,7 @@
             productEditIsLoading: false,
             productEditIsSubmitting: false,
             productEditData: {
-                id: null, name: '', sku: '', description: '', members_only: false,
+                id: null, name: '', sku: '', description: '', origin_country: '', members_only: false,
                 is_featured: false, categories: [], suppliers: [], featured_image: null,
                 gallery_images: [], update_url: '', selectedImageUrl: ''
             },
@@ -168,7 +168,8 @@
                 formData.append('sku', this.productEditData.sku || '');
                 formData.append('description_title', this.productEditData.description_title || '');
                 formData.append('description', this.productEditData.description || '');
-
+                formData.append('origin_country', this.productEditData.origin_country || '');
+                
                 if (this.productEditData.sections) {
                     formData.append('sections_data', JSON.stringify(this.productEditData.sections));
                 }

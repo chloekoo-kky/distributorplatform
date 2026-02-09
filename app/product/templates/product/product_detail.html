@@ -21,6 +21,14 @@
                     <div>
                         {# --- Main Image Display --- #}
                         <div class="w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden relative group">
+
+                            {# --- ORIGIN BUBBLE --- #}
+                            {% if product.origin_country %}
+                                <span class="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-gray-700 shadow-md border border-gray-100 z-10">
+                                    {{ product.origin_country }}
+                                </span>
+                            {% endif %}
+                            
                             <template x-if="currentImage">
                                 <img :src="currentImage"
                                      alt="{{ product.name }}"
