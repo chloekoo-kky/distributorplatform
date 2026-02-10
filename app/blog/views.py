@@ -17,7 +17,6 @@ from django.core.files.base import ContentFile
 from images.forms import ImageUploadForm
 from product.models import Product
 
-# ... (get_accessible_posts helper remains unchanged) ...
 def get_accessible_posts(user):
     """
     Helper function to get all posts accessible by a specific user.
@@ -236,13 +235,14 @@ def api_save_post(request, post_id=None):
         data = json.loads(request.body)
 
         # Prepare data for Form (Django Forms expect dictionary-like data)
-        # We need to map JSON fields to Form fields manually or reconstruct QueryDict
         form_data = {
             'title': data.get('title'),
             'slug': data.get('slug', ''),
             'content': data.get('content', ''),
             'post_type': data.get('post_type', 'NEWS'),
-            'status': Post.PostStatus.PUBLISHED if data.get('is_published') else Post.PostStatus.DRAFT,
+            # FIX: Pass 'is_published' to the form, NOT 'status'.
+            # The Form's save method uses 'is_published' to set the status.
+            'is_published': data.get('is_published', False),
             'related_products_title': data.get('related_products_title', ''),
             'featured_image': data.get('featured_image'), # This expects ID
         }
