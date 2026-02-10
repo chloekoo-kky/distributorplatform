@@ -3,11 +3,7 @@
         <h3 class="text-2xl font-semibold text-gray-700">Manage Categories</h3>
 
         <div class="flex items-center space-x-4">
-            <button @click="$dispatch('open-category-modal')"
-                    class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center">
-                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                Add New Category
-            </button>
+
 
             <div class="w-64">
                 <input type="text" x-model.debounce.500ms="search" placeholder="Search categories..."
