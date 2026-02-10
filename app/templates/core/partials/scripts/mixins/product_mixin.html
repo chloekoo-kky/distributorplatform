@@ -15,8 +15,9 @@
             productEditIsLoading: false,
             productEditIsSubmitting: false,
             productEditData: {
-                id: null, name: '', sku: '', description: '', origin_country: '', members_only: false,
-                is_featured: false, categories: [], suppliers: [], featured_image: null,
+                id: null, name: '', sku: '', description: '', origin_country: '',
+                members_only: false, is_featured: false, is_best_seller: false, // <--- ADDED
+                categories: [], suppliers: [], featured_image: null,
                 gallery_images: [], update_url: '', selectedImageUrl: ''
             },
             productEditErrors: {},
@@ -169,7 +170,7 @@
                 formData.append('description_title', this.productEditData.description_title || '');
                 formData.append('description', this.productEditData.description || '');
                 formData.append('origin_country', this.productEditData.origin_country || '');
-                
+
                 if (this.productEditData.sections) {
                     formData.append('sections_data', JSON.stringify(this.productEditData.sections));
                 }
@@ -181,6 +182,12 @@
                 if (this.productEditData.is_featured) {
                     formData.append('is_featured', 'on');
                 }
+
+                // --- NEW: Handle Best Seller ---
+                if (this.productEditData.is_best_seller) {
+                    formData.append('is_best_seller', 'on');
+                }
+                // ------------------------------
 
                 if (this.productEditData.featured_image) {
                     formData.append('featured_image', this.productEditData.featured_image);

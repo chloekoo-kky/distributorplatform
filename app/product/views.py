@@ -145,8 +145,7 @@ def product_list(request):
             Q(description__icontains=search_query)
         )
 
-    # Prefetch and Convert to List
-    all_products = list(products_query.select_related('featured_image').distinct().order_by('name'))
+    all_products = list(products_query.select_related('featured_image').distinct().order_by('display_order', 'name'))
 
     # --- SPLIT LOGIC ---
     promotional_products = [p for p in all_products if getattr(p, 'is_promotion', False)]
@@ -389,8 +388,7 @@ def export_products_csv(request):
 @staff_required
 def manage_product_edit(request, product_id):
     """
-    Handles fetching product data (GET) and updating product data (POST)
-    via AJAX. Now supports extra content sections.
+    Handles fetching product data (GET) and updating product data (POST) via AJAX.
     """
     product = get_object_or_404(Product.objects.prefetch_related('featured_image', 'content_sections'), pk=product_id)
 
@@ -405,52 +403,39 @@ def manage_product_edit(request, product_id):
             try:
                 with transaction.atomic():
                     saved_product = form.save()
-
-                    # --- Handle Extra Sections ---
                     sections_json = request.POST.get('sections_data')
                     if sections_json:
                         sections_data = json.loads(sections_json)
-
-                        # Clear existing sections to replace them (simplest sync strategy)
-                        # Alternatively, you could update by ID if preserving IDs matters.
                         saved_product.content_sections.all().delete()
-
                         new_sections = []
                         for idx, section in enumerate(sections_data):
                             title = section.get('title', '').strip()
                             content = section.get('content', '').strip()
                             if title and content:
                                 new_sections.append(ProductContentSection(
-                                    product=saved_product,
-                                    title=title,
-                                    content=content,
-                                    order=idx
+                                    product=saved_product, title=title, content=content, order=idx
                                 ))
                         ProductContentSection.objects.bulk_create(new_sections)
-
-                logger.info(f"Product {product.sku} updated successfully via modal.")
                 return JsonResponse({'success': True})
             except Exception as e:
                 logger.error(f"Error saving product {product.sku}: {e}", exc_info=True)
                 return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
         else:
-            logger.error(f"[SERVER] Product form is INVALID. Errors: {form.errors.as_json(escape_html=True)}")
             return JsonResponse({'success': False, 'errors': json.loads(form.errors.as_json())}, status=400)
 
     elif request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        # Serialize sections
         sections = list(product.content_sections.values('title', 'content').order_by('order'))
-
         data = {
             'id': product.id,
             'name': product.name,
             'sku': product.sku,
             'description_title': product.description_title,
             'description': product.description,
-            'origin_country': product.origin_country, # --- NEW ---
+            'origin_country': product.origin_country,
             'sections': sections,
             'members_only': product.members_only,
             'is_featured': product.is_featured,
+            'is_best_seller': product.is_best_seller, # --- NEW: Return Best Seller Status ---
             'categories': list(product.categories.all().values_list('id', flat=True)),
             'suppliers': list(product.suppliers.all().values_list('id', flat=True)),
             'gallery_images': list(product.gallery_images.all().values_list('id', flat=True)),
@@ -466,26 +451,18 @@ def manage_product_edit(request, product_id):
 
 @staff_required
 def api_manage_products(request):
-    """
-    API to fetch products for the management dashboard.
-    Includes DEBUG logging for supplier cost calculation.
-    """
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
-    # --- 1. Get Filters ---
     search_query = request.GET.get('search', '')
     group_filter = request.GET.get('group', '')
     category_filter = request.GET.get('category', '')
     page_number = request.GET.get('page', 1)
     limit = request.GET.get('limit', 50)
 
-    # --- 2. Build Base Queryset ---
-    queryset = Product.objects.annotate(
-        # annotations if needed...
-    ).select_related('featured_image').prefetch_related(
+    queryset = Product.objects.select_related('featured_image').prefetch_related(
         Prefetch('categories', queryset=Category.objects.select_related('group')),
-        'suppliers', # --- NEW: Prefetch suppliers ---
+        'suppliers',
         Prefetch(
             'quotationitem_set',
             queryset=QuotationItem.objects.select_related('quotation', 'quotation__supplier')
@@ -495,71 +472,40 @@ def api_manage_products(request):
         )
     ).order_by('name')
 
-    # --- 3. Apply Filters ---
     if search_query:
-        queryset = queryset.filter(
-            Q(name__icontains=search_query) | Q(sku__icontains=search_query)
-        )
+        queryset = queryset.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
     if group_filter:
         queryset = queryset.filter(categories__group__name=group_filter)
     if category_filter:
         queryset = queryset.filter(categories__name=category_filter)
 
     queryset = queryset.distinct()
-
-    # --- 4. Paginate ---
     paginator = Paginator(queryset, limit)
     try:
         page_obj = paginator.page(page_number)
     except EmptyPage:
         return JsonResponse({'items': [], 'pagination': {}})
 
-    # --- 5. Serialize ---
     serialized_products = []
-
-    # [DEBUG] Start serialization loop
-    logger.debug(f"[api_manage_products] Serializing {len(page_obj.object_list)} products...")
-
     for product in page_obj.object_list:
         category_list = [cat.name for cat in product.categories.all()]
         group_list = [cat.group.name for cat in product.categories.all() if cat.group]
-
-        # --- NEW: Get Supplier List ---
         supplier_list = [s.name for s in product.suppliers.all()]
-
-        # --- NEW: Extract latest cost per supplier ---
         supplier_costs = []
         seen_suppliers = set()
 
         if hasattr(product, 'latest_quotation_items'):
-             # [DEBUG] Log found items for this product
-             # logger.debug(f"[Product {product.sku}] Found {len(product.latest_quotation_items)} quotation items.")
-
              for item in product.latest_quotation_items:
                  sup_id = item.quotation.supplier_id
-                 sup_name = item.quotation.supplier.name
-
                  if sup_id not in seen_suppliers:
                      seen_suppliers.add(sup_id)
-
                      cost = item.landed_cost_per_unit
-
-                     # [DEBUG] Log calculated cost
-                     # logger.debug(f"  -> Supplier: {sup_name}, Date: {item.quotation.date_quoted}, Cost: {cost}")
-
                      if cost is not None:
                          supplier_costs.append({
-                             'supplier_name': sup_name or "Unknown",
-                             'cost': cost, # Kept as Decimal for Encoder
-                             'date': item.quotation.date_quoted # Kept as Date for Encoder
+                             'supplier_name': item.quotation.supplier.name or "Unknown",
+                             'cost': cost,
+                             'date': item.quotation.date_quoted
                          })
-        else:
-             logger.warning(f"[Product {product.sku}] 'latest_quotation_items' attribute missing.")
-
-        # [DEBUG] Log final list for this product
-        if len(supplier_costs) > 1:
-            logger.info(f"[Product {product.sku}] Generated multiple supplier options: {supplier_costs}")
-        # ---------------------------------------------
 
         product_data = {
             'id': product.pk,
@@ -571,19 +517,18 @@ def api_manage_products(request):
             'profit_margin': product.profit_margin,
             'base_cost': product.base_cost,
             'supplier_costs': supplier_costs,
-            'suppliers': supplier_list, # --- NEW: Included in response ---
+            'suppliers': supplier_list,
             'category_groups': sorted(list(set(group_list))),
             'categories': sorted(list(set(category_list))),
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
             'featured_image_alt': product.featured_image.alt_text if product.featured_image else product.name,
             'featured_image_id': product.featured_image_id,
             'featured_image_title': product.featured_image.title if product.featured_image else None,
-            'gallery_image_ids': list(product.gallery_images.all().values_list('id', flat=True))
+            'gallery_image_ids': list(product.gallery_images.all().values_list('id', flat=True)),
+            'is_best_seller': product.is_best_seller, # --- NEW: Included in API response ---
         }
         serialized_products.append(product_data)
 
-    # --- 6. Return JSON with Encoder ---
-    # FIXED: Added DjangoJSONEncoder to handle Decimal and Date objects
     return JsonResponse({
         'items': serialized_products,
         'pagination': {
@@ -902,3 +847,57 @@ def manage_category_edit(request, category_id):
         'is_subpage': True,
     }
     return render(request, 'product/manage_category_form.html', context)
+
+@staff_required
+def export_products_pdf(request):
+    """
+    Renders selected products in a clean, print-friendly Grid layout grouped by Category.
+    """
+    ids = request.GET.get('ids', '')
+    if not ids:
+        messages.error(request, "No products selected.")
+        return redirect(reverse('core:manage_dashboard') + '#products')
+
+    try:
+        id_list = [int(i) for i in ids.split(',') if i.strip().isdigit()]
+    except ValueError:
+        id_list = []
+
+    if not id_list:
+        messages.error(request, "Invalid selection.")
+        return redirect(reverse('core:manage_dashboard') + '#products')
+
+    # Fetch products with related data
+    products = Product.objects.filter(id__in=id_list)\
+        .select_related('featured_image')\
+        .prefetch_related('categories')\
+        .order_by('name')
+
+    # Group products by their first/primary category
+    grouped_products = {}
+
+    for product in products:
+        cats = product.categories.all()
+        # Use the first category found as the grouping key, or "Uncategorized"
+        primary_cat = cats[0].name if cats else "Uncategorized"
+
+        if primary_cat not in grouped_products:
+            grouped_products[primary_cat] = []
+        grouped_products[primary_cat].append(product)
+
+    # Sort categories alphabetically, ensuring "Uncategorized" is last
+    sorted_keys = sorted(grouped_products.keys())
+    if "Uncategorized" in sorted_keys:
+        sorted_keys.remove("Uncategorized")
+        sorted_keys.append("Uncategorized")
+
+    # Create a sorted dictionary
+    sorted_grouped_products = {key: grouped_products[key] for key in sorted_keys}
+
+    context = {
+        'grouped_products': sorted_grouped_products,
+        'total_count': len(products),
+        'date': datetime.date.today(),
+        'generated_by': request.user.get_full_name() or request.user.username
+    }
+    return render(request, 'product/products_pdf.html', context)

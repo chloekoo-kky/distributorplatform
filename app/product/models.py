@@ -122,7 +122,7 @@ class Product(models.Model):
         blank=True,
         help_text="Country of origin for the product (e.g., 'Malaysia', 'Korea')."
     )
-    
+
     is_promotion = models.BooleanField(
         default=False,
         help_text="Check if this product is currently on promotion (triggers promotional styling)."
@@ -153,6 +153,14 @@ class Product(models.Model):
         default=False,
         help_text="If checked, this product will appear on the Home page (subject to user permissions)."
     )
+    is_best_seller = models.BooleanField(
+        default=False,
+        help_text="If checked, this product will be highlighted as a Best Seller."
+    )
+    display_order = models.IntegerField(
+        default=0,
+        help_text="Order of display on the product list page (lowest number appears first)."
+    )
     categories = models.ManyToManyField(Category, related_name='products', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     featured_image = models.ForeignKey(
@@ -174,6 +182,15 @@ class Product(models.Model):
         blank=True,
         help_text="Suppliers who provide this product."
     )
+
+    class Meta:
+        # --- UPDATE ORDERING ---
+        # Sort by display_order first (ascending), then by creation date (newest first)
+        ordering = ['display_order', '-created_at']
+        # -----------------------
+
+    def __str__(self):
+        return self.name
 
     @property
     def name_lines(self):

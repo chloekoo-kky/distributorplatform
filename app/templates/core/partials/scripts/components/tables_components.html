@@ -58,6 +58,11 @@
             filterCategory: '',
             allCategories: [],
             groupCategoriesMap: {},
+
+            // --- View Mode & Selection State ---
+            viewMode: 'list', // 'list' or 'grid'
+            selectedIds: [],
+
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
                 this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
@@ -73,6 +78,8 @@
             },
             async fetchProducts(page = 1) {
                 this.isLoading = true;
+                // Reset selection on page change
+                this.selectedIds = [];
                 const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
                 try {
                     const response = await fetch(`{% url 'product:api_manage_products' %}?${params.toString()}`, {
@@ -99,6 +106,25 @@
             formatPrice(value) {
                 if (value === null || value === undefined) return 'N/A';
                 return `RM ${Number(value).toFixed(2)}`;
+            },
+
+            // --- Selection Methods ---
+            toggleAll() {
+                if (this.selectedIds.length === this.items.length) {
+                    this.selectedIds = [];
+                } else {
+                    this.selectedIds = this.items.map(item => item.id);
+                }
+            },
+            exportSelectedPdf() {
+                if (this.selectedIds.length === 0) {
+                    Alpine.store('globals').showToast('No products selected', 'error');
+                    return;
+                }
+                const ids = this.selectedIds.join(',');
+                // Open the PDF view in a new tab
+                const url = `{% url 'product:export_products_pdf' %}?ids=${ids}`;
+                window.open(url, '_blank');
             }
         }));
 

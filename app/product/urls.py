@@ -22,5 +22,6 @@ urlpatterns = [
 
     path('upload-products/', views.upload_products, name='upload_products'),
     path('export-products/', views.export_products_csv, name='export_products_csv'),
+    path('export-products-pdf/', views.export_products_pdf, name='export_products_pdf'),
     path('manage/edit/<int:product_id>/', views.manage_product_edit, name='manage_product_edit'),
 ]

@@ -162,12 +162,12 @@ class ProductResource(resources.ModelResource):
         import_id_fields = ['id']
 
         fields = (
-            'id', 'sku', 'name', 'description', 'origin_country',
+            'id', 'sku', 'name', 'display_order', 'description', 'origin_country',
             'members_only', 'categories', 'suppliers',
             'base_cost', 'selling_price', 'profit_margin'
         )
         export_order = (
-            'id', 'sku', 'name', 'description', 'origin_country',
+            'id', 'sku', 'name', 'display_order', 'description', 'origin_country',
             'members_only', 'categories', 'suppliers',
             'base_cost', 'selling_price', 'profit_margin', 'created_at'
         )

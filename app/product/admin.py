@@ -46,7 +46,7 @@ class ProductContentSectionInline(admin.TabularInline):
 
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
-    list_display = ('sku', 'name', 'featured_image', 'display_categories', 'display_suppliers', 'base_cost', 'members_only')
+    list_display = ('sku', 'name', 'display_order', 'featured_image', 'display_categories', 'display_suppliers', 'base_cost', 'members_only')
     # Add this line to make both SKU and Name clickable
     list_display_links = ('sku', 'name')
     list_filter = ('members_only', 'categories', 'suppliers', 'created_at')
@@ -54,6 +54,8 @@ class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     readonly_fields = ('base_cost',)
     filter_horizontal = ('categories', 'suppliers', 'gallery_images',)
     inlines = [ProductContentSectionInline]
+
+    list_editable = ('display_order',)
 
     def display_categories(self, obj):
         return ", ".join([category.name for category in obj.categories.all()])
