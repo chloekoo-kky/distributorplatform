@@ -64,8 +64,8 @@
                     {# Uses global store for category filtering #}
                     <select x-model="$store.globals.selectedCategoryId" class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option :value="null">All Categories</option>
-                        {# FIX: Added index as fallback key to prevent 'Duplicate key' errors if IDs are missing/duplicated #}
-                        <template x-for="(category, index) in $store.globals.allImageCategories" :key="category.id || index">
+                        {# FIX: Use unique string key with index to prevent Alpine duplicate key errors #}
+                        <template x-for="(category, index) in $store.globals.allImageCategories" :key="'cat-' + index">
                             <option :value="category.id" x-text="category.name"></option>
                         </template>
                     </select>

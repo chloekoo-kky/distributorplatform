@@ -7,8 +7,10 @@ from inventory.views import staff_required
 from django.db.models import Q, ProtectedError
 from django.http import Http404, JsonResponse
 from django.urls import reverse
+from django.utils.text import slugify
 import json
 import os
+import traceback
 from django.core.paginator import Paginator, EmptyPage
 from django.views.decorators.http import require_POST, require_GET
 
@@ -101,7 +103,6 @@ def post_detail(request, slug):
     }
     return render(request, 'blog/post_detail.html', context)
 
-# ... (Management views remain unchanged) ...
 def manage_post_create(request):
     if request.method == 'POST':
         form = PostForm(request.POST)
@@ -111,7 +112,8 @@ def manage_post_create(request):
             post.save()
             form.save_m2m()
             messages.success(request, f"Blog post '{post.title}' created successfully.")
-            return redirect(reverse('manage_dashboard') + '#blog')
+            # FIX: Updated to 'core:manage_dashboard' to prevent NoReverseMatch error
+            return redirect(reverse('core:manage_dashboard') + '#blog')
     else:
         form = PostForm()
 
@@ -131,7 +133,8 @@ def manage_post_edit(request, post_id):
         if form.is_valid():
             form.save()
             messages.success(request, f"Blog post '{post.title}' updated successfully.")
-            return redirect(reverse('manage_dashboard') + '#blog')
+            # FIX: Updated to 'core:manage_dashboard' to prevent NoReverseMatch error
+            return redirect(reverse('core:manage_dashboard') + '#blog')
     else:
         form = PostForm(instance=post)
 
@@ -151,7 +154,8 @@ def manage_post_delete(request, post_id):
         title = post.title
         post.delete()
         messages.success(request, f"Blog post '{title}' has been deleted.")
-    return redirect(reverse('manage_dashboard') + '#blog')
+    # FIX: Updated to 'core:manage_dashboard' to prevent NoReverseMatch error
+    return redirect(reverse('core:manage_dashboard') + '#blog')
 
 def api_manage_posts(request):
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -234,17 +238,38 @@ def api_save_post(request, post_id=None):
     try:
         data = json.loads(request.body)
 
-        # Prepare data for Form (Django Forms expect dictionary-like data)
+        # 1. Handle Slug Generation Logic manually before form validation
+        slug = data.get('slug', '').strip()
+        if not slug and data.get('title'):
+            slug = slugify(data.get('title'))
+            original_slug = slug
+            counter = 1
+            # Check for uniqueness, excluding current post if editing
+            qs = Post.objects.filter(slug=slug)
+            if post_id:
+                qs = qs.exclude(pk=post_id)
+
+            while qs.exists():
+                slug = f'{original_slug}-{counter}'
+                counter += 1
+                qs = Post.objects.filter(slug=slug)
+                if post_id:
+                    qs = qs.exclude(pk=post_id)
+
+        # 2. Handle featured_image normalization (empty string -> None)
+        featured_image = data.get('featured_image')
+        if featured_image == "":
+            featured_image = None
+
+        # Prepare data for Form
         form_data = {
             'title': data.get('title'),
-            'slug': data.get('slug', ''),
+            'slug': slug,
             'content': data.get('content', ''),
             'post_type': data.get('post_type', 'NEWS'),
-            # FIX: Pass 'is_published' to the form, NOT 'status'.
-            # The Form's save method uses 'is_published' to set the status.
             'is_published': data.get('is_published', False),
             'related_products_title': data.get('related_products_title', ''),
-            'featured_image': data.get('featured_image'), # This expects ID
+            'featured_image': featured_image,
         }
 
         if post_id:
@@ -252,23 +277,29 @@ def api_save_post(request, post_id=None):
             form = PostForm(data=form_data, instance=post)
         else:
             form = PostForm(data=form_data)
-            # Handle user on save
 
         if form.is_valid():
             post = form.save(commit=False)
             if not post_id:
                 post.author = request.user
+
+            # Ensure manually generated slug is saved
+            post.slug = slug
             post.save()
 
-            # Save Many-to-Many fields
             if 'user_groups' in data:
                 post.user_groups.set(data['user_groups'])
             if 'related_products' in data:
                 post.related_products.set(data['related_products'])
+            if 'gallery_images' in data:
+                post.gallery_images.set(data['gallery_images'])
 
             return JsonResponse({'success': True, 'message': 'Post saved successfully!'})
         else:
             return JsonResponse({'success': False, 'errors': form.errors}, status=400)
 
     except Exception as e:
+        # Print error for debugging
+        print("API Save Post Error:")
+        traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
