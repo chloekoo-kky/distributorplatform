@@ -15,7 +15,8 @@ class DualLanguageManyToManyWidget(ManyToManyWidget):
     3. SAFETY: Handles None values to prevent 'NoneType' object has no attribute 'all' crashes.
     """
 
-    def render(self, value, obj=None):
+    # Add *args and **kwargs to the method signature
+    def render(self, value, obj=None, *args, **kwargs):
         """
         Export logic:
         Takes the list of categories and returns only the English part.
