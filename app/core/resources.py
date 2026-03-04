@@ -1,6 +1,7 @@
 from import_export import resources
 from import_export.results import Result, RowResult
 from tablib import Dataset
+import math
 
 from .models import SiteSetting
 
@@ -24,6 +25,9 @@ class SiteSettingResource(resources.ModelResource):
 
         skip_unchanged = True
         report_skipped = True
+        # Avoid admin log generation for each imported row since we are
+        # doing custom RowResult handling and only updating a singleton.
+        skip_admin_log = True
 
     def export(self, queryset=None, *args, **kwargs):
         """
@@ -72,6 +76,19 @@ class SiteSettingResource(resources.ModelResource):
                 continue
 
             value = row.get('value') if 'value' in row else row.get('Value')
+
+            # If the cell is empty / NaN, skip updating this field so we don't
+            # accidentally overwrite non-nullable fields with NULL.
+            if value is None:
+                continue
+            if isinstance(value, float) and math.isnan(value):
+                continue
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped == '':
+                    continue
+                value = stripped
+
             setattr(instance, field_name, value)
             changed_fields.add(field_name)
 

@@ -125,6 +125,12 @@ class SiteSettingAdmin(ImportExportModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    # For this singleton settings model we don't need per-row admin log entries
+    # from django-import-export. Overriding this avoids errors when the library
+    # tries to build log entries from our custom Result/RowResult objects.
+    def generate_log_entries(self, result, request):
+        return
+
 
 @admin.register(ProductFeature)
 class ProductFeatureAdmin(admin.ModelAdmin):
