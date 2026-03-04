@@ -11,6 +11,8 @@ from decimal import Decimal, InvalidOperation
 import datetime
 import logging
 import json
+import os
+import tempfile
 from django.core.serializers.json import DjangoJSONEncoder
 
 from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch
@@ -287,80 +289,219 @@ def manage_category_edit(request, category_id):
 @staff_required
 def upload_products(request):
     """
-    View for uploading product files.
-    Processes POST requests from the modal on the product_list page.
+    AJAX-only, two-step product upload:
+    1) Preview (dry_run) with temp file and first 10 rows.
+    2) Confirm import using stored temp file path.
     """
-    logger.info("[upload_products] View called.")
-    if request.method != 'POST':
-        logger.warning("[upload_products] GET request received, redirecting.")
-        return redirect(reverse('core:manage_dashboard') + '#products')
+    if request.method != 'POST' or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
 
-    redirect_url = reverse('core:manage_dashboard') + '#products'
+    try:
+        confirm_flag = request.POST.get('confirm', 'false').lower() == 'true'
+        product_resource = ProductResource()
 
-    form = ProductUploadForm(request.POST, request.FILES)
-    if form.is_valid():
-        file = request.FILES['file']
-        logger.info(f"[upload_products] Form is valid. Processing file: {file.name}")
+        # --- Phase 2: Confirm & Import ---
+        if confirm_flag:
+            temp_file_path = request.POST.get('temp_file_path')
+            if not temp_file_path:
+                return JsonResponse({'success': False, 'error': 'Missing temp_file_path.'}, status=400)
 
-        if not file.name.endswith(('.csv', '.xls', '.xlsx')):
-            logger.warning(f"[upload_products] Invalid file format: {file.name}")
-            messages.error(request, "Invalid file format. Please upload a .csv, .xls, or .xlsx file.")
-            return redirect(redirect_url)
+            if not os.path.exists(temp_file_path):
+                return JsonResponse({'success': False, 'error': 'Temporary file not found. Please re-upload.'}, status=400)
+
+            try:
+                dataset = Dataset()
+                # Determine format based on extension
+                if temp_file_path.endswith('.csv'):
+                    with open(temp_file_path, 'rb') as f:
+                        file_content = f.read()
+                    try:
+                        decoded_content = file_content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        logger.warning("[upload_products] UTF-8 decode failed for temp CSV, falling back to latin-1.")
+                        decoded_content = file_content.decode('latin-1')
+                    dataset.load(decoded_content, format='csv')
+                else:
+                    with open(temp_file_path, 'rb') as f:
+                        dataset.load(f.read(), format='xlsx')
+
+                logger.info(f"[upload_products] Loaded dataset from temp file for final import: {temp_file_path}")
+
+                with transaction.atomic():
+                    result = product_resource.import_data(dataset, dry_run=False, use_transactions=True)
+
+                os.remove(temp_file_path)
+                logger.info("[upload_products] Final import successful, temp file removed.")
+
+                if result.has_errors() or result.has_validation_errors():
+                    logger.warning("[upload_products] Final import reported errors after dry-run success.")
+                return JsonResponse({'success': True, 'message': 'Imported successfully!'})
+
+            except Exception as e:
+                logger.error(f"[upload_products] Error during confirm import: {e}", exc_info=True)
+                # Best-effort cleanup
+                try:
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
+                except Exception:
+                    pass
+                return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+        # --- Phase 1: Preview / Dry Run ---
+        upload_file = request.FILES.get('file')
+        if upload_file is None:
+            return JsonResponse({'success': False, 'error': 'No file uploaded.'}, status=400)
+
+        filename = upload_file.name
+        logger.info(f"[upload_products] Preview requested for file: {filename}")
+
+        if not filename.endswith(('.csv', '.xls', '.xlsx')):
+            return JsonResponse({'success': False, 'error': 'Invalid file format. Please upload a .csv, .xls, or .xlsx file.'}, status=400)
+
+        # Save to a secure temporary file
+        try:
+            suffix = os.path.splitext(filename)[1] or ''
+            fd, temp_path = tempfile.mkstemp(prefix='product_upload_', suffix=suffix)
+            with os.fdopen(fd, 'wb') as tmp:
+                for chunk in upload_file.chunks():
+                    tmp.write(chunk)
+            logger.info(f"[upload_products] Temp file created at: {temp_path}")
+        except Exception as e:
+            logger.error(f"[upload_products] Failed to create temp file: {e}", exc_info=True)
+            return JsonResponse({'success': False, 'error': 'Could not save uploaded file for processing.'}, status=500)
 
         try:
             dataset = Dataset()
-            if file.name.endswith('.csv'):
-                logger.info(f"[upload_products] Reading .csv file: {file.name}")
-                file_content = file.read()
-                decoded_content = None
+            if filename.endswith('.csv'):
+                with open(temp_path, 'rb') as f:
+                    file_content = f.read()
                 try:
                     decoded_content = file_content.decode('utf-8')
                 except UnicodeDecodeError:
-                    logger.warning("[upload_products] 'utf-8' decoding failed. Trying 'latin-1'.")
+                    logger.warning("[upload_products] UTF-8 decode failed for CSV, falling back to latin-1.")
                     decoded_content = file_content.decode('latin-1')
                 dataset.load(decoded_content, format='csv')
             else:
-                logger.info(f"[upload_products] Reading .xlsx file: {file.name}")
-                dataset.load(file.read(), format='xlsx')
-            logger.info("[upload_products] File read and loaded into dataset.")
+                with open(temp_path, 'rb') as f:
+                    dataset.load(f.read(), format='xlsx')
+            logger.info("[upload_products] Dataset loaded from temp file for preview.")
         except Exception as e:
-            logger.error(f"[upload_products] Error reading file: {e}", exc_info=True)
-            messages.error(request, f"Error reading file: {e}")
-            return redirect(redirect_url)
-
-        product_resource = ProductResource()
-        logger.info("[upload_products] Starting dry run of import...")
-        result = product_resource.import_data(dataset, dry_run=True, use_transactions=True)
-
-        if not result.has_errors() and not result.has_validation_errors():
+            logger.error(f"[upload_products] Error reading temp file into dataset: {e}", exc_info=True)
             try:
-                logger.info("[upload_products] Dry run successful. Starting actual import.")
-                with transaction.atomic():
-                    product_resource.import_data(dataset, dry_run=False, use_transactions=True)
-                logger.info("[upload_products] Import successful.")
-                messages.success(request, "Product file imported successfully.")
+                os.remove(temp_path)
+            except Exception:
+                pass
+            return JsonResponse({'success': False, 'error': f'Error reading file: {e}'}, status=500)
+
+        # Perform dry run
+        try:
+            result = product_resource.import_data(dataset, dry_run=True, use_transactions=True)
+        except Exception as e:
+            logger.error(f"[upload_products] Error during dry run import: {e}", exc_info=True)
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            return JsonResponse({'success': False, 'error': f'Error validating file: {e}'}, status=500)
+
+        # Check for hard errors first
+        if result.has_errors():
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            errors = []
+            try:
+                for err in result.row_errors():
+                    row_num, row_errors_list = err[0], err[1]
+                    if row_errors_list:
+                        first_err = row_errors_list[0]
+                        err_msg = getattr(first_err, 'error', str(first_err))
+                    else:
+                        err_msg = "Unknown error"
+                    errors.append(f"Row {row_num}: {err_msg}")
             except Exception as e:
-                logger.error(f"[upload_products] Error during final import: {e}", exc_info=True)
-                messages.error(request, f"An error occurred during import: {e}")
-        else:
-            errors = result.has_errors() and result.row_errors() or result.base_errors
-            logger.warning(f"[upload_products] Dry run failed. Errors: {errors}")
-            if errors:
-                for error in errors:
-                    if error[1]:
-                        msg = f"Error in row {error[0]}: {error[1][0].error}"
-                        logger.warning(f"[upload_products] Import error detail: {msg}")
-                        messages.warning(request, msg)
-            else:
-                logger.error("[upload_products] Unknown validation error occurred.")
-                messages.error(request, "An unknown error occurred during validation.")
-            messages.error(request, "File import failed. Please correct the file and try again.")
+                errors.append(str(e))
+            return JsonResponse({
+                'success': False,
+                'error': "Import errors found.",
+                'details': errors
+            }, status=400)
 
-        return redirect(redirect_url)
+        # Build dataset row dicts once for fallback (same order as result.rows)
+        headers = list(dataset.headers) if dataset.headers else []
+        dataset_row_dicts = [dict(zip(headers, row)) for row in dataset]
 
-    logger.warning(f"[upload_products] Form was invalid. Errors: {form.errors.as_json()}")
-    messages.error(request, "An error occurred with the upload form.")
-    return redirect(redirect_url)
+        # Safely generate preview data
+        preview_rows = []
+        valid_rows_count = 0
+
+        for idx, row_result in enumerate(result.rows):
+            itype = getattr(row_result, 'import_type', None)
+            if itype is None or str(itype).lower() not in ('new', 'update'):
+                continue
+            valid_rows_count += 1
+
+            final_sku = None
+            final_name = None
+
+            # 1. Primary: generated model instance (django-import-export may use .instance or .object)
+            for attr in ('instance', 'object'):
+                obj = getattr(row_result, attr, None)
+                if obj is not None:
+                    final_sku = getattr(obj, 'sku', None)
+                    final_name = getattr(obj, 'name', None)
+                    if final_sku or final_name:
+                        break
+
+            # 2. Fallback: raw row dict (raw_values / row_values; may be dict or OrderedDict)
+            if not final_sku or not final_name:
+                raw_dict = getattr(row_result, 'raw_values', None) or getattr(row_result, 'row_values', None)
+                if raw_dict is not None and not isinstance(raw_dict, dict):
+                    raw_dict = dict(raw_dict) if hasattr(raw_dict, 'items') else {}
+                elif raw_dict is None:
+                    raw_dict = {}
+                final_sku = final_sku or (raw_dict.get('sku') if raw_dict else None)
+                final_name = final_name or (raw_dict.get('name') if raw_dict else None)
+
+            # 3. Fallback: same row from the dataset we imported (name + recompute SKU to match before_import_row)
+            if (not final_sku or not final_name) and idx < len(dataset_row_dicts):
+                row_dict = dataset_row_dicts[idx]
+                final_name = final_name or row_dict.get('name') or 'Unknown'
+                final_sku = final_sku or ProductResource.get_effective_sku_for_row(row_dict) or 'N/A'
+
+            final_sku = final_sku or 'N/A'
+            final_name = final_name or 'Unknown'
+
+            preview_rows.append({
+                'status': str(itype).upper() if itype is not None else 'NEW',
+                'name': final_name,
+                'generated_sku': final_sku,
+            })
+
+        # Check if valid_rows_count is 0 but we have validation errors
+        if valid_rows_count == 0 and result.has_validation_errors():
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            return JsonResponse({
+                'success': False,
+                'error': "All rows failed validation.",
+                'details': ["Check file formatting."]
+            }, status=400)
+
+        return JsonResponse({
+            'success': True,
+            'require_confirmation': True,
+            'temp_file_path': temp_path,
+            'total_rows': valid_rows_count,
+            'preview_data': preview_rows[:15],
+        })
+
+    except Exception as e:
+        logger.error(f"[upload_products] Unexpected error: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @staff_required

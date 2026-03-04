@@ -83,7 +83,10 @@
                     <button @click="$store.images.openBulkAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
                         Bulk Assign to Gallery...
                     </button>
-                    <button @click="$store.images.bulkSelectedImageIds = []" class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md ml-2">
+                    <button @click="$store.images.openAutoAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 ml-2">
+                        Auto-Assign to Products
+                    </button>
+                    <button @click="$store.images.bulkSelectedImageIds = []; $store.images.lastSelectedIndex = null" class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md ml-2">
                         Clear Selection
                     </button>
                 </div>
@@ -105,8 +108,8 @@
 
                         {# Selection Checkbox #}
                         <input type="checkbox"
-                               :value="image.id"
-                               x-model="$store.images.bulkSelectedImageIds"
+                               :checked="$store.images.bulkSelectedImageIds.includes(image.id)"
+                               @click.prevent.stop="$store.images.toggleImageSelection($event, image.id, index)"
                                class="absolute top-2 left-2 z-10 h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer">
 
                         {# Image Thumbnail #}

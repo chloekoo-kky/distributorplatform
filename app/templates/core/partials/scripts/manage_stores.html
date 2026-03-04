@@ -41,6 +41,12 @@
             allPosts: [],
             selectedImageToAssign: null,
             bulkSelectedImageIds: [],
+            lastSelectedIndex: null,
+
+            // Auto-assign state
+            showAutoAssignModal: false,
+            autoAssignMatches: [],
+            isSubmittingAutoAssign: false,
 
             // Modal States
             showAssignProductModal: false,
@@ -64,6 +70,10 @@
             showImageEditModal: false,
             isSubmittingImageEdit: false,
             currentImageToEdit: { id: null, title: '', alt_text: '', category_id: null, url: '' },
+
+            showImageUploadConfirmModal: false,
+            imageUploadPreviewList: [],
+            imageUploadIsConfirming: false,
 
             // --- Getters ---
             get filteredImages() {
@@ -93,14 +103,63 @@
             },
 
             // --- Methods ---
-            async handleImageUpload(event) {
+            toggleImageSelection(event, imageId, index) {
+                if (event.shiftKey && this.lastSelectedIndex !== null) {
+                    const start = Math.min(this.lastSelectedIndex, index);
+                    const end = Math.max(this.lastSelectedIndex, index);
+                    const filtered = this.filteredImages || [];
+                    const range = filtered.slice(start, end + 1);
+                    const rangeIds = range.map(img => img.id);
+                    const merged = new Set([...this.bulkSelectedImageIds, ...rangeIds]);
+                    this.bulkSelectedImageIds = Array.from(merged);
+                } else {
+                    const idx = this.bulkSelectedImageIds.findIndex(id => id == imageId);
+                    if (idx >= 0) {
+                        this.bulkSelectedImageIds = this.bulkSelectedImageIds.filter(id => id != imageId);
+                    } else {
+                        this.bulkSelectedImageIds = [...this.bulkSelectedImageIds, imageId];
+                    }
+                }
+                this.lastSelectedIndex = index;
+            },
+            formatImageTitle(name) {
+                if (!name || typeof name !== 'string') return name || '';
+                let s = name.replace(/_/g, ' ').trim();
+                s = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+                return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()).trim();
+            },
+            handleImageUpload(event) {
+                event.preventDefault();
                 const form = event.target;
-                const formData = new FormData(form);
-                const submitButton = form.querySelector('button[type=submit]');
-                if (!form.querySelector('input[type=file]').files.length) return;
+                const fileInput = form.querySelector('input[type=file]');
+                const files = fileInput && fileInput.files;
+                if (!files || !files.length) {
+                    Alpine.store('globals').showToast('Please select one or more images.', 'warning');
+                    return;
+                }
+                const previewList = [];
+                for (let i = 0; i < files.length; i++) {
+                    const baseName = files[i].name.replace(/\.[^/.]+$/, '');
+                    previewList.push({
+                        filename: files[i].name,
+                        formattedTitle: this.formatImageTitle(baseName)
+                    });
+                }
+                this.imageUploadPreviewList = previewList;
+                this.showImageUploadConfirmModal = true;
+            },
+            cancelImageUploadConfirm() {
+                this.showImageUploadConfirmModal = false;
+                this.imageUploadPreviewList = [];
+            },
+            async confirmImageUpload() {
+                if (this.imageUploadIsConfirming) return;
+                const form = document.getElementById('image-upload-form');
+                if (!form || !this.imageUploadPreviewList.length) return;
 
-                submitButton.disabled = true;
-                submitButton.textContent = 'Uploading...';
+                this.imageUploadIsConfirming = true;
+                const formData = new FormData(form);
+                formData.append('image_titles', JSON.stringify(this.imageUploadPreviewList.map(p => p.formattedTitle)));
 
                 try {
                     const response = await fetch(`{% url 'images:ajax_upload_image' %}`, {
@@ -113,19 +172,21 @@
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
-                        // Prevent duplicates when adding new images
                         data.images.forEach(img => {
                             if (!this.galleryImages.some(existing => existing.id === img.id)) {
                                 this.galleryImages.unshift(img);
                             }
                         });
                         form.reset();
+                        this.showImageUploadConfirmModal = false;
+                        this.imageUploadPreviewList = [];
                         Alpine.store('globals').showToast('Image(s) uploaded successfully!');
                     } else { throw new Error(data.errors || 'Upload failed'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Upload error: ' + err.message, 'error');
+                } finally {
+                    this.imageUploadIsConfirming = false;
                 }
-                finally { submitButton.disabled = false; submitButton.textContent = 'Upload Image(s)'; }
             },
 
             async deleteImage(imageId) {
@@ -274,12 +335,107 @@
                         this.allPosts = data.all_posts;
                         this.showBulkAssignModal = false;
                         this.bulkSelectedImageIds = [];
+                        this.lastSelectedIndex = null;
                         Alpine.store('globals').showToast('Images successfully assigned to gallery!');
                     } else { throw new Error(data.error || 'Failed to save'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Error: ' + err.message, 'error');
                 }
                 finally { this.bulkAssignIsSubmitting = false; }
+            },
+            openAutoAssignModal() {
+                if (this.bulkSelectedImageIds.length === 0) {
+                    Alpine.store('globals').showToast('Please select one or more images first.', 'warning');
+                    return;
+                }
+
+                const products = this.allProducts || [];
+                const matches = [];
+
+                const normalize = (value) => (value || '').toString().toLowerCase();
+
+                this.bulkSelectedImageIds.forEach((imageId) => {
+                    const img = this.galleryImages.find(i => i.id == imageId);
+                    if (!img) {
+                        return;
+                    }
+
+                    const title = normalize(img.title);
+                    let bestMatch = null;
+
+                    // Rule 1: SKU equals or is included in the image title
+                    bestMatch = products.find(p => {
+                        const sku = normalize(p.sku);
+                        return sku && (title === sku || title.includes(sku) || sku.includes(title));
+                    }) || null;
+
+                    // Rule 2: Fallback to fuzzy name match
+                    if (!bestMatch) {
+                        bestMatch = products.find(p => {
+                            const name = normalize(p.name);
+                            return name && (title.includes(name) || name.includes(title));
+                        }) || null;
+                    }
+
+                    matches.push({
+                        image: img,
+                        product: bestMatch,
+                        selected: !!bestMatch
+                    });
+                });
+
+                this.autoAssignMatches = matches;
+                this.showAutoAssignModal = true;
+            },
+            async submitAutoAssign() {
+                if (this.isSubmittingAutoAssign) return;
+
+                const chosen = (this.autoAssignMatches || []).filter(m => m.selected && m.product);
+                if (chosen.length === 0) {
+                    Alpine.store('globals').showToast('Please select at least one match to auto-assign.', 'warning');
+                    return;
+                }
+
+                this.isSubmittingAutoAssign = true;
+
+                const payload = {
+                    assignments: chosen.map(m => ({
+                        image_id: m.image.id,
+                        product_id: m.product.id
+                    }))
+                };
+
+                try {
+                    const response = await fetch(`/images/api/bulk-auto-assign/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        if (Array.isArray(data.all_products)) {
+                            this.allProducts = data.all_products;
+                        }
+                        this.showAutoAssignModal = false;
+                        this.autoAssignMatches = [];
+                        this.bulkSelectedImageIds = [];
+                        this.lastSelectedIndex = null;
+                        Alpine.store('globals').showToast('Featured images auto-assigned successfully!');
+                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
+                    } else {
+                        throw new Error(data.error || 'Failed to auto-assign featured images.');
+                    }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Error: ' + err.message, 'error');
+                } finally {
+                    this.isSubmittingAutoAssign = false;
+                }
             },
             openImageEditModal(image) {
                 this.currentImageToEdit = { ...image };

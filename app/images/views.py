@@ -7,6 +7,7 @@ from django.urls import reverse
 
 import json
 import os
+import re
 from PIL import Image
 from io import BytesIO
 from django.core.files.base import ContentFile
@@ -22,6 +23,19 @@ from django.db import transaction
 # --- End New Imports ---
 
 logger = logging.getLogger(__name__)
+
+
+def format_image_title(name):
+    """
+    Apply same formatting as product names: replace underscores with spaces,
+    split PascalCase/camelCase, then Title Case. Used for image titles from filenames.
+    """
+    if not name or not isinstance(name, str):
+        return name or ''
+    s = name.replace('_', ' ').strip()
+    s = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', s)
+    return s.title().strip()
+
 
 @staff_required
 def ajax_get_images(request):
@@ -93,6 +107,15 @@ def ajax_upload_image(request):
         alt_text = form.cleaned_data.get('alt_text', '')
         category = form.cleaned_data.get('category')
 
+        # Optional per-file titles from confirmation modal (JSON array)
+        image_titles = []
+        raw_titles = request.POST.get('image_titles')
+        if raw_titles:
+            try:
+                image_titles = json.loads(raw_titles)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         created_images = []
 
         for i, uploaded_file in enumerate(uploaded_files, 1):
@@ -106,12 +129,15 @@ def ajax_upload_image(request):
             base_filename = os.path.splitext(uploaded_file.name)[0]
             new_filename = f"{base_filename}.webp"
 
-            if base_title and len(uploaded_files) > 1:
+            # Use per-file title from confirmation modal, or formatted filename, or base_title
+            if image_titles and i <= len(image_titles) and image_titles[i - 1]:
+                final_title = (image_titles[i - 1] or '').strip() or format_image_title(base_filename)
+            elif base_title and len(uploaded_files) > 1:
                 final_title = f"{base_title} ({i})"
             elif base_title:
                 final_title = base_title
             else:
-                final_title = os.path.splitext(uploaded_file.name)[0]
+                final_title = format_image_title(base_filename)
 
             image_instance = MediaImage(
                 title=final_title,
@@ -381,6 +407,64 @@ def ajax_bulk_assign(request):
     except Exception as e:
         logger.error(f"Error in ajax_bulk_assign: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@staff_required
+@transaction.atomic
+def ajax_bulk_auto_assign(request):
+    """
+    Handles POST request to bulk-set featured images for products.
+    Expects payload of the form:
+        {"assignments": [{"image_id": 1, "product_id": 10}, ...]}
+    """
+    if request.method != 'POST' or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+        assignments = data.get('assignments', [])
+
+        if not isinstance(assignments, list):
+            return JsonResponse({'success': False, 'error': 'Invalid assignments payload.'}, status=400)
+
+        updated_count = 0
+        for assignment in assignments:
+            image_id = assignment.get('image_id')
+            product_id = assignment.get('product_id')
+
+            if not image_id or not product_id:
+                continue
+
+            Product.objects.filter(id=product_id).update(featured_image_id=image_id)
+            updated_count += 1
+
+        logger.info(f"Bulk auto-assign featured images processed {updated_count} assignments.")
+
+        # Return refreshed products list so frontend can sync state
+        all_products_qs = Product.objects.all().prefetch_related('gallery_images').select_related('featured_image')
+        all_products_list = [
+            {
+                'id': p.id,
+                'name': p.name,
+                'sku': p.sku or '-',
+                'featured_image_id': p.featured_image_id,
+                'featured_image_title': p.featured_image.title if p.featured_image else None,
+                'gallery_image_ids': list(p.gallery_images.all().values_list('id', flat=True))
+            } for p in all_products_qs
+        ]
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Featured images auto-assigned successfully.',
+            'all_products': all_products_list
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON.'}, status=400)
+    except Exception as e:
+        logger.error(f"Error in ajax_bulk_auto_assign: {e}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 @staff_required
 def ajax_edit_image(request, image_id):

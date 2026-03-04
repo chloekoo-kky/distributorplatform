@@ -22,6 +22,14 @@
             },
             productEditErrors: {},
 
+            // Upload Products State
+            uploadStep: 1,
+            uploadIsLoading: false,
+            uploadTempFilePath: '',
+            uploadPreviewData: [],
+            uploadTotalRows: 0,
+            uploadErrorMessage: '',
+
             get pricingProfit() {
                 const cost = this.pricingData.base_cost;
                 const price = this.pricingData.selling_price;
@@ -226,6 +234,102 @@
             removeImageFromProductGallery(imageId) {
                 if (!this.productEditData || !this.productEditData.gallery_images) return;
                 this.productEditData.gallery_images = this.productEditData.gallery_images.filter(id => id !== imageId);
+            },
+
+            openUploadModal() {
+                // Reset upload state
+                this.uploadStep = 1;
+                this.uploadIsLoading = false;
+                this.uploadTempFilePath = '';
+                this.uploadPreviewData = [];
+                this.uploadTotalRows = 0;
+                this.uploadErrorMessage = '';
+
+                // Clear file input if present
+                const input = document.querySelector('#product-upload-file-input');
+                if (input) {
+                    input.value = '';
+                }
+
+                // This flag lives in the parent x-data (manageTools)
+                window.uploadProductModalOpen = true;
+            },
+
+            async submitUploadForm(event) {
+                event.preventDefault();
+                if (this.uploadIsLoading) return;
+
+                this.uploadErrorMessage = '';
+                this.uploadIsLoading = true;
+
+                const form = event.target;
+                const formData = new FormData(form);
+
+                try {
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: formData
+                    });
+                    const data = await response.json();
+
+                    if (!response.ok || !data.success) {
+                        let errMsg = data.error || 'Failed to analyze file.';
+                        if (data.details && Array.isArray(data.details) && data.details.length) {
+                            errMsg += ' ' + data.details.join(' ');
+                        }
+                        this.uploadErrorMessage = errMsg;
+                        return;
+                    }
+
+                    if (data.require_confirmation) {
+                        this.uploadStep = 2;
+                        this.uploadTempFilePath = data.temp_file_path || '';
+                        this.uploadPreviewData = data.preview_data || [];
+                        this.uploadTotalRows = data.total_rows || 0;
+                    }
+                } catch (err) {
+                    this.uploadErrorMessage = err.message || 'An unexpected error occurred.';
+                } finally {
+                    this.uploadIsLoading = false;
+                }
+            },
+
+            async confirmUpload() {
+                if (this.uploadIsLoading || !this.uploadTempFilePath) return;
+
+                this.uploadErrorMessage = '';
+                this.uploadIsLoading = true;
+
+                const formData = new FormData();
+                formData.append('confirm', 'true');
+                formData.append('temp_file_path', this.uploadTempFilePath);
+                formData.append('csrfmiddlewaretoken', Alpine.store('globals').csrfToken);
+
+                try {
+                    const response = await fetch("{% url 'product:upload_products' %}", {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: formData
+                    });
+                    const data = await response.json();
+
+                    if (!response.ok || !data.success) {
+                        this.uploadErrorMessage = data.error || 'Failed to import file.';
+                        return;
+                    }
+
+                    alert(data.message || 'Imported successfully!');
+                    window.location.reload();
+                } catch (err) {
+                    this.uploadErrorMessage = err.message || 'An unexpected error occurred.';
+                } finally {
+                    this.uploadIsLoading = false;
+                }
             }
         };
     }

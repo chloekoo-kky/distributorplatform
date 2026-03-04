@@ -12,6 +12,12 @@
 <div x-show="$store.images.showBulkAssignModal">
     {% include 'images/partials/bulk_assign_modal.html' %}
 </div>
+<div x-show="$store.images.showAutoAssignModal">
+    {% include 'images/partials/auto_assign_modal.html' %}
+</div>
+<div x-show="$store.images.showImageUploadConfirmModal">
+    {% include 'images/partials/image_upload_confirm_modal.html' %}
+</div>
 {% include 'product/partials/product_edit_modal.html' %}
 {% include 'product/product_pricing_modal.html' %}
 {% include 'product/partials/upload_product_modal.html' %}
