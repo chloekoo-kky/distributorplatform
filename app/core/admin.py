@@ -1,7 +1,10 @@
 # distributorplatform/app/core/admin.py
 from django.contrib import admin
 from django import forms
+from import_export.admin import ImportExportModelAdmin
+
 from .models import SiteSetting, ThemeSetting, ProductFeature, Banner, PaymentSetting, PaymentOption
+from .resources import SiteSettingResource
 
 # --- 1. Form for Color Settings ---
 class ThemeSettingForm(forms.ModelForm):
@@ -97,8 +100,9 @@ class PaymentSettingAdmin(admin.ModelAdmin):
         return False
 
 @admin.register(SiteSetting)
-class SiteSettingAdmin(admin.ModelAdmin):
+class SiteSettingAdmin(ImportExportModelAdmin):
     form = SiteSettingForm
+    resource_class = SiteSettingResource
 
     # EXCLUDE the color fields from this view so they only appear in "Theme Settings"
     exclude = (
