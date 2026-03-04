@@ -73,7 +73,7 @@
 
 
             {# --- SECTION 1: REGULAR PRODUCTS GRID --- #}
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                 {% for product in products %}
                 <a href="{{ product.get_absolute_url }}"
                    @click.prevent="$dispatch('open-quick-view', { sku: '{{ product.sku }}' })"
@@ -94,13 +94,13 @@
 
                     <div class="p-4 flex-grow flex flex-col justify-between">
                         <div>
-                            <div class="flex flex-col mb-1 h-10 justify-center"> {# Fixed height helps alignment #}
+                            <div class="flex flex-col mb-1">
                                 {% with lines=product.name_lines %}
-                                    <span class="text-lg font-bold text-gray-800 leading-tight line-clamp-1">
+                                    <span class="text-lg font-bold text-gray-800 leading-tight line-clamp-2 lg:line-clamp-none">
                                         {{ lines.0 }}
                                     </span>
                                     {% if lines|length > 1 %}
-                                        <span class="text-md text-gray-500 font-normal leading-tight line-clamp-1">
+                                        <span class="text-md text-gray-500 font-normal leading-tight line-clamp-2 lg:line-clamp-none">
                                             {{ lines.1 }}
                                         </span>
                                     {% endif %}
