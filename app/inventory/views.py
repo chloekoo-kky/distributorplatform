@@ -20,8 +20,6 @@ from django.http import HttpResponse
 import logging
 from decimal import Decimal
 from django.core.paginator import Paginator, EmptyPage
-
-from django.core.serializers.json import DjangoJSONEncoder
 import json
 
 from .forms import (
@@ -639,6 +637,9 @@ def quotation_detail(request, quotation_id):
     ).distinct().order_by('name')
     # --- END FIX ---
 
+    # Products which are NOT yet assigned to this supplier (for the "Add product" selector)
+    unassigned_products = Product.objects.exclude(suppliers=supplier).order_by('name')
+
     logger.debug(f"[quotation_detail GET] Found {supplier_products.count()} products for supplier {supplier.name}")
 
     current_items = {item.product_id: item for item in quotation.items.select_related('product').all()}
@@ -697,6 +698,7 @@ def quotation_detail(request, quotation_id):
         'supplier_products_json': supplier_products_json_str,
         'initial_transport_cost': str(quotation.transportation_cost),
         'is_subpage': True,
+        'unassigned_products': unassigned_products,
     }
     logger.debug("[quotation_detail GET] Rendering template...")
     return render(request, 'inventory/quotation_detail.html', context)
@@ -713,6 +715,49 @@ def delete_quotation_item(request, pk):
     else:
         try: item.delete(); messages.success(request, "Item deleted.")
         except Exception as e: messages.error(request, f"Error deleting item: {e}")
+    return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+
+@staff_required
+def assign_product_to_supplier(request, quotation_id):
+    """
+    Assign an existing Product to the supplier of this quotation so it appears
+    in the quotation's product list.
+    """
+    quotation = get_object_or_404(Quotation.objects.select_related('supplier'), quotation_id=quotation_id)
+    supplier = quotation.supplier
+
+    if request.method != 'POST':
+        return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+    product_ids = request.POST.getlist('product_ids') or []
+    # Fallback for old single-select form
+    single_id = request.POST.get('product_id')
+    if single_id:
+        product_ids.append(single_id)
+
+    if not product_ids:
+        messages.error(request, "Please select at least one product to assign.")
+        return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+    assigned = 0
+    already = 0
+    for pid in product_ids:
+        try:
+            product = Product.objects.get(pk=pid)
+        except Product.DoesNotExist:
+            continue
+        if product.suppliers.filter(pk=supplier.pk).exists():
+            already += 1
+        else:
+            product.suppliers.add(supplier)
+            assigned += 1
+
+    if assigned:
+        messages.success(request, f"Assigned {assigned} product(s) to supplier {supplier.name}.")
+    if already and not assigned:
+        messages.info(request, "All selected products were already assigned to this supplier.")
+
     return redirect('inventory:quotation_detail', quotation_id=quotation_id)
 
 @staff_required

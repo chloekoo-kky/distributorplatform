@@ -148,7 +148,14 @@
             </div>
 
             <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-                <h3 class="text-xl font-semibold text-gray-700 p-6 border-b">Products from {{ quotation.supplier.name }}</h3>
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-b">
+                    <h3 class="text-xl font-semibold text-gray-700">Products from {{ quotation.supplier.name }}</h3>
+                    <button type="button"
+                            @click="showAssignProductsModal = true"
+                            class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                        Assign Products to Supplier
+                    </button>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -209,6 +216,152 @@
                 </div>
             </div>
 
+            <!-- Assign Products Modal -->
+            <div x-show="showAssignProductsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+                 x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+                 x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="display: none;">
+                <div id="assign-products-modal"
+                     @click.away="showAssignProductsModal = false"
+                     class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto"
+                     x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+                     x-transition:enter-end="opacity-100 transform scale-100"
+                     x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
+                     x-transition:leave-end="opacity-0 transform scale-95">
+
+                    <button type="button" @click="showAssignProductsModal = false"
+                            class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Assign Products to {{ quotation.supplier.name }}</h3>
+                    <p class="text-sm text-gray-600 mb-4">
+                        Select one or more products below to assign them to this supplier. Assigned products will appear in the quotation items table.
+                    </p>
+
+                    <form method="POST" action="{% url 'inventory:assign_product_to_supplier' quotation.quotation_id %}" class="space-y-4">
+                        {% csrf_token %}
+
+                        <div>
+                            <label for="assign-products-search" class="block text-sm font-medium text-gray-700 mb-1">
+                                Search products (SKU or name)
+                            </label>
+                            <input type="text"
+                                   id="assign-products-search"
+                                   placeholder="Type to filter..."
+                                   class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+
+                        <div class="max-h-80 overflow-y-auto border border-gray-200 rounded-md">
+                            {% if unassigned_products %}
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-3 py-2 w-10 text-center">
+                                                <input type="checkbox" id="assign-all-products-checkbox"
+                                                       class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                            </th>
+                                            <th class="px-3 py-2 text-left font-medium text-gray-600">SKU</th>
+                                            <th class="px-3 py-2 text-left font-medium text-gray-600">Product Name</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        {% for p in unassigned_products %}
+                                        <tr class="assign-product-row cursor-pointer hover:bg-indigo-50"
+                                            data-name="{{ p.name|escapejs }}"
+                                            data-sku="{{ p.sku|default_if_none:''|escapejs }}">
+                                            <td class="px-3 py-2 text-center">
+                                                <input type="checkbox"
+                                                       name="product_ids"
+                                                       value="{{ p.id }}"
+                                                       class="assign-product-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                                            </td>
+                                            <td class="px-3 py-2 font-mono text-xs text-gray-700">
+                                                {{ p.sku|default:'-' }}
+                                            </td>
+                                            <td class="px-3 py-2 text-gray-800">
+                                                {{ p.name }}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            {% else %}
+                                <div class="p-4 text-sm text-gray-500">
+                                    All products are already assigned to this supplier.
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="flex justify-between items-center pt-2">
+                            <button type="button"
+                                    @click="showAssignProductsModal = false"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                Cancel
+                            </button>
+                            <button type="submit"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                                Assign Selected Products
+                            </button>
+                        </div>
+                    </form>
+
+                    <script>
+                        (function() {
+                            const modal = document.getElementById('assign-products-modal');
+                            if (!modal) return;
+
+                            const allCheckbox = modal.querySelector('#assign-all-products-checkbox');
+                            const checkboxes = Array.from(modal.querySelectorAll('.assign-product-checkbox'));
+                            const rows = Array.from(modal.querySelectorAll('.assign-product-row'));
+                            const searchInput = modal.querySelector('#assign-products-search');
+
+                            if (allCheckbox) {
+                                allCheckbox.addEventListener('change', function () {
+                                    checkboxes.forEach(function(cb) {
+                                        cb.checked = allCheckbox.checked;
+                                    });
+                                });
+                            }
+
+                            // Clicking on a row toggles its checkbox (but not when clicking directly on the checkbox)
+                            rows.forEach(function(row) {
+                                row.addEventListener('click', function (e) {
+                                    if (e.target.closest('input[type="checkbox"]')) {
+                                        return;
+                                    }
+                                    const cb = row.querySelector('.assign-product-checkbox');
+                                    if (!cb) return;
+                                    cb.checked = !cb.checked;
+
+                                    if (allCheckbox) {
+                                        const visibleCheckboxes = checkboxes.filter(function(c) {
+                                            return c.closest('.assign-product-row') && c.closest('.assign-product-row').style.display !== 'none';
+                                        });
+                                        allCheckbox.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every(function(c) { return c.checked; });
+                                    }
+                                });
+                            });
+
+                            // Simple client-side search by SKU or name
+                            if (searchInput) {
+                                searchInput.addEventListener('input', function () {
+                                    var term = searchInput.value.toLowerCase().trim();
+                                    rows.forEach(function(row) {
+                                        var name = (row.getAttribute('data-name') || '').toLowerCase();
+                                        var sku = (row.getAttribute('data-sku') || '').toLowerCase();
+                                        var match = !term || name.indexOf(term) !== -1 || sku.indexOf(term) !== -1;
+                                        row.style.display = match ? '' : 'none';
+                                    });
+                                });
+                            }
+                        })();
+                    </script>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -234,6 +387,7 @@
             rateEUR: 4.9, // Default
             rateUSD: 4.2, // Default
             isSaving: false,
+            showAssignProductsModal: false,
 
             // --- Computed Properties ---
             get sortedItems() {

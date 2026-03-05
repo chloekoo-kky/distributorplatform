@@ -1,0 +1,95 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Orphan Images Cleaner{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label='images' %}">Images</a>
+  &rsaquo; <a href="{% url 'admin:images_mediaimage_changelist' %}">Media images</a>
+  &rsaquo; Orphan Images Cleaner
+</div>
+{% endblock %}
+
+{% block content %}
+  <h1>Orphan Images Cleaner</h1>
+
+  {% if messages %}
+    <ul class="messagelist">
+      {% for message in messages %}
+        <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if not orphan_files %}
+    <div class="success" style="margin-top: 1em; padding: 1em;">
+      <strong>Your media folder is clean!</strong> No orphan images found under <code>{{ media_url }}</code>.
+    </div>
+  {% else %}
+    <form method="POST" style="margin-top: 1em;">
+      {% csrf_token %}
+
+      <p>
+        The following files exist under <code>{{ media_url }}</code> but are not referenced by any
+        <code>FileField</code> or <code>ImageField</code> in the database.
+        Select the ones you want to delete permanently.
+      </p>
+
+      <table class="listing" id="orphan-images-table">
+        <thead>
+          <tr>
+            <th style="width: 2rem;">
+              <input type="checkbox" id="select-all-orphans">
+            </th>
+            <th>Preview</th>
+            <th>File path</th>
+            <th>File size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for file_path in orphan_files %}
+            <tr>
+              <td>
+                <input type="checkbox"
+                       name="orphan_files"
+                       value="{{ file_path }}"
+                       class="orphan-checkbox">
+              </td>
+              <td>
+                <img src="{{ media_url }}{{ file_path }}" alt="{{ file_path }}" style="max-width: 120px; max-height: 80px;">
+              </td>
+              <td>
+                <code>{{ file_path }}</code>
+              </td>
+              <td>
+                {# We don't have size from the view; could be added later if needed #}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div style="margin-top: 1em;">
+        <input type="submit"
+               value="Delete Selected Orphans"
+               class="deletelink"
+               onclick="return confirm('Are you sure you want to permanently delete the selected files from disk?');">
+      </div>
+    </form>
+
+    <script>
+      (function() {
+        const selectAll = document.getElementById('select-all-orphans');
+        if (!selectAll) return;
+        const checkboxes = document.querySelectorAll('.orphan-checkbox');
+        selectAll.addEventListener('change', function () {
+          checkboxes.forEach(cb => {
+            cb.checked = selectAll.checked;
+          });
+        });
+      })();
+    </script>
+  {% endif %}
+{% endblock %}
+

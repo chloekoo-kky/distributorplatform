@@ -96,7 +96,8 @@ class Quotation(models.Model):
     # --- END UPDATED PROPERTY ---
 
     def __str__(self):
-        return f"Quotation {self.quotation_id} from {self.supplier.name}"
+        supplier_name = self.supplier.name if getattr(self, "supplier", None) else "Unknown supplier"
+        return f"Quotation {self.quotation_id} from {supplier_name}"
 
 class QuotationItem(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='items')

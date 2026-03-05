@@ -74,19 +74,22 @@
 
             {# Bulk Selection Bar #}
             <div x-show="$store.images.bulkSelectedImageIds.length > 0"
-                 class="p-4 bg-indigo-50 border border-indigo-200 rounded-lg mb-4 flex justify-between items-center"
+                 class="p-4 bg-indigo-50 border border-indigo-200 rounded-lg mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                  x-transition>
                 <span class="font-medium text-indigo-700">
                     <span x-text="$store.images.bulkSelectedImageIds.length"></span> image(s) selected
                 </span>
-                <div>
+                <div class="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
                     <button @click="$store.images.openBulkAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
                         Bulk Assign to Gallery...
                     </button>
-                    <button @click="$store.images.openAutoAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 ml-2">
+                    <button @click="$store.images.openAutoAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700">
                         Auto-Assign to Products
                     </button>
-                    <button @click="$store.images.bulkSelectedImageIds = []; $store.images.lastSelectedIndex = null" class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md ml-2">
+                    <button @click="$store.images.deleteSelectedImages()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
+                        Delete Selected
+                    </button>
+                    <button @click="$store.images.bulkSelectedImageIds = []; $store.images.lastSelectedIndex = null" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white/70 hover:bg-gray-100 rounded-md">
                         Clear Selection
                     </button>
                 </div>
@@ -100,16 +103,17 @@
                 Loading images...
             </div>
 
-            {# Grid #}
+            {# Grid — key by index+id so each row is unique and checkbox & border stay in sync #}
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                <template x-for="(image, index) in $store.images.filteredImages" :key="image.id">
+                <template x-for="(image, index) in $store.images.filteredImages" :key="'img-' + index + '-' + (image.id || '')">
                     <div class="relative group bg-white rounded-md overflow-hidden shadow-md border"
-                         :class="{ 'ring-2 ring-indigo-500 border-indigo-500': $store.images.bulkSelectedImageIds.includes(image.id) }">
+                         :class="{ 'ring-2 ring-indigo-500 border-indigo-500': $store.images.bulkSelectedImageIds.some(id => id == image.id) }">
 
-                        {# Selection Checkbox #}
+                        {# Selection Checkbox — x-model keeps checkbox in sync; click handler only augments Shift+Click #}
                         <input type="checkbox"
-                               :checked="$store.images.bulkSelectedImageIds.includes(image.id)"
-                               @click.prevent.stop="$store.images.toggleImageSelection($event, image.id, index)"
+                               :value="image.id"
+                               x-model="$store.images.bulkSelectedImageIds"
+                               @click.stop="$store.images.handleImageCheckboxClick($event, image.id, index)"
                                class="absolute top-2 left-2 z-10 h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer">
 
                         {# Image Thumbnail #}

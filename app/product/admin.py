@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.db.models import Count
-from .models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection
+
 from import_export.admin import ImportExportMixin
+
+from .models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection
 from .resources import ProductResource, CategoryGroupResource, CategoryResource
 
 class CategoryGroupAdmin(ImportExportMixin, admin.ModelAdmin):

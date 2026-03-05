@@ -103,23 +103,20 @@
             },
 
             // --- Methods ---
-            toggleImageSelection(event, imageId, index) {
+            handleImageCheckboxClick(event, imageId, index) {
+                // Shift+Click: add the full range between lastSelectedIndex and this index.
+                // Let x-model handle the individual checkbox toggle; we just augment the selection.
                 if (event.shiftKey && this.lastSelectedIndex !== null) {
                     const start = Math.min(this.lastSelectedIndex, index);
                     const end = Math.max(this.lastSelectedIndex, index);
                     const filtered = this.filteredImages || [];
                     const range = filtered.slice(start, end + 1);
-                    const rangeIds = range.map(img => img.id);
-                    const merged = new Set([...this.bulkSelectedImageIds, ...rangeIds]);
+                    const rangeIds = range.map(img => String(img.id));
+                    const currentIds = this.bulkSelectedImageIds.map(id => String(id));
+                    const merged = new Set([...currentIds, ...rangeIds]);
                     this.bulkSelectedImageIds = Array.from(merged);
-                } else {
-                    const idx = this.bulkSelectedImageIds.findIndex(id => id == imageId);
-                    if (idx >= 0) {
-                        this.bulkSelectedImageIds = this.bulkSelectedImageIds.filter(id => id != imageId);
-                    } else {
-                        this.bulkSelectedImageIds = [...this.bulkSelectedImageIds, imageId];
-                    }
                 }
+                // For normal clicks, x-model will toggle the checkbox and update bulkSelectedImageIds.
                 this.lastSelectedIndex = index;
             },
             formatImageTitle(name) {
@@ -204,6 +201,46 @@
                         this.galleryImages.splice(this.galleryImages.findIndex(img => img.id === imageId), 1);
                         Alpine.store('globals').showToast(data.message);
                     } else { throw new Error(data.error || 'Failed to delete'); }
+                } catch (err) {
+                    Alpine.store('globals').showToast('Delete error: ' + err.message, 'error');
+                }
+            },
+
+            async deleteSelectedImages() {
+                if (!this.bulkSelectedImageIds.length) {
+                    Alpine.store('globals').showToast('No images selected to delete.', 'warning');
+                    return;
+                }
+                if (!confirm(`Delete ${this.bulkSelectedImageIds.length} selected image(s)? This cannot be undone.`)) {
+                    return;
+                }
+                try {
+                    const response = await fetch(`{% url 'images:ajax_bulk_delete_images' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken || document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({ image_ids: this.bulkSelectedImageIds })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        const deleted = data.deleted_ids || [];
+                        if (deleted.length) {
+                            this.galleryImages = this.galleryImages.filter(img => !deleted.includes(img.id));
+                            this.bulkSelectedImageIds = this.bulkSelectedImageIds.filter(id => !deleted.includes(id));
+                        }
+                        this.lastSelectedIndex = null;
+                        let msg = data.message || `Deleted ${deleted.length} image(s).`;
+                        if (data.protected_ids && data.protected_ids.length) {
+                            msg += ' Some images could not be deleted because they are in use.';
+                        }
+                        Alpine.store('globals').showToast(msg);
+                    } else {
+                        Alpine.store('globals').showToast(data.error || 'Failed to delete images.', 'error');
+                    }
                 } catch (err) {
                     Alpine.store('globals').showToast('Delete error: ' + err.message, 'error');
                 }

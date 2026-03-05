@@ -60,18 +60,19 @@ class QuotationResource(resources.ModelResource):
         return product
 
     def _get_or_create_quotation(self, quotation_id, supplier, date_quoted, notes, transport_cost):
-        """ Finds or creates/updates a quotation header """
+        """ Finds or creates/updates a quotation header (notes must be str, not None). """
+        notes_val = notes if notes is not None else ''
         quotation, created = Quotation.objects.get_or_create(
             quotation_id=quotation_id,
             defaults={
                 'supplier': supplier, 'date_quoted': date_quoted,
-                'notes': notes, 'transportation_cost': transport_cost
+                'notes': notes_val, 'transportation_cost': transport_cost
             }
         )
         if not created: # Update existing
             quotation.supplier = supplier
             quotation.date_quoted = date_quoted
-            quotation.notes = notes
+            quotation.notes = notes_val
             quotation.transportation_cost = transport_cost
             quotation.save()
         return quotation
@@ -92,8 +93,8 @@ class QuotationResource(resources.ModelResource):
             quantity_str = self._clean_str(row.get('Quantity'), 'Quantity')
             price_str = self._clean_str(row.get('Quoted Price (Unit)'), 'Quoted Price (Unit)')
 
-            # --- Clean optional fields ---
-            notes = self._clean_str(row.get('Quotation Notes'), 'Quotation Notes', required=False)
+            # --- Clean optional fields (use '' for notes so DB never gets NULL) ---
+            notes = self._clean_str(row.get('Quotation Notes'), 'Quotation Notes', required=False) or ''
             transport_cost_str = self._clean_str(row.get('Transportation Cost'), 'Transportation Cost', required=False) or '0'
 
             # --- Validate and Convert ---
@@ -119,11 +120,9 @@ class QuotationResource(resources.ModelResource):
             row['_quotation_obj'] = quotation
 
         except ValueError as e:
-             from import_export.results import RowResult
-             raise self.skip_row(f"Row {row_number}: {e}")
+             raise ValueError(f"Row {row_number}: {e}")
         except Exception as e:
-             from import_export.results import RowResult
-             raise self.skip_row(f"Row {row_number}: Unexpected error - {e}")
+             raise ValueError(f"Row {row_number}: Unexpected error - {e}")
 
     def get_instance(self, instance_loader, row):
         """ Find existing QuotationItem based on quotation and product. """
@@ -158,11 +157,9 @@ class QuotationResource(resources.ModelResource):
                  raise ValueError(f"'Quoted Price (Unit)' ('{price_str}') must be a valid number.")
 
         except ValueError as e:
-             from import_export.results import RowResult
-             raise self.skip_row(str(e))
+             raise ValueError(str(e))
         except Exception as e:
-             from import_export.results import RowResult
-             raise self.skip_row(f"Unexpected error populating object: {e}")
+             raise ValueError(f"Unexpected error populating object: {e}")
 
     # Optional: Customize how data is extracted for export
     def dehydrate_supplier_name(self, item):

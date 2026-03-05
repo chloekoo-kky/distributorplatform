@@ -188,6 +188,59 @@ def ajax_delete_image(request, image_id):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+@staff_required
+def ajax_bulk_delete_images(request):
+    """
+    Deletes multiple MediaImage records in one request.
+    """
+    if request.method != 'POST' or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
+
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        payload = {}
+
+    image_ids = payload.get('image_ids') or []
+    if not isinstance(image_ids, list) or not image_ids:
+        return JsonResponse({'success': False, 'error': 'No images selected for deletion.'}, status=400)
+
+    # Ensure IDs are integers
+    try:
+        image_ids = [int(i) for i in image_ids]
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid image ID list.'}, status=400)
+
+    to_delete = MediaImage.objects.filter(id__in=image_ids)
+    deleted_ids = []
+    protected_ids = []
+
+    for img in to_delete:
+        img_id = img.id
+        try:
+            img.delete()
+            deleted_ids.append(img_id)
+        except ProtectedError:
+            protected_ids.append(img_id)
+        except Exception:
+            # Skip unexpected errors for individual images but continue with others
+            continue
+
+    if not deleted_ids and protected_ids:
+        return JsonResponse({
+            'success': False,
+            'error': 'None of the selected images could be deleted because they are in use.',
+            'protected_ids': protected_ids,
+        }, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Deleted {len(deleted_ids)} image(s).',
+        'deleted_ids': deleted_ids,
+        'protected_ids': protected_ids,
+    })
+
 @staff_required
 @transaction.atomic
 def ajax_assign_to_products(request):

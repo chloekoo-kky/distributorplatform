@@ -505,6 +505,17 @@ def upload_products(request):
 
 
 @staff_required
+def scrape_website_products(request):
+    """
+    Deprecated: website scraping has been disabled and this endpoint is no longer in use.
+    Kept only as a stub so old imports/references fail gracefully if encountered.
+    """
+    return JsonResponse(
+        {'success': False, 'error': 'Website scraping has been disabled.'},
+        status=400,
+    )
+
+@staff_required
 def export_products_csv(request):
     """
     Handles the export of all products to a CSV file.
