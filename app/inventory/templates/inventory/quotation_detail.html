@@ -385,7 +385,7 @@
             dateQuoted: '{{ quotation.date_quoted|date:"Y-m-d" }}',
             notes: `{{ quotation.notes|escapejs|default:"" }}`,
             rateEUR: 4.9, // Default
-            rateUSD: 4.2, // Default
+            rateUSD: 4.2, // Default (will be overridden by latest saved value, if any)
             isSaving: false,
             showAssignProductsModal: false,
 
@@ -428,17 +428,36 @@
                     let finalQuotedPrice = '0.00';
                     if (currentPrice > 0) { finalQuotedPrice = currentPrice.toFixed(2); }
                     else if (prevPrice > 0) { finalQuotedPrice = prevPrice.toFixed(2); }
+
+                    // Default quantity to 1 (to avoid losing lines when user forgets to input quantity)
+                    let qty = parseInt(item.quantity);
+                    if (isNaN(qty) || qty < 1) {
+                        qty = 1;
+                    }
+
                     return {
                         ...item,
                         quoted_price: finalQuotedPrice,
                         previous_quoted_price: prevPrice.toFixed(2),
-                        quantity: Math.max(0, parseInt(item.quantity || 0))
+                        quantity: qty
                     };
                 });
                 // Read initial values from potentially autofilled inputs OR defaults
                 this.transportCost = parseFloat(document.getElementById('transport-cost-input').value) || initialTransportCost;
                 this.rateEUR = parseFloat(document.getElementById('rate-eur-input').value) || 4.9;
-                this.rateUSD = parseFloat(document.getElementById('rate-usd-input').value) || 4.2;
+
+                // Load last-used USD rate from localStorage if available
+                try {
+                    const savedUsd = window.localStorage.getItem('quotation_rate_usd');
+                    const parsedUsd = savedUsd !== null ? parseFloat(savedUsd) : NaN;
+                    if (!isNaN(parsedUsd) && parsedUsd > 0) {
+                        this.rateUSD = parsedUsd;
+                    } else {
+                        this.rateUSD = parseFloat(document.getElementById('rate-usd-input').value) || 4.2;
+                    }
+                } catch (e) {
+                    this.rateUSD = parseFloat(document.getElementById('rate-usd-input').value) || 4.2;
+                }
                 // Format initial values
                 this.formatTransportCost();
                 this.formatRateEUR();
@@ -555,7 +574,12 @@
             formatRateUSD() {
                  if (isNaN(this.rateUSD) || this.rateUSD <= 0) this.rateUSD = 0.1;
                  this.rateUSD = parseFloat(this.rateUSD.toFixed(1));
-                 // Input updates via x-model
+                 // Persist the last-used USD/MYR rate so new quotations can default to it
+                 try {
+                     window.localStorage.setItem('quotation_rate_usd', this.rateUSD.toString());
+                 } catch (e) {
+                     // ignore storage errors
+                 }
             },
 
             async submitUpdate() {
