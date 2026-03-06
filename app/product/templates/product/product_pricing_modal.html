@@ -77,6 +77,10 @@
                              (Single Source)
                         </span>
                     </div>
+                    <p x-show="selectedBaseCostSupplierName && pricingData.supplier_costs && pricingData.supplier_costs.length > 1"
+                       class="text-xs text-indigo-600 mt-1 font-medium">
+                        Selling price is calculated from: <span x-text="selectedBaseCostSupplierName"></span>
+                    </p>
 
                     <p x-show="!pricingData.base_cost" class="text-xs text-red-500 mt-1">
                         A price cannot be calculated without a base cost.

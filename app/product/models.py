@@ -148,6 +148,13 @@ class Product(models.Model):
         blank=True,
         help_text="Profit margin percentage (e.g., 20.00 for 20%)"
     )
+    saved_base_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="User-selected base cost (from a specific supplier quote). Used for pricing; shown in Set Product Pricing modal."
+    )
     members_only = models.BooleanField(default=False)
     is_featured = models.BooleanField(
         default=False,
@@ -216,31 +223,29 @@ class Product(models.Model):
     @property
     def base_cost(self):
         """
-        Gets the latest landed cost from the most recent Quotation Item
-        for this product.
+        Base cost used for pricing. If the user has chosen a source in Set Product
+        Pricing (saved_base_cost), that value is returned. Otherwise the latest
+        landed cost from the most recent Quotation Item is used.
         """
+        if self.saved_base_cost is not None:
+            return self.saved_base_cost
+
         # Import here to avoid circular dependency
         from inventory.models import QuotationItem
 
         # Check if data was prefetched by an API view
         if hasattr(self, 'latest_quotation_items'):
             # This attribute is created by the Prefetch in the API views
-            # We use self.latest_quotation_items[0] if the list is not empty
             latest_item = self.latest_quotation_items[0] if self.latest_quotation_items else None
         else:
-            # Original query for non-API use (e.g., templates, admin)
-            # We add select_related and prefetch_related here to optimize the standard non-api call
             latest_item = QuotationItem.objects.filter(
                 product=self
             ).select_related('quotation').prefetch_related('quotation__items').order_by('-quotation__date_quoted').first()
 
         if latest_item:
-            # Use the new property from QuotationItem
-            # This is now efficient because the related 'quotation' and 'quotation.items'
-            # were prefetched in either branch.
             return latest_item.landed_cost_per_unit
 
-        return None # Return None if no quotation has been logged
+        return None
 
     def get_absolute_url(self):
         """

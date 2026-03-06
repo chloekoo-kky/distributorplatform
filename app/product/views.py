@@ -914,13 +914,15 @@ def api_manage_pricing(request, product_id):
         product.selling_price = Decimal(selling_price_str) if selling_price_str is not None else None
         product.profit_margin = Decimal(profit_margin_str) if profit_margin_str is not None else None
         product.promotion_rate = Decimal(promotion_rate_str) if promotion_rate_str is not None else None
+        base_cost_str = data.get('base_cost')
+        product.saved_base_cost = Decimal(base_cost_str) if base_cost_str is not None and base_cost_str != '' else None
 
         # [DEBUG] Log the fields intended for update
-        update_fields_list = ['selling_price', 'profit_margin', 'is_promotion']
+        update_fields_list = ['selling_price', 'profit_margin', 'is_promotion', 'saved_base_cost']
         logger.info(f"[DEBUG][Pricing] Attempting to save with update_fields: {update_fields_list}")
 
         # --- CRITICAL: Ensure 'is_promotion' is in this list ---
-        product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate'])
+        product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate', 'saved_base_cost'])
 
         # [DEBUG] Verify the save by reloading from DB
         product.refresh_from_db()

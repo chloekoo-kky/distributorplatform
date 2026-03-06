@@ -10,8 +10,8 @@ def create_or_update_seo_for_product(sender, instance, created, **kwargs):
     """
     Automatically create or update a PageMetadata object
     when a Product is created or updated.
-    Uses page_name "Product: {sku}" so the same product is always updated
-    (avoids duplicate page_name when SKU/path changes).
+    Uses page_path as the lookup key so we never violate the unique constraint
+    on page_path (e.g. when an old row already has that path but a different page_name).
     """
     if not instance.sku:
         return  # Don't do anything if sku isn't set
@@ -24,12 +24,12 @@ def create_or_update_seo_for_product(sender, instance, created, **kwargs):
     page_name_by_sku = f"Product: {instance.sku}"
     meta_desc = (instance.description[:160] if instance.description else "") or ""
 
-    # Look up by stable page_name (Product: sku) so when SKU or path changes we update
-    # the same row instead of creating a duplicate (page_name is unique).
+    # Look up by page_path (unique). If a row already exists for this path (e.g. from
+    # a previous product or renamed SKU), we update it instead of inserting a duplicate.
     PageMetadata.objects.update_or_create(
-        page_name=page_name_by_sku,
+        page_path=page_path,
         defaults={
-            "page_path": page_path,
+            "page_name": page_name_by_sku,
             "meta_title": instance.name or page_name_by_sku,
             "meta_description": meta_desc,
         },
