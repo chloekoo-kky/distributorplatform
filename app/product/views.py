@@ -12,13 +12,14 @@ import datetime
 import logging
 import json
 import os
+import re
 import tempfile
 from django.core.serializers.json import DjangoJSONEncoder
 
 from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator, EmptyPage
-from inventory.models import QuotationItem
+from inventory.models import QuotationItem, InventoryBatch
 from inventory.views import staff_required
 
 from .models import Product, Category, CategoryGroup, ProductContentSection
@@ -691,6 +692,171 @@ def api_manage_products(request):
         }
     }, encoder=DjangoJSONEncoder)
 
+
+
+def _normalize_product_name_for_fuzzy(value):
+    """
+    Helper for cleaning product names before fuzzy comparison.
+    - Use only part before '|' (English name)
+    - Strip special characters
+    - Lowercase and collapse whitespace
+    """
+    if not value:
+        return "", []
+    base = str(value).split("|", 1)[0]
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", base).lower()
+    tokens = [t for t in cleaned.split() if t]
+    return " ".join(tokens), tokens
+
+
+def _name_similarity(tokens_a, tokens_b):
+    """Simple token-overlap similarity between two token lists."""
+    if not tokens_a or not tokens_b:
+        return 0.0
+    set_a = set(tokens_a)
+    set_b = set(tokens_b)
+    overlap = len(set_a & set_b)
+    return (2.0 * overlap) / (len(set_a) + len(set_b))
+
+
+@staff_required
+def api_product_merge_suggestions(request):
+    """
+    Returns groups of products whose names look similar, to help with cleaning.
+    Uses a lightweight token-overlap fuzzy match on a limited subset.
+    """
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+
+    search_query = request.GET.get("search", "").strip()
+    try:
+        min_score = float(request.GET.get("min_score", "0.7"))
+    except ValueError:
+        min_score = 0.7
+    try:
+        limit = int(request.GET.get("limit", "200"))
+    except ValueError:
+        limit = 200
+
+    qs = Product.objects.all().only("id", "name", "sku", "selling_price")
+    if search_query:
+        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+    products = list(qs.order_by("name")[:limit])
+
+    # Pre-compute tokens
+    norm_tokens = {}
+    for p in products:
+        _, tokens = _normalize_product_name_for_fuzzy(p.name)
+        norm_tokens[p.id] = tokens
+
+    # Build similarity graph (adjacency list)
+    n = len(products)
+    adjacency = {p.id: set() for p in products}
+    for i in range(n):
+        pi = products[i]
+        ti = norm_tokens.get(pi.id) or []
+        if not ti:
+            continue
+        for j in range(i + 1, n):
+            pj = products[j]
+            tj = norm_tokens.get(pj.id) or []
+            if not tj:
+                continue
+            score = _name_similarity(ti, tj)
+            if score >= min_score:
+                adjacency[pi.id].add(pj.id)
+                adjacency[pj.id].add(pi.id)
+
+    # Find connected components (each is a merge candidate group)
+    visited = set()
+    groups = []
+    for p in products:
+        if p.id in visited:
+            continue
+        stack = [p.id]
+        component_ids = []
+        while stack:
+            pid = stack.pop()
+            if pid in visited:
+                continue
+            visited.add(pid)
+            component_ids.append(pid)
+            stack.extend(adjacency.get(pid, []))
+        if len(component_ids) >= 2:
+            component_products = [pp for pp in products if pp.id in component_ids]
+            component_products.sort(key=lambda x: x.name.lower())
+            groups.append({
+                "group_id": min(component_ids),
+                "products": [
+                    {
+                        "id": x.id,
+                        "sku": x.sku or "",
+                        "name": x.name,
+                        "selling_price": str(x.selling_price) if x.selling_price is not None else None,
+                    }
+                    for x in component_products
+                ],
+            })
+
+    return JsonResponse({"groups": groups})
+
+
+@staff_required
+def api_merge_products(request):
+    """
+    Merge secondary products into a primary product.
+    POST JSON: { \"primary_id\": int, \"merge_ids\": [int, ...] }
+
+    Moves key references (QuotationItem, InventoryBatch, OrderItem, ProductContentSection),
+    merges categories/suppliers/gallery_images, then deletes the merged products.
+    """
+    if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
+        return JsonResponse({"success": False, "error": "Invalid request method."}, status=400)
+
+    try:
+        payload = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"success": False, "error": "Invalid JSON payload."}, status=400)
+
+    primary_id = payload.get("primary_id")
+    merge_ids = payload.get("merge_ids") or []
+    if not primary_id or not merge_ids:
+        return JsonResponse({"success": False, "error": "primary_id and merge_ids are required."}, status=400)
+
+    merge_ids = [int(i) for i in merge_ids if int(i) != int(primary_id)]
+    if not merge_ids:
+        return JsonResponse({"success": False, "error": "No valid secondary product IDs to merge."}, status=400)
+
+    primary = get_object_or_404(Product, pk=primary_id)
+    secondaries = list(Product.objects.filter(pk__in=merge_ids))
+    if not secondaries:
+        return JsonResponse({"success": False, "error": "No matching secondary products found."}, status=404)
+
+    from order.models import OrderItem
+    from product.models import ProductContentSection
+
+    try:
+        with transaction.atomic():
+            # 1) Merge many-to-many relations on the primary
+            for s in secondaries:
+                primary.categories.add(*s.categories.all())
+                primary.suppliers.add(*s.suppliers.all())
+                primary.gallery_images.add(*s.gallery_images.all())
+
+            # 2) Re-point core foreign keys
+            QuotationItem.objects.filter(product__in=secondaries).update(product=primary)
+            InventoryBatch.objects.filter(product__in=secondaries).update(product=primary)
+            OrderItem.objects.filter(product__in=secondaries).update(product=primary)
+            ProductContentSection.objects.filter(product__in=secondaries).update(product=primary)
+
+            # 3) Finally, delete secondary products
+            Product.objects.filter(pk__in=[s.id for s in secondaries]).delete()
+
+    except Exception as e:
+        logger.exception("Error while merging products")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    return JsonResponse({"success": True, "merged_count": len(secondaries)})
 
 
 @staff_required

@@ -13,6 +13,8 @@ urlpatterns = [
     path('api/product-details/<str:sku>/', views.api_get_product_details, name='api_get_product_details'),
     path('api/manage-pricing/<int:product_id>/', views.api_manage_pricing, name='api_manage_pricing'),
     path('api/manage-products/', views.api_manage_products, name='api_manage_products'),
+    path('api/product-merge-suggestions/', views.api_product_merge_suggestions, name='api_product_merge_suggestions'),
+    path('api/merge-products/', views.api_merge_products, name='api_merge_products'),
 
     # --- NEW: Category Management API ---
     path('api/manage-categories/', views.api_manage_categories, name='api_manage_categories'),

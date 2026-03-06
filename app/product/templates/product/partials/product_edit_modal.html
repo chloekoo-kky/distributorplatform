@@ -2,9 +2,10 @@
 {% load form_tags %}
 
 <div x-show="showProductEditModal"
+     x-cloak
+     style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
-     @keydown.escape.window="showProductEditModal = false"
-     style="display: none;">
+     @keydown.escape.window="showProductEditModal = false">
 
     <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl m-4 h-[90vh] flex flex-col"
          @click.away="showProductEditModal = false">

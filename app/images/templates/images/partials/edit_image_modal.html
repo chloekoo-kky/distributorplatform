@@ -2,10 +2,11 @@
 
 {# 1. FIX: Change x-show to $store.images.showImageEditModal #}
 <div x-show="$store.images.showImageEditModal"
+     x-cloak
+     style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
      {# 2. FIX: Change keydown to $store.images.showImageEditModal = false #}
-     @keydown.escape.window="$store.images.showImageEditModal = false"
-     style="display: none;">
+     @keydown.escape.window="$store.images.showImageEditModal = false">
 
     {# 3. FIX: Change click.away to $store.images.showImageEditModal = false #}
     <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg m-4 flex flex-col"
@@ -48,7 +49,7 @@
                             x-model.number="$store.images.currentImageToEdit.category_id"
                             class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option :value="null">Uncategorized</option>
-                        <template x-for="category in $store.globals.allImageCategories" :key="category.id">
+                        <template x-for="(category, index) in $store.globals.allImageCategories" :key="'img-cat-' + index">
                             <option :value="category.id" x-text="category.name"></option>
                         </template>
                     </select>

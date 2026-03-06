@@ -1,7 +1,8 @@
 <div x-show="showBannerModal"
+     x-cloak
+     style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
      @keydown.escape.window="showBannerModal = false"
-     style="display: none;"
      x-transition.opacity>
 
     <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 max-h-[90vh] flex flex-col"

@@ -155,7 +155,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="bg-white">
-                                                <template x-for="item in items" :key="item.product_sku">
+                                                <template x-for="(item, index) in items" :key="`${item.product_sku || 'row'}-${index}`">
                                                     <tr>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="item.product_sku"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-900 font-medium" x-text="item.product_name"></td>

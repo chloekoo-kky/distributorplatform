@@ -63,6 +63,12 @@
             viewMode: 'list', // 'list' or 'grid'
             selectedIds: [],
 
+            // --- Cleaning / Merge Tools State ---
+            showMergeToolsModal: false,
+            mergeIsLoading: false,
+            mergeGroups: [],
+            mergeSearch: '',
+
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
                 this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
@@ -125,6 +131,82 @@
                 // Open the PDF view in a new tab
                 const url = `{% url 'product:export_products_pdf' %}?ids=${ids}`;
                 window.open(url, '_blank');
+            },
+
+            // --- Product Cleaning / Merge Tools ---
+            openMergeTools() {
+                this.showMergeToolsModal = true;
+                this.mergeSearch = this.filterText || '';
+                this.loadMergeSuggestions();
+            },
+            closeMergeTools() {
+                this.showMergeToolsModal = false;
+                this.mergeGroups = [];
+                this.mergeIsLoading = false;
+            },
+            async loadMergeSuggestions() {
+                this.mergeIsLoading = true;
+                this.mergeGroups = [];
+                const params = new URLSearchParams({
+                    search: this.mergeSearch || '',
+                    min_score: '0.7',
+                    limit: '200'
+                });
+                try {
+                    const response = await fetch(`{% url 'product:api_product_merge_suggestions' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    const groups = data.groups || [];
+                    this.mergeGroups = groups.map(g => ({
+                        ...g,
+                        primary_id: g.products[0]?.id || null,
+                        merge_ids: g.products.slice(1).map(p => p.id),
+                        isMerging: false,
+                    }));
+                } catch (err) {
+                    console.error('Failed to load merge suggestions:', err);
+                    Alpine.store('globals').showToast('Could not load product cleaning suggestions.', 'error');
+                } finally {
+                    this.mergeIsLoading = false;
+                }
+            },
+            async mergeGroup(group) {
+                if (!group.primary_id || !group.merge_ids.length) {
+                    Alpine.store('globals').showToast('Please choose a primary and at least one product to merge.', 'error');
+                    return;
+                }
+                group.isMerging = true;
+                try {
+                    const response = await fetch(`{% url 'product:api_merge_products' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            primary_id: group.primary_id,
+                            merge_ids: group.merge_ids
+                        })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        Alpine.store('globals').showToast('Products merged successfully.');
+                        // Remove this group from the list
+                        this.mergeGroups = this.mergeGroups.filter(g => g.group_id !== group.group_id);
+                        // Refresh product table so data stays in sync
+                        this.fetchProducts(1);
+                    } else {
+                        Alpine.store('globals').showToast(data.error || 'Merge failed.', 'error');
+                    }
+                } catch (err) {
+                    console.error('Merge error:', err);
+                    Alpine.store('globals').showToast('Network error while merging products.', 'error');
+                } finally {
+                    group.isMerging = false;
+                }
             }
         }));
 

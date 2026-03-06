@@ -227,9 +227,6 @@ def api_get_quotation_items(request, quotation_id):
     """
     Returns a JSON list of all line items for a specific quotation.
     """
-    if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return JsonResponse({'error': 'Invalid request'}, status=400)
-
     try:
         # Ensure quotation exists
         quotation = get_object_or_404(Quotation, quotation_id=quotation_id)

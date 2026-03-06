@@ -1,9 +1,10 @@
 {# distributorplatform/app/images/templates/images/partials/bulk_assign_modal.html #}
 
 <div x-show="$store.images.showBulkAssignModal"
+     x-cloak
+     style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
-     @keydown.escape.window="$store.images.showBulkAssignModal = false"
-     style="display: none;">
+     @keydown.escape.window="$store.images.showBulkAssignModal = false">
 
     <div class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 h-[80vh] flex flex-col"
          @click.away="$store.images.showBulkAssignModal = false">
