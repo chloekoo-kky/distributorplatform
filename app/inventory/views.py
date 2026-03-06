@@ -21,6 +21,7 @@ import logging
 from decimal import Decimal
 from django.core.paginator import Paginator, EmptyPage
 import json
+import re
 
 from .forms import (
     InventoryBatchForm, QuotationUploadForm,
@@ -798,25 +799,85 @@ def _resolve_category(category_str):
     return None, raw
 
 
+def _normalize_product_name_for_match(value):
+    """
+    Prepare a product name for fuzzy matching:
+    - Use only the part before '|' (English name)
+    - Strip special characters
+    - Lowercase and collapse whitespace
+    """
+    if not value:
+        return "", []
+    base = str(value).split("|", 1)[0]
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", base).lower()
+    tokens = [t for t in cleaned.split() if t]
+    return " ".join(tokens), tokens
+
+
+def _name_similarity(tokens_a, tokens_b):
+    """
+    Very simple token overlap similarity between two token lists.
+    Returns a float between 0 and 1.
+    """
+    if not tokens_a or not tokens_b:
+        return 0.0
+    set_a = set(tokens_a)
+    set_b = set(tokens_b)
+    overlap = len(set_a & set_b)
+    return (2.0 * overlap) / (len(set_a) + len(set_b))
+
+
 def _resolve_product_by_sku_or_name(sku, name):
     """
-    Resolve product by SKU (exact) or by name (exact). Returns (product, match_type) or (None, 'new').
+    Resolve product by SKU (exact) or by name using a fuzzy, token-based match.
+    Returns (product, match_type) or (None, 'new').
     """
+    # 1) Strong signal: exact SKU match
     if sku:
         try:
             p = Product.objects.get(sku__iexact=sku)
-            return p, 'matched'
+            return p, "matched_sku"
         except Product.DoesNotExist:
             pass
-    if name:
-        try:
-            p = Product.objects.get(name__iexact=name)
-            return p, 'matched'
-        except Product.DoesNotExist:
-            pass
-        except Product.MultipleObjectsReturned:
-            pass
-    return None, 'new'
+
+    if not name:
+        return None, "new"
+
+    # 2) Exact name match (case-insensitive)
+    exact = Product.objects.filter(name__iexact=name).first()
+    if exact:
+        return exact, "matched_name_exact"
+
+    # 3) Fuzzy name match: token overlap on a small candidate set
+    normalized, tokens = _normalize_product_name_for_match(name)
+    if not tokens:
+        return None, "new"
+
+    # Use the first significant token to narrow the queryset
+    first_token = tokens[0]
+    candidates_qs = Product.objects.filter(
+        Q(name__icontains=first_token) | Q(sku__icontains=first_token)
+    ).only("id", "name", "sku")[:30]
+
+    best_product = None
+    best_score = 0.0
+    for candidate in candidates_qs:
+        cand_norm, cand_tokens = _normalize_product_name_for_match(candidate.name)
+        score = _name_similarity(tokens, cand_tokens)
+        # Light boost if the candidate SKU contains any of the tokens
+        if candidate.sku:
+            sku_lower = candidate.sku.lower()
+            if any(t in sku_lower for t in tokens):
+                score += 0.15
+        if score > best_score:
+            best_score = score
+            best_product = candidate
+
+    # Require a minimum similarity so obviously different products don't get auto-mapped
+    if best_product and best_score >= 0.55:
+        return best_product, "matched_name_fuzzy"
+
+    return None, "new"
 
 
 @staff_required
