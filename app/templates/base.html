@@ -417,6 +417,15 @@
                 </a>
 
                 {% if user.is_authenticated %}
+                    {% if user.is_superuser %}
+                    <a href="{% url 'core:manage_dashboard' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.view_name == 'core:manage_dashboard' %}active{% endif %}">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6A1.5 1.5 0 119 4.5 1.5 1.5 0 0110.5 6zm0 0H5.25m5.25 12h9.75m-9.75 0A1.5 1.5 0 119 16.5 1.5 1.5 0 0110.5 18zm0 0H5.25M3.75 9.75h9.75M3.75 9.75A1.5 1.5 0 115.25 8.25 1.5 1.5 0 013.75 9.75zm0 0H2.25m1.5 4.5h9.75m-9.75 0A1.5 1.5 0 115.25 12.75 1.5 1.5 0 013.75 14.25zm0 0H2.25" />
+                        </svg>
+                        <span class="text-[10px] font-bold leading-none mt-1">Manage</span>
+                        <span class="text-[9px] leading-none opacity-80 scale-90">Tools</span>
+                    </a>
+                    {% endif %}
                     <a href="{% url 'order:place_order' %}" class="flex flex-col items-center justify-center text-gray-500 hover:text-indigo-600 {% if request.resolver_match.view_name == 'order:place_order' %}active{% endif %}">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
