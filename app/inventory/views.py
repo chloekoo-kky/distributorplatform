@@ -800,12 +800,27 @@ def _normalize_product_name_for_match(value):
     """
     Prepare a product name for fuzzy matching:
     - Use only the part before '|' (English name)
+    - Normalise common unit patterns like '100u', '100U', '100 Unit', '100Units'
+      so they all compare the same.
     - Strip special characters
     - Lowercase and collapse whitespace
     """
     if not value:
         return "", []
+
     base = str(value).split("|", 1)[0]
+
+    # Normalise common unit notations so that e.g.
+    # "Wondertox 100u" and "WONDERTOX 100Unit" are treated as the same tokens.
+    # Examples handled:
+    #   100u, 100U, 100 u, 100 U, 100unit, 100 units, 100 Units  ->  "100unit"
+    base = re.sub(
+        r"(\d+)\s*(u|unit|units)\b",
+        r"\1unit",
+        base,
+        flags=re.IGNORECASE,
+    )
+
     cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", base).lower()
     tokens = [t for t in cleaned.split() if t]
     return " ".join(tokens), tokens

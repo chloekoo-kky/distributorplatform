@@ -643,22 +643,48 @@ def api_manage_products(request):
     for product in page_obj.object_list:
         category_list = [cat.name for cat in product.categories.all()]
         group_list = [cat.group.name for cat in product.categories.all() if cat.group]
-        supplier_list = [s.name for s in product.suppliers.all()]
-        supplier_costs = []
+
+        # Direct M2M suppliers attached to the product
+        m2m_supplier_list = [s.name for s in product.suppliers.all()]
+        supplier_costs: list[dict] = []
         seen_suppliers = set()
 
-        if hasattr(product, 'latest_quotation_items'):
-             for item in product.latest_quotation_items:
-                 sup_id = item.quotation.supplier_id
-                 if sup_id not in seen_suppliers:
-                     seen_suppliers.add(sup_id)
-                     cost = item.landed_cost_per_unit
-                     if cost is not None:
-                         supplier_costs.append({
-                             'supplier_name': item.quotation.supplier.name or "Unknown",
-                             'cost': cost,
-                             'date': item.quotation.date_quoted
-                         })
+        # When available, use the prefetched latest_quotation_items for performance.
+        # If not present (or empty), fall back to a direct query so that merged
+        # products still see ALL quotation items and supplier pricing.
+        if hasattr(product, "latest_quotation_items") and product.latest_quotation_items:
+            quotation_items = product.latest_quotation_items
+        else:
+            quotation_items = (
+                QuotationItem.objects.filter(product=product)
+                .select_related("quotation", "quotation__supplier")
+                .prefetch_related("quotation__items")
+                .order_by("-quotation__date_quoted")
+            )
+
+        for item in quotation_items:
+            sup_id = item.quotation.supplier_id
+            if sup_id in seen_suppliers:
+                continue
+            seen_suppliers.add(sup_id)
+            cost = item.landed_cost_per_unit
+            if cost is not None:
+                supplier_costs.append(
+                    {
+                        "supplier_name": item.quotation.supplier.name or "Unknown",
+                        "cost": cost,
+                        "date": item.quotation.date_quoted,
+                    }
+                )
+
+        # For the "Suppliers" column in Manage Products, we want to reflect all
+        # suppliers that currently have pricing for this product, not just those
+        # explicitly attached via the M2M field. If there are supplier_costs,
+        # derive the display list from them; otherwise fall back to the M2M list.
+        if supplier_costs:
+            suppliers_display = sorted({sc["supplier_name"] for sc in supplier_costs})
+        else:
+            suppliers_display = m2m_supplier_list
 
         product_data = {
             'id': product.pk,
@@ -670,7 +696,7 @@ def api_manage_products(request):
             'profit_margin': product.profit_margin,
             'base_cost': product.base_cost,
             'supplier_costs': supplier_costs,
-            'suppliers': supplier_list,
+            'suppliers': suppliers_display,
             'category_groups': sorted(list(set(group_list))),
             'categories': sorted(list(set(category_list))),
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
