@@ -718,6 +718,274 @@ def delete_quotation_item(request, pk):
     return redirect('inventory:quotation_detail', quotation_id=quotation_id)
 
 
+def _normalize_import_headers(row_dict):
+    """Normalize dict keys to lowercase for flexible column matching."""
+    return {str(k).strip().lower(): v for k, v in (row_dict or {}).items()}
+
+
+def _get_import_row_value(normalized_row, *candidate_keys):
+    """Get first non-empty value from row for any of the candidate keys (lowercase)."""
+    for key in candidate_keys:
+        val = normalized_row.get(key)
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return None
+
+
+def _parse_quotation_import_file(file):
+    """
+    Parse CSV or Excel file for quotation item import.
+    Returns (list of dicts, error_message).
+    Each dict: product_name, product_sku, quantity, quoted_price (str).
+    """
+    if not file.name.endswith(('.csv', '.xls', '.xlsx')):
+        return None, "Invalid file format. Use .csv, .xls, or .xlsx."
+    try:
+        dataset = Dataset()
+        if file.name.endswith('.csv'):
+            file_content = file.read()
+            try:
+                decoded = file_content.decode('utf-8')
+            except UnicodeDecodeError:
+                decoded = file_content.decode('latin-1')
+            dataset.load(decoded, format='csv')
+        else:
+            dataset.load(file.read(), format='xlsx')
+    except Exception as e:
+        return None, str(e)
+    if not dataset.height:
+        return [], None
+    rows = []
+    for i, row in enumerate(dataset.dict):
+        nr = _normalize_import_headers(row)
+        product_name = _get_import_row_value(nr, 'product', 'product name', 'product name ')
+        product_sku = _get_import_row_value(nr, 'product sku', 'sku')
+        category_str = _get_import_row_value(nr, 'category', 'category name')
+        qty_str = _get_import_row_value(nr, 'quantity', 'qty')
+        price_str = _get_import_row_value(nr, 'quoted price (unit)', 'quoted price', 'price')
+        if not product_name and not product_sku:
+            continue
+        rows.append({
+            'row_index': i + 1,
+            'product_name': product_name or '',
+            'product_sku': product_sku or '',
+            'category': category_str or '',
+            'quantity': qty_str,
+            'quoted_price': price_str,
+        })
+    return rows, None
+
+
+def _resolve_category(category_str):
+    """
+    Resolve category by code (exact) or by name (case-insensitive, first match). Returns (Category or None, display_name).
+    """
+    if not category_str or not str(category_str).strip():
+        return None, ''
+    raw = str(category_str).strip()
+    # Try by unique code first
+    cat = Category.objects.filter(code__iexact=raw).select_related('group').first()
+    if cat:
+        return cat, str(cat)
+    # Then by name (any group)
+    cat = Category.objects.filter(name__iexact=raw).select_related('group').first()
+    if cat:
+        return cat, str(cat)
+    # Optional: name contains (e.g. partial match)
+    cat = Category.objects.filter(name__icontains=raw).select_related('group').first()
+    if cat:
+        return cat, str(cat)
+    return None, raw
+
+
+def _resolve_product_by_sku_or_name(sku, name):
+    """
+    Resolve product by SKU (exact) or by name (exact). Returns (product, match_type) or (None, 'new').
+    """
+    if sku:
+        try:
+            p = Product.objects.get(sku__iexact=sku)
+            return p, 'matched'
+        except Product.DoesNotExist:
+            pass
+    if name:
+        try:
+            p = Product.objects.get(name__iexact=name)
+            return p, 'matched'
+        except Product.DoesNotExist:
+            pass
+        except Product.MultipleObjectsReturned:
+            pass
+    return None, 'new'
+
+
+@staff_required
+def import_quotation_items_preview(request, quotation_id):
+    """
+    POST with file: parse file and return preview rows with product mapping (matched or new).
+    Used when importing items into a specific quotation.
+    """
+    quotation = get_object_or_404(Quotation.objects.select_related('supplier'), quotation_id=quotation_id)
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'Method not allowed'}, status=405)
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({'ok': False, 'error': 'No file provided'}, status=400)
+    rows, parse_error = _parse_quotation_import_file(file)
+    if parse_error is not None:
+        return JsonResponse({'ok': False, 'error': parse_error}, status=400)
+    preview_rows = []
+    errors = []
+    for r in rows:
+        qty_str = r.get('quantity') or ''
+        price_str = r.get('quoted_price') or ''
+        try:
+            qty = int(qty_str) if qty_str else 0
+        except ValueError:
+            errors.append(f"Row {r['row_index']}: Invalid quantity '{qty_str}'.")
+            continue
+        try:
+            price = Decimal(price_str) if price_str else Decimal('0')
+        except Exception:
+            errors.append(f"Row {r['row_index']}: Invalid quoted price '{price_str}'.")
+            continue
+        if qty < 1:
+            errors.append(f"Row {r['row_index']}: Quantity must be at least 1.")
+            continue
+        if price < 0:
+            errors.append(f"Row {r['row_index']}: Quoted price cannot be negative.")
+            continue
+        product, match_type = _resolve_product_by_sku_or_name(r.get('product_sku'), r.get('product_name'))
+        name_for_new = (r.get('product_name') or '').strip() or (r.get('product_sku') or '').strip() or f"Imported item {r['row_index']}"
+        imported_category = (r.get('category') or '').strip()
+        category_obj, category_display = _resolve_category(imported_category) if imported_category else (None, '')
+        preview_rows.append({
+            'row_index': r['row_index'],
+            'product_id': product.id if product else None,
+            'product_sku': product.sku if product else None,
+            'product_name': product.name if product else None,
+            'quantity': qty,
+            'quoted_price': str(price),
+            'match_type': match_type,
+            'imported_name': r.get('product_name') or '',
+            'imported_sku': r.get('product_sku') or '',
+            'imported_category': imported_category,
+            'category_id': category_obj.id if category_obj else None,
+            'category_name': category_display,
+            'new_product_name': name_for_new if match_type == 'new' else None,
+            'new_product_sku': (r.get('product_sku') or '').strip() or None if match_type == 'new' else None,
+        })
+    return JsonResponse({
+        'ok': True,
+        'rows': preview_rows,
+        'errors': errors,
+        'quotation_id': quotation_id,
+    })
+
+
+@staff_required
+def import_quotation_items_confirm(request, quotation_id):
+    """
+    POST JSON: { "rows": [ { product_id?, new_product_name?, new_product_sku?, quantity, quoted_price } ] }.
+    For each row: use product_id if present; else create product with new_product_name (and optional new_product_sku).
+    Then create or update QuotationItem for this quotation.
+    """
+    quotation = get_object_or_404(Quotation.objects.select_related('supplier'), quotation_id=quotation_id)
+    if hasattr(quotation, 'invoice') and quotation.invoice:
+        return JsonResponse({'success': False, 'error': 'Cannot import items into an invoiced quotation.'}, status=400)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    rows = data.get('rows') or []
+    if not rows:
+        return JsonResponse({'success': False, 'error': 'No rows provided'}, status=400)
+    supplier = quotation.supplier
+    errors = []
+    created_products = []
+    try:
+        with transaction.atomic():
+            for i, row in enumerate(rows):
+                product_id = row.get('product_id')
+                new_name = (row.get('new_product_name') or '').strip()
+                new_sku = (row.get('new_product_sku') or '').strip() or None
+                try:
+                    qty = int(row.get('quantity'))
+                    price = Decimal(str(row.get('quoted_price', 0)))
+                except (ValueError, TypeError):
+                    errors.append(f"Row {i + 1}: Invalid quantity or quoted price.")
+                    continue
+                if qty < 1 or price < 0:
+                    errors.append(f"Row {i + 1}: Quantity must be ≥ 1 and price ≥ 0.")
+                    continue
+                product = None
+                if product_id:
+                    try:
+                        product = Product.objects.get(pk=product_id)
+                    except Product.DoesNotExist:
+                        errors.append(f"Row {i + 1}: Product ID {product_id} not found.")
+                        continue
+                else:
+                    if not new_name:
+                        errors.append(f"Row {i + 1}: Either product_id or new_product_name is required.")
+                        continue
+                    category_id = row.get('category_id')
+                    product = Product.objects.filter(name__iexact=new_name).first()
+                    if product:
+                        if new_sku and not product.sku and not Product.objects.filter(sku=new_sku).exclude(pk=product.pk).exists():
+                            product.sku = new_sku
+                            product.save(update_fields=['sku'])
+                    else:
+                        sku_to_use = new_sku if new_sku and not Product.objects.filter(sku=new_sku).exists() else None
+                        product = Product.objects.create(name=new_name, description='', sku=sku_to_use)
+                        created_products.append(product.id)
+                    if not product.suppliers.filter(pk=supplier.pk).exists():
+                        product.suppliers.add(supplier)
+                    if category_id and product:
+                        try:
+                            cat = Category.objects.get(pk=category_id)
+                            if not product.categories.filter(pk=cat.pk).exists():
+                                product.categories.add(cat)
+                        except Category.DoesNotExist:
+                            pass
+                existing_item = QuotationItem.objects.filter(quotation=quotation, product=product).first()
+                if existing_item:
+                    existing_item.quantity = qty
+                    existing_item.quoted_price = price
+                    existing_item.save(update_fields=['quantity', 'quoted_price'])
+                else:
+                    QuotationItem.objects.create(quotation=quotation, product=product, quantity=qty, quoted_price=price)
+    except Exception as e:
+        logger.exception("import_quotation_items_confirm failed")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    return JsonResponse({
+        'success': True,
+        'message': f"Imported {len(rows)} item(s).",
+        'created_products_count': len(created_products),
+    })
+
+
+@staff_required
+def api_products_for_mapping(request):
+    """GET ?q=... returns products for import mapping dropdown (id, name, sku)."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    q = (request.GET.get('q') or '').strip()[:100]
+    if not q:
+        products = Product.objects.all().order_by('name')[:50]
+    else:
+        products = Product.objects.filter(
+            Q(name__icontains=q) | Q(sku__icontains=q)
+        ).order_by('name')[:30]
+    return JsonResponse({
+        'products': [{'id': p.id, 'name': p.name, 'sku': p.sku or ''} for p in products],
+    })
+
+
 @staff_required
 def assign_product_to_supplier(request, quotation_id):
     """

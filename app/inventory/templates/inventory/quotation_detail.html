@@ -30,6 +30,9 @@
              data-transport-cost="{{ initial_transport_cost|safe }}"
              data-is-locked="{{ quotation.invoice|yesno:'true,false' }}"
              data-update-url="{% url 'inventory:quotation_detail' quotation.quotation_id %}"
+             data-import-preview-url="{% url 'inventory:import_quotation_items_preview' quotation.quotation_id %}"
+             data-import-confirm-url="{% url 'inventory:import_quotation_items_confirm' quotation.quotation_id %}"
+             data-products-mapping-url="{% url 'inventory:api_products_for_mapping' %}"
              data-csrf-token="{{ csrf_token }}"
         >
 
@@ -150,11 +153,20 @@
             <div class="bg-white shadow-lg rounded-lg overflow-hidden">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-b">
                     <h3 class="text-xl font-semibold text-gray-700">Products from {{ quotation.supplier.name }}</h3>
-                    <button type="button"
-                            @click="showAssignProductsModal = true"
-                            class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Assign Products to Supplier
-                    </button>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {% if not quotation.invoice %}
+                        <button type="button"
+                                @click="openImportModal()"
+                                class="px-4 py-1.5 text-sm font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
+                            Import Items
+                        </button>
+                        {% endif %}
+                        <button type="button"
+                                @click="showAssignProductsModal = true"
+                                class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                            Assign Products to Supplier
+                        </button>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -362,6 +374,140 @@
                 </div>
             </div>
 
+            <!-- Import Items: Step 1 - Upload file -->
+            <div x-show="showImportModal"
+                 x-cloak
+                 class="fixed inset-0 z-50 overflow-y-auto"
+                 aria-labelledby="import-modal-title"
+                 role="dialog"
+                 aria-modal="true">
+                <div class="flex min-h-screen items-center justify-center p-4">
+                    <div x-show="showImportModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeImportModal()"></div>
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                        <h3 id="import-modal-title" class="text-lg font-semibold text-gray-900 mb-4">Import items from file</h3>
+                        <p class="text-sm text-gray-500 mb-4">Upload a CSV or Excel file with columns: <strong>Product</strong> (or Product Name), <strong>Product SKU</strong> (optional), <strong>Category</strong> (optional; used when creating new products), <strong>Quantity</strong>, <strong>Quoted Price (Unit)</strong>.</p>
+                        <form @submit.prevent="submitImportFile()" class="space-y-4">
+                            <div>
+                                <label for="import-currency" class="block text-sm font-medium text-gray-700 mb-1">Currency in file</label>
+                                <select id="import-currency" x-model="importCurrency" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="MYR">MYR</option>
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">Prices will be converted to MYR on confirm using the quotation rates.</p>
+                            </div>
+                            <input type="file"
+                                   @change="importFile = $event.target.files[0]"
+                                   accept=".csv,.xls,.xlsx"
+                                   class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700">
+                            <p x-show="importError" x-text="importError" class="text-sm text-red-600"></p>
+                            <div class="flex justify-end gap-2">
+                                <button type="button" @click="closeImportModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50">Cancel</button>
+                                <button type="submit" :disabled="!importFile || isImportingPreview" class="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-50">
+                                    <span x-show="!isImportingPreview">Preview &amp; map</span>
+                                    <span x-show="isImportingPreview">Loading…</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Import Items: Step 2 - Product mapping & confirm -->
+            <div x-show="showImportMappingModal"
+                 x-cloak
+                 class="fixed inset-0 z-50 overflow-y-auto"
+                 aria-labelledby="import-mapping-title"
+                 role="dialog"
+                 aria-modal="true">
+                <div class="flex min-h-screen items-center justify-center p-4">
+                    <div x-show="showImportMappingModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeImportMappingModal()"></div>
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                        <div class="p-6 border-b">
+                            <h3 id="import-mapping-title" class="text-lg font-semibold text-gray-900">Review and map products</h3>
+                            <p class="text-sm text-gray-500 mt-1">Match rows to existing products or create new ones. Then confirm to add items to this quotation.</p>
+                        </div>
+                        <div class="flex-1 overflow-auto p-6">
+                            <p class="text-xs text-gray-500 mb-2" x-show="importCurrency !== 'MYR'" x-text="'Prices in file are in ' + importCurrency + '. They will be converted to MYR on confirm.'"></p>
+                            <p x-show="importMappingRows.length === 0" class="text-amber-600 text-sm py-4">No items left. Remove rows above or cancel and upload again.</p>
+                            <table x-show="importMappingRows.length > 0" class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 w-10 text-center font-medium text-gray-600"></th>
+                                        <th class="px-3 py-2 text-left font-medium text-gray-600">#</th>
+                                        <th class="px-3 py-2 text-left font-medium text-gray-600">Imported</th>
+                                        <th class="px-3 py-2 text-left font-medium text-gray-600">Map to product</th>
+                                        <th class="px-3 py-2 text-right font-medium text-gray-600 w-24">Qty</th>
+                                        <th class="px-3 py-2 text-right font-medium text-gray-600 w-28" x-text="'Price (' + importCurrency + ')'"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <template x-for="(row, idx) in importMappingRows" :key="'import-row-' + idx">
+                                        <tr>
+                                            <td class="px-2 py-2 text-center">
+                                                <button type="button" @click="removeImportRow(idx)" class="text-red-500 hover:text-red-700 p-1 rounded" title="Remove from import">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                </button>
+                                            </td>
+                                            <td class="px-3 py-2 text-gray-500" x-text="row.row_index"></td>
+                                            <td class="px-3 py-2">
+                                                <span x-text="row.imported_name || row.imported_sku || '-'"></span>
+                                                <span x-show="row.imported_sku" class="text-gray-400 text-xs ml-1" x-text="'(SKU: ' + row.imported_sku + ')'"></span>
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <template x-if="row.product_id">
+                                                    <div class="flex items-center gap-1">
+                                                        <span class="text-gray-800" x-text="(row.product_sku ? row.product_sku + ' - ' : '') + (row.product_name || '')"></span>
+                                                        <button type="button" @click="openMappingSearch(row, idx)" class="text-indigo-600 hover:underline text-xs">Change</button>
+                                                    </div>
+                                                </template>
+                                                <template x-if="!row.product_id">
+                                                    <div class="space-y-1">
+                                                        <span class="text-emerald-600 text-xs font-medium">New product:</span>
+                                                        <input type="text" x-model="row.new_product_name" placeholder="Product name" class="w-full rounded border border-gray-300 px-2 py-1 text-sm">
+                                                        <input type="text" x-model="row.new_product_sku" placeholder="SKU (editable)" class="w-full rounded border border-gray-300 px-2 py-1 text-sm font-mono">
+                                                        <p x-show="row.category_name || row.imported_category" class="text-xs text-gray-600">
+                                                            <span class="font-medium">Category from file:</span> <span x-text="row.category_name || row.imported_category || '—'"></span>
+                                                        </p>
+                                                        <button type="button" @click="openMappingSearch(row, idx)" class="text-indigo-600 hover:underline text-xs">Map to existing instead</button>
+                                                    </div>
+                                                </template>
+                                                <!-- Inline search dropdown for this row -->
+                                                <div x-show="mappingSearchRowIndex === idx" class="mt-1 border rounded bg-white shadow-lg p-2 max-w-xs" @click.stop>
+                                                    <input type="text" x-ref="mappingSearchInput" @input.debounce.200ms="fetchProductsForMapping($event.target.value)"
+                                                           placeholder="Search by name or SKU..." class="w-full rounded border px-2 py-1 text-sm mb-2">
+                                                    <div class="max-h-40 overflow-y-auto space-y-1">
+                                                        <div @click="setCreateNew(row)" class="cursor-pointer px-2 py-1 hover:bg-emerald-50 rounded text-sm text-emerald-700 font-medium">— Create new product —</div>
+                                                        <template x-for="p in mappingSearchProducts" :key="p.id">
+                                                            <div @click="applyMapping(row, p)" class="cursor-pointer px-2 py-1 hover:bg-indigo-50 rounded text-sm" x-text="(p.sku ? p.sku + ' - ' : '') + p.name"></div>
+                                                        </template>
+                                                        <p x-show="mappingSearchProducts.length === 0 && mappingSearchQuery" class="text-gray-500 text-xs px-2">No products found</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-2 text-right" x-text="row.quantity"></td>
+                                            <td class="px-3 py-2 text-right" x-text="row.quoted_price"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="p-6 border-t flex justify-between items-center">
+                            <p x-show="importConfirmError" x-text="importConfirmError" class="text-sm text-red-600"></p>
+                            <div class="flex gap-2 ml-auto">
+                                <button type="button" @click="closeImportMappingModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50">Cancel</button>
+                                <button type="button" @click="confirmImportItems()" :disabled="isImportingConfirm || importMappingRows.length === 0" class="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-50">
+                                    <span x-show="!isImportingConfirm">Confirm import</span>
+                                    <span x-show="isImportingConfirm">Importing…</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -374,6 +520,9 @@
         const isLocked = editorElement.dataset.isLocked === 'true';
         const updateUrl = editorElement.dataset.updateUrl;
         const csrfToken = editorElement.dataset.csrfToken;
+        const importPreviewUrl = editorElement.dataset.importPreviewUrl || '';
+        const importConfirmUrl = editorElement.dataset.importConfirmUrl || '';
+        const productsMappingUrl = editorElement.dataset.productsMappingUrl || '';
 
         return {
             // --- State Properties ---
@@ -388,6 +537,21 @@
             rateUSD: 4.2, // Default (will be overridden by latest saved value, if any)
             isSaving: false,
             showAssignProductsModal: false,
+            showImportModal: false,
+            showImportMappingModal: false,
+            importCurrency: 'MYR',
+            importFile: null,
+            importMappingRows: [],
+            isImportingPreview: false,
+            isImportingConfirm: false,
+            importError: '',
+            importConfirmError: '',
+            mappingSearchRowIndex: null,
+            mappingSearchProducts: [],
+            mappingSearchQuery: '',
+            _importPreviewUrl: importPreviewUrl,
+            _importConfirmUrl: importConfirmUrl,
+            _productsMappingUrl: productsMappingUrl,
 
             // --- Computed Properties ---
             get sortedItems() {
@@ -640,7 +804,181 @@
                  } finally {
                      this.isSaving = false;
                  }
-             }
+             },
+
+            openImportModal() {
+                this.showImportModal = true;
+                this.showImportMappingModal = false;
+                this.importError = '';
+                this.importFile = null;
+            },
+            closeImportModal() {
+                this.showImportModal = false;
+                this.importError = '';
+            },
+            closeImportMappingModal() {
+                this.showImportMappingModal = false;
+                this.mappingSearchRowIndex = null;
+                this.importConfirmError = '';
+            },
+            async submitImportFile() {
+                if (!this.importFile || !this._importPreviewUrl) return;
+                this.isImportingPreview = true;
+                this.importError = '';
+                const formData = new FormData();
+                formData.append('file', this.importFile);
+                formData.append('csrfmiddlewaretoken', csrfToken);
+                try {
+                    const response = await fetch(this._importPreviewUrl, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': csrfToken },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (data.ok && data.rows && data.rows.length > 0) {
+                        this.importMappingRows = this.applyGeneratedSkusToPreviewRows(data.rows.map(r => ({ ...r })));
+                        this.showImportModal = false;
+                        this.showImportMappingModal = true;
+                        this.importConfirmError = '';
+                        if (data.errors && data.errors.length) {
+                            this.importConfirmError = 'Some rows had errors: ' + data.errors.join(' ');
+                        }
+                    } else {
+                        this.importError = data.error || (data.errors && data.errors.join(' ')) || 'No valid rows to import.';
+                    }
+                } catch (e) {
+                    this.importError = 'Failed to upload or parse file.';
+                } finally {
+                    this.isImportingPreview = false;
+                }
+            },
+            async confirmImportItems() {
+                if (!this._importConfirmUrl || !this.importMappingRows.length) return;
+                this.isImportingConfirm = true;
+                this.importConfirmError = '';
+                const rateUSD = parseFloat(this.rateUSD) || 4.2;
+                const rateEUR = parseFloat(this.rateEUR) || 4.9;
+                const rows = this.importMappingRows.map(r => {
+                    let priceMYR = parseFloat(r.quoted_price) || 0;
+                    if (this.importCurrency === 'USD' && rateUSD > 0) priceMYR = priceMYR * rateUSD;
+                    else if (this.importCurrency === 'EUR' && rateEUR > 0) priceMYR = priceMYR * rateEUR;
+                    const payload = {
+                        product_id: r.product_id || null,
+                        new_product_name: r.product_id ? null : (r.new_product_name || r.imported_name || r.imported_sku || '').trim() || null,
+                        new_product_sku: r.product_id ? null : (r.new_product_sku || r.imported_sku || '').trim() || null,
+                        quantity: parseInt(r.quantity, 10),
+                        quoted_price: priceMYR.toFixed(2)
+                    };
+                    if (r.category_id && !r.product_id) payload.category_id = r.category_id;
+                    return payload;
+                });
+                try {
+                    const response = await fetch(this._importConfirmUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({ rows })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.closeImportMappingModal();
+                        window.location.reload();
+                    } else {
+                        this.importConfirmError = data.error || (data.errors && data.errors.join(' ')) || 'Import failed.';
+                    }
+                } catch (e) {
+                    this.importConfirmError = 'Network error during import.';
+                } finally {
+                    this.isImportingConfirm = false;
+                }
+            },
+            openMappingSearch(row, idx) {
+                this.mappingSearchRowIndex = this.mappingSearchRowIndex === idx ? null : idx;
+                this.mappingSearchProducts = [];
+                if (this.mappingSearchRowIndex === idx) {
+                    this.$nextTick(() => {
+                        const input = this.$refs.mappingSearchInput;
+                        if (input) input.focus();
+                    });
+                }
+            },
+            async fetchProductsForMapping(q) {
+                const url = this._productsMappingUrl + (q ? '?q=' + encodeURIComponent(q) : '');
+                try {
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    this.mappingSearchProducts = data.products || [];
+                } catch (e) {
+                    this.mappingSearchProducts = [];
+                }
+            },
+            applyMapping(row, product) {
+                row.product_id = product.id;
+                row.product_name = product.name;
+                row.product_sku = product.sku || '';
+                row.new_product_name = null;
+                row.new_product_sku = null;
+                this.mappingSearchRowIndex = null;
+            },
+            setCreateNew(row) {
+                row.product_id = null;
+                row.product_name = null;
+                row.product_sku = null;
+                row.new_product_name = (row.imported_name || row.imported_sku || '').trim() || 'New product';
+                row.new_product_sku = this.generateSkuFromName(row.new_product_name, this.importMappingRows);
+                this.mappingSearchRowIndex = null;
+            },
+            removeImportRow(idx) {
+                this.importMappingRows.splice(idx, 1);
+                if (this.mappingSearchRowIndex === idx) this.mappingSearchRowIndex = null;
+                else if (this.mappingSearchRowIndex !== null && this.mappingSearchRowIndex > idx) this.mappingSearchRowIndex--;
+            },
+            generateSkuFromName(name, existingRows) {
+                if (!name || !name.trim()) return '';
+                const clean = name.split('|')[0].replace(/[^a-zA-Z0-9\s]/g, ' ').trim();
+                const words = clean.split(/\s+/).filter(Boolean);
+                const used = new Set((existingRows || this.importMappingRows || []).filter(r => !r.product_id && r.new_product_sku).map(r => (r.new_product_sku || '').toUpperCase()));
+                let part1 = 'XXX', part2 = 'XXX';
+                if (words.length >= 2) {
+                    part1 = words[0].slice(0, 3).toUpperCase().padEnd(3, 'X');
+                    part2 = words[1].slice(0, 3).toUpperCase().padEnd(3, 'X');
+                } else if (words.length === 1) {
+                    part1 = words[0].slice(0, 3).toUpperCase().padEnd(3, 'X');
+                    part2 = Math.random().toString(36).replace(/[^a-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'X');
+                }
+                let sku = part1 + '-' + part2;
+                let n = 1;
+                while (used.has(sku.toUpperCase())) {
+                    sku = part1 + '-' + part2 + '-' + n;
+                    n++;
+                }
+                return sku;
+            },
+            applyGeneratedSkusToPreviewRows(rows) {
+                const result = [];
+                const used = new Set();
+                for (const r of rows) {
+                    const row = { ...r };
+                    if (!row.product_id && (row.match_type === 'new' || !row.product_id)) {
+                        const name = (row.new_product_name || row.imported_name || row.imported_sku || '').trim();
+                        if (name) {
+                            let sku = this.generateSkuFromName(name, result);
+                            while (sku && used.has(sku.toUpperCase())) {
+                                const suffix = sku.includes('-') ? sku.split('-').pop() : '';
+                                const n = /^\d+$/.test(suffix) ? parseInt(suffix, 10) + 1 : 1;
+                                sku = (sku.replace(/-\d+$/, '') || sku) + '-' + n;
+                            }
+                            if (sku) used.add(sku.toUpperCase());
+                            row.new_product_sku = sku || (row.imported_sku || '').trim();
+                        }
+                    }
+                    result.push(row);
+                }
+                return result;
+            },
         }
     }
 </script>

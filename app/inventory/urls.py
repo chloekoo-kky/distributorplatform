@@ -21,6 +21,9 @@ urlpatterns = [
     path('create-quotation/', views.create_quotation, name='create_quotation'),
     path('quotation/<str:quotation_id>/', views.quotation_detail, name='quotation_detail'),
     path('quotation/<str:quotation_id>/assign-product/', views.assign_product_to_supplier, name='assign_product_to_supplier'),
+    path('quotation/<str:quotation_id>/import-items/preview/', views.import_quotation_items_preview, name='import_quotation_items_preview'),
+    path('quotation/<str:quotation_id>/import-items/confirm/', views.import_quotation_items_confirm, name='import_quotation_items_confirm'),
+    path('api/products-for-mapping/', views.api_products_for_mapping, name='api_products_for_mapping'),
     path('quotation-item/<int:pk>/delete/', views.delete_quotation_item, name='delete_quotation_item'),
     path('export-quotations/', views.export_quotations_csv, name='export_quotations_csv'),
 ]
