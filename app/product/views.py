@@ -686,6 +686,16 @@ def api_manage_products(request):
         else:
             suppliers_display = m2m_supplier_list
 
+        # DEBUG: inspect pricing and supplier costs for each product row in Manage Products
+        logger.debug(
+            "[manage_products] product_id=%s sku=%s saved_base_cost=%s base_cost_prop=%s supplier_costs=%s",
+            product.pk,
+            product.sku,
+            getattr(product, "saved_base_cost", None),
+            product.base_cost,
+            [(sc["supplier_name"], sc["cost"], sc["date"]) for sc in supplier_costs],
+        )
+
         product_data = {
             'id': product.pk,
             'sku': product.sku or '-',
@@ -963,10 +973,61 @@ def api_manage_pricing(request, product_id):
     """
     Handles updating pricing with DEBUG logging to trace data saving issues.
     """
-    if not (request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
 
     product = get_object_or_404(Product, pk=product_id)
+
+    # --- GET: return fresh pricing data for the modal (avoids frontend caching issues) ---
+    if request.method == 'GET':
+        # Recompute supplier_costs exactly like manage-products does, so the modal
+        # always uses a fresh, server-side view of quotations.
+        supplier_costs: list[dict] = []
+        seen_suppliers = set()
+
+        if hasattr(product, "latest_quotation_items") and product.latest_quotation_items:
+            quotation_items = product.latest_quotation_items
+        else:
+            quotation_items = (
+                QuotationItem.objects.filter(product=product)
+                .select_related("quotation", "quotation__supplier")
+                .prefetch_related("quotation__items")
+                .order_by("-quotation__date_quoted")
+            )
+
+        for item in quotation_items:
+            sup_id = item.quotation.supplier_id
+            if sup_id in seen_suppliers:
+                continue
+            seen_suppliers.add(sup_id)
+            cost = item.landed_cost_per_unit
+            if cost is not None:
+                supplier_costs.append(
+                    {
+                        "supplier_name": item.quotation.supplier.name or "Unknown",
+                        "cost": cost,
+                        "date": item.quotation.date_quoted,
+                    }
+                )
+
+        base_cost = product.base_cost
+        return JsonResponse({
+            'success': True,
+            'id': product.pk,
+            'sku': product.sku,
+            'name': product.name,
+            'selling_price': str(product.selling_price) if product.selling_price is not None else None,
+            'profit_margin': str(product.profit_margin) if product.profit_margin is not None else None,
+            'is_promotion': product.is_promotion,
+            'promotion_rate': str(product.promotion_rate) if product.promotion_rate is not None else None,
+            'saved_base_cost': str(product.saved_base_cost) if getattr(product, "saved_base_cost", None) is not None else None,
+            'base_cost': str(base_cost) if base_cost is not None else None,
+            'supplier_costs': supplier_costs,
+        })
+
+    # --- POST: existing pricing update flow ---
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
 
     try:
         # [DEBUG] Log the raw incoming data

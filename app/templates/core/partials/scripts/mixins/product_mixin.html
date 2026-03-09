@@ -54,39 +54,80 @@
             },
 
             // --- Pricing Methods ---
-            openPricingModal(product) {
-                const baseCost = product.base_cost ? parseFloat(product.base_cost) : null;
-                let profitMargin = product.profit_margin ? parseFloat(product.profit_margin) : null;
-                let sellingPrice = product.selling_price ? parseFloat(product.selling_price) : null;
-
-                if (baseCost !== null) {
-                    if (sellingPrice !== null && profitMargin === null) {
-                        if (sellingPrice > 0) {
-                            profitMargin = ((parseFloat(sellingPrice) - parseFloat(baseCost)) / parseFloat(sellingPrice)) * 100;
-                        }
-                    } else if (sellingPrice === null && profitMargin !== null) {
-                        const marginDecimal = parseFloat(profitMargin) / 100;
-                        if (marginDecimal < 1) {
-                            sellingPrice = baseCost / (1 - marginDecimal);
-                        }
-                    }
-                }
-
-                const supplierCosts = product.supplier_costs || [];
-
+            async openPricingModal(product) {
+                // Reset any previous pricing state so we never leak values between products.
                 this.pricingData = {
-                    id: product.id,
-                    name: product.name,
-                    base_cost: baseCost,
-                    profit_margin: profitMargin !== null ? Math.round(profitMargin) : null,
-                    selling_price: sellingPrice ? parseFloat(sellingPrice.toFixed(2)) : null,
-                    is_promotion: product.is_promotion || false,
-                    promotion_rate: product.promotion_rate ? parseFloat(product.promotion_rate) : null,
-                    update_url: `/api/manage-pricing/${product.id}/`,
-                    supplier_costs: supplierCosts
+                    id: null,
+                    name: '',
+                    base_cost: null,
+                    profit_margin: null,
+                    selling_price: null,
+                    is_promotion: false,
+                    promotion_rate: null,
+                    update_url: '',
+                    supplier_costs: []
                 };
 
                 this.showPricingModal = true;
+
+                try {
+                    const response = await fetch(`/api/manage-pricing/${product.id}/`, {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        }
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        Alpine.store('globals').showToast(data.error || 'Could not load pricing data.', 'error');
+                        this.showPricingModal = false;
+                        return;
+                    }
+
+                    console.log('[PricingModal][open]', data);
+
+                    const supplierCosts = (data.supplier_costs || []).map(sc => ({ ...sc }));
+                    let baseCost = null;
+                    // Only consider a base cost \"selected\" when saved_base_cost exists.
+                    if (data.saved_base_cost != null) {
+                        baseCost = parseFloat(data.saved_base_cost);
+                    }
+
+                    let profitMargin = data.profit_margin != null ? parseFloat(data.profit_margin) : null;
+                    let sellingPrice = data.selling_price != null ? parseFloat(data.selling_price) : null;
+
+                    if (baseCost !== null) {
+                        if (sellingPrice !== null && profitMargin === null) {
+                            if (sellingPrice > 0) {
+                                profitMargin = ((sellingPrice - baseCost) / sellingPrice) * 100;
+                            }
+                        } else if (sellingPrice === null && profitMargin !== null) {
+                            const marginDecimal = profitMargin / 100;
+                            if (marginDecimal < 1) {
+                                sellingPrice = baseCost / (1 - marginDecimal);
+                            }
+                        }
+                    }
+
+                    this.pricingData = {
+                        id: data.id,
+                        name: data.name,
+                        base_cost: baseCost,
+                        profit_margin: profitMargin !== null ? Math.round(profitMargin) : null,
+                        selling_price: sellingPrice != null ? parseFloat(sellingPrice.toFixed(2)) : null,
+                        is_promotion: !!data.is_promotion,
+                        promotion_rate: data.promotion_rate != null ? parseFloat(data.promotion_rate) : null,
+                        update_url: `/api/manage-pricing/${data.id}/`,
+                        supplier_costs: supplierCosts
+                    };
+
+                    console.log('[PricingModal][state]', this.pricingData);
+                } catch (err) {
+                    console.error('Failed to load pricing data:', err);
+                    Alpine.store('globals').showToast('Network error while loading pricing.', 'error');
+                    this.showPricingModal = false;
+                }
             },
 
             calculatePriceFromMargin() {

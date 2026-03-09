@@ -41,7 +41,9 @@
                         <div class="space-y-2 max-h-48 overflow-y-auto p-1">
                             <template x-for="(costInfo, idx) in pricingData.supplier_costs" :key="idx">
                                 <label class="relative flex items-start p-3 border rounded-lg cursor-pointer transition-all duration-200"
-                                       :class="{ 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500': pricingData.base_cost == costInfo.cost, 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50': pricingData.base_cost != costInfo.cost }">
+                                       :class="parseFloat(pricingData.base_cost) === parseFloat(costInfo.cost)
+                                                ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
+                                                : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'">
 
                                     <div class="flex items-center h-5">
                                         <input type="radio"
@@ -69,8 +71,8 @@
                     <div class="flex items-baseline space-x-2 mt-2">
                         <span class="text-sm text-gray-600">Current Base Cost:</span>
                         <p class="text-lg font-mono"
-                           :class="pricingData.base_cost ? 'text-gray-900' : 'text-red-500'"
-                           x-text="pricingData.base_cost ? `RM ${parseFloat(pricingData.base_cost).toFixed(2)}` : 'N/A (No quote found)'">
+                           :class="pricingData.base_cost ? 'text-gray-900' : 'text-gray-400'"
+                           x-text="pricingData.base_cost ? `RM ${parseFloat(pricingData.base_cost).toFixed(2)}` : '- (no source selected)'">
                         </p>
                         <span x-show="pricingData.supplier_costs && pricingData.supplier_costs.length <= 1 && pricingData.base_cost"
                               class="text-xs text-gray-500">
