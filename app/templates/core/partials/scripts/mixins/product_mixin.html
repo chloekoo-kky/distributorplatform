@@ -30,14 +30,21 @@
             uploadTotalRows: 0,
             uploadErrorMessage: '',
 
-            get pricingProfit() {
-                const cost = this.pricingData.base_cost;
-                const price = this.pricingData.selling_price;
-                if (cost === null || cost === undefined || price === null || price === undefined) {
+            commissionProfit() {
+                const sellPrice = parseFloat(this.pricingData.selling_price);
+                const baseCost = parseFloat(this.pricingData.base_cost);
+                if (isNaN(sellPrice) || isNaN(baseCost) || baseCost <= 0) {
                     return null;
                 }
-                const profit = parseFloat(price) - parseFloat(cost);
+                const profit = sellPrice - baseCost;
                 return profit > 0 ? profit : null;
+            },
+            commissionAmount(group) {
+                const profit = this.commissionProfit();
+                if (profit === null || !group || !group.commission_percentage) {
+                    return null;
+                }
+                return (profit * (group.commission_percentage / 100)).toFixed(2);
             },
 
             get selectedBaseCostSupplierName() {
@@ -123,6 +130,12 @@
                     };
 
                     console.log('[PricingModal][state]', this.pricingData);
+                    console.log('[CommissionDebug][afterSet]', {
+                        pricingProfit: this.pricingProfit,
+                        selling_price: this.pricingData.selling_price,
+                        base_cost: this.pricingData.base_cost,
+                        groups: Alpine.store('globals').allUserGroupsList,
+                    });
                 } catch (err) {
                     console.error('Failed to load pricing data:', err);
                     Alpine.store('globals').showToast('Network error while loading pricing.', 'error');
@@ -131,30 +144,30 @@
             },
 
             calculatePriceFromMargin() {
-                const cost = this.pricingData.base_cost;
-                const margin = this.pricingData.profit_margin;
+                const cost = parseFloat(this.pricingData.base_cost);
+                const margin = parseFloat(this.pricingData.profit_margin);
 
-                if (cost === null || cost === undefined || margin === null || margin === undefined) {
+                if (isNaN(cost) || isNaN(margin)) {
                     this.pricingData.selling_price = null;
                     return;
                 }
-                const marginDecimal = parseFloat(margin) / 100;
+                const marginDecimal = margin / 100;
                 if (marginDecimal >= 1) {
                     this.pricingData.selling_price = null;
                     return;
                 }
-                const price = parseFloat(cost) / (1 - marginDecimal);
+                const price = cost / (1 - marginDecimal);
                 this.pricingData.selling_price = parseFloat(price.toFixed(2));
             },
 
             calculateMarginFromPrice() {
-                const cost = this.pricingData.base_cost;
-                const price = this.pricingData.selling_price;
-                if (cost === null || cost === undefined || price === null || price === undefined || price === 0) {
+                const cost = parseFloat(this.pricingData.base_cost);
+                const price = parseFloat(this.pricingData.selling_price);
+                if (isNaN(cost) || isNaN(price) || price === 0) {
                     this.pricingData.profit_margin = null;
                     return;
                 }
-                const margin = ((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100;
+                const margin = ((price - cost) / price) * 100;
                 this.pricingData.profit_margin = Math.round(margin);
             },
 

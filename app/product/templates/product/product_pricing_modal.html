@@ -120,16 +120,16 @@
                 <div>
                     <span class="font-semibold text-gray-700 block mb-2">Commission Estimates</span>
 
-                    <div x-show="pricingProfit === null" class="text-xs text-gray-500 italic">
+                    <div x-show="commissionProfit() === null" class="text-xs text-gray-500 italic">
                         Set a valid Selling Price > Cost to view commissions.
                     </div>
 
-                    <div x-show="pricingProfit !== null" class="space-y-2 max-h-32 overflow-y-auto pr-2 border border-gray-100 rounded-md p-2 bg-gray-50">
+                    <div x-show="commissionProfit() !== null" class="space-y-2 max-h-32 overflow-y-auto pr-2 border border-gray-100 rounded-md p-2 bg-gray-50">
                         <template x-for="group in $store.globals.allUserGroupsList" :key="group.id">
                             <div x-show="group.commission_percentage > 0" class="flex justify-between items-center text-sm p-2 bg-white rounded shadow-sm">
                                 <span class="text-gray-700 font-medium" x-text="group.name"></span>
                                 <div class="text-right">
-                                    <div class="text-green-600 font-bold" x-text="`RM ${(pricingProfit * (group.commission_percentage / 100)).toFixed(2)}`"></div>
+                                    <div class="text-green-600 font-bold" x-text="commissionAmount(group) ? `RM ${commissionAmount(group)}` : ''"></div>
                                     <div class="text-[10px] text-gray-400" x-text="`${group.commission_percentage}% of profit`"></div>
                                 </div>
                             </div>
