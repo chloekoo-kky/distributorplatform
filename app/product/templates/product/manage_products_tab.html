@@ -159,7 +159,7 @@
                                             <span class="text-gray-400">-</span>
                                         </template>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="product.categories.join(', ') || '-'"></td>
+                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="product.categories.map(c => c.split('|')[0].trim()).join(', ') || '-'"></td>
                                     <td class="px-6 py-4 text-sm text-gray-500" x-text="product.suppliers.join(', ') || '-'"></td>
 
                                     {% if user.is_superuser %}
@@ -247,7 +247,7 @@
                                     <h4 class="text-sm font-bold text-gray-900 line-clamp-2" x-text="product.name"></h4>
                                 </div>
                                 <p class="text-xs text-gray-500 mb-1">SKU: <span x-text="product.sku"></span></p>
-                                <p class="text-xs text-gray-500 mb-2 line-clamp-1" x-text="product.categories.join(', ')"></p>
+                                <p class="text-xs text-gray-500 mb-2 line-clamp-1" x-text="product.categories.map(c => c.split('|')[0].trim()).join(', ') || '-'"></p>
 
                                 <div class="mt-auto">
                                     <div class="flex justify-between items-center mb-1">
@@ -296,7 +296,7 @@
         </div>
     </div>
 
-    <!-- Product Cleaning / Merge Tools Modal -->
+    <!-- Duplicate Checklist (Product Cleaning / Merge Tools) Modal -->
     <div x-show="showMergeToolsModal"
          x-cloak
          style="display: none;"
@@ -304,9 +304,9 @@
         <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <div class="flex items-center justify-between px-6 py-4 border-b">
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-900">Product Cleaning Tools</h3>
+                    <h3 class="text-lg font-semibold text-gray-900">Duplicate Checklist</h3>
                     <p class="text-xs text-gray-500 mt-1">
-                        This tool helps you find products with similar names and merge duplicates into a single master product.
+                        Find similar products, merge duplicates into a master, or create custom merge groups. Dismissed groups are remembered.
                     </p>
                 </div>
                 <button type="button" @click="closeMergeTools()" class="text-gray-400 hover:text-gray-600">
@@ -316,26 +316,67 @@
                 </button>
             </div>
 
-            <div class="px-6 py-4 border-b bg-gray-50">
+            <div class="px-6 py-4 border-b bg-gray-50 space-y-4">
                 <div class="flex flex-col md:flex-row gap-3 items-start md:items-center">
                     <div class="flex-1">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Search scope</label>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Scan scope (for duplicate suggestions)</label>
                         <input type="text"
                                x-model="mergeSearch"
                                @keydown.enter.prevent="loadMergeSuggestions()"
-                               placeholder="Optional: narrow suggestions by SKU or name..."
+                               @input.debounce.500ms="loadMergeSuggestions()"
+                               placeholder="Optional: narrow by SKU or name. Leave blank for broader scan."
                                class="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        <p class="text-[11px] text-gray-500 mt-1">
-                            Leave blank to scan a broader set (limited to 200 products). Type a keyword to focus on a specific brand or family.
-                        </p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <button type="button"
+                            @click="loadMergeSuggestions()"
+                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                        Refresh suggestions
+                    </button>
+                </div>
+                <div class="border-t border-gray-200 pt-4">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Create custom merge group</label>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="text"
+                               x-model="mergeSearchQuery"
+                               @input.debounce.400ms="loadMergeSearch()"
+                               placeholder="Search products by SKU or name..."
+                               class="flex-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
                         <button type="button"
-                                @click="loadMergeSuggestions()"
-                                class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                            Refresh Suggestions
+                                @click="createCustomMergeGroup()"
+                                :disabled="!mergeSearchSelectedIds.length || mergeSearchSelectedIds.length < 2"
+                                class="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                            Create Custom Merge Group
                         </button>
                     </div>
+                    <p class="text-[11px] text-gray-500 mt-1">Select two or more products below, then create a group to merge.</p>
+                    <div x-show="mergeSearchResults.length > 0" class="mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
+                        <table class="min-w-full text-xs">
+                            <thead class="bg-gray-50 sticky top-0">
+                                <tr>
+                                    <th class="px-2 py-1.5 text-left w-8"></th>
+                                    <th class="px-2 py-1.5 text-left font-medium text-gray-500">SKU</th>
+                                    <th class="px-2 py-1.5 text-left font-medium text-gray-500">Name</th>
+                                    <th class="px-2 py-1.5 text-right font-medium text-gray-500">Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="p in mergeSearchResults" :key="p.id">
+                                    <tr class="border-t border-gray-100 hover:bg-gray-50">
+                                        <td class="px-2 py-1.5">
+                                            <input type="checkbox"
+                                                   :checked="mergeSearchSelectedIds.includes(p.id)"
+                                                   @change="toggleMergeSearchSelection(p.id)"
+                                                   class="h-4 w-4 text-amber-600 border-gray-300 rounded">
+                                        </td>
+                                        <td class="px-2 py-1.5 font-mono" x-text="p.sku || '-'"></td>
+                                        <td class="px-2 py-1.5" x-text="p.name"></td>
+                                        <td class="px-2 py-1.5 text-right" x-text="p.selling_price ? ('RM ' + Number(p.selling_price).toFixed(2)) : '-'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p x-show="mergeSearchLoading" class="text-xs text-gray-500 mt-1">Searching...</p>
                 </div>
             </div>
 
@@ -344,34 +385,42 @@
                     <div class="p-6 text-center text-gray-500 text-sm">Scanning products and building suggestions...</div>
                 </template>
                 <template x-if="!mergeIsLoading && mergeGroups.length === 0">
-                    <div class="p-6 text-center text-gray-500 text-sm">No merge suggestions found for the current scope.</div>
+                    <div class="p-6 text-center text-gray-500 text-sm">No merge groups yet. Refresh suggestions above or create a custom group.</div>
                 </template>
 
                 <div class="divide-y divide-gray-200" x-show="!mergeIsLoading && mergeGroups.length > 0">
                     <template x-for="group in mergeGroups" :key="group.group_id">
                         <div class="p-4">
-                            <div class="flex items-center justify-between mb-2">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div>
-                                    <h4 class="text-sm font-semibold text-gray-800">Similar products group</h4>
-                                    <p class="text-xs text-gray-500">Choose a master product, then tick the others you want to merge into it.</p>
+                                    <h4 class="text-sm font-semibold text-gray-800" x-text="String(group.group_id).startsWith('manual-') ? 'Custom merge group' : 'Similar products group'"></h4>
+                                    <p class="text-xs text-gray-500">Choose the master product; all others in this group will be merged into it.</p>
                                 </div>
-                                <button type="button"
-                                        @click="mergeGroup(group)"
-                                        :disabled="group.isMerging || !group.primary_id || !group.merge_ids.length"
-                                        class="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-50">
-                                    <span x-show="!group.isMerging">Merge selected</span>
-                                    <span x-show="group.isMerging">Merging…</span>
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button type="button"
+                                            @click="dismissGroup(group)"
+                                            class="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200">
+                                        Not duplicates
+                                    </button>
+                                    <button type="button"
+                                            @click="mergeGroup(group)"
+                                            :disabled="group.isMerging || !group.primary_id || group.products.length <= 1"
+                                            class="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-50">
+                                        <span x-show="!group.isMerging">Merge into master</span>
+                                        <span x-show="group.isMerging">Merging…</span>
+                                    </button>
+                                </div>
                             </div>
                             <div class="overflow-x-auto border border-gray-200 rounded-md">
                                 <table class="min-w-full text-xs divide-y divide-gray-200">
                                     <thead class="bg-gray-50">
                                         <tr>
                                             <th class="px-3 py-2 text-left font-medium text-gray-500">Master</th>
-                                            <th class="px-3 py-2 text-left font-medium text-gray-500">Merge?</th>
                                             <th class="px-3 py-2 text-left font-medium text-gray-500">SKU</th>
                                             <th class="px-3 py-2 text-left font-medium text-gray-500">Name</th>
+                                            <th class="px-3 py-2 text-left font-medium text-gray-500">Supplier</th>
                                             <th class="px-3 py-2 text-right font-medium text-gray-500">Selling Price</th>
+                                            <th class="px-3 py-2 text-center font-medium text-gray-500 w-16">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody class="bg-white divide-y divide-gray-100">
@@ -384,16 +433,20 @@
                                                            x-model="group.primary_id"
                                                            class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
                                                 </td>
-                                                <td class="px-3 py-2">
-                                                    <input type="checkbox"
-                                                           :value="p.id"
-                                                           x-model="group.merge_ids"
-                                                           :disabled="p.id === group.primary_id"
-                                                           class="h-4 w-4 text-emerald-600 border-gray-300 rounded">
-                                                </td>
                                                 <td class="px-3 py-2 font-mono" x-text="p.sku || '-'"></td>
                                                 <td class="px-3 py-2" x-text="p.name"></td>
+                                                <td class="px-3 py-2" x-text="(p.suppliers && p.suppliers.length) ? p.suppliers.join(', ') : '-'"></td>
                                                 <td class="px-3 py-2 text-right" x-text="p.selling_price ? ('RM ' + Number(p.selling_price).toFixed(2)) : '-'"></td>
+                                                <td class="px-3 py-2 text-center">
+                                                    <button type="button"
+                                                            @click="removeProductFromGroup(group, p.id)"
+                                                            class="text-gray-400 hover:text-red-600 focus:outline-none"
+                                                            title="Remove from group">
+                                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                        </svg>
+                                                    </button>
+                                                </td>
                                             </tr>
                                         </template>
                                     </tbody>

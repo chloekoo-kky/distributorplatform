@@ -76,6 +76,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'core.urls'
+LOGIN_URL = '/user/login/'
 LOGIN_REDIRECT_URL = 'product:product_list'
 
 TEMPLATES = [

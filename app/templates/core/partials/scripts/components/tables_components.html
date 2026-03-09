@@ -63,11 +63,15 @@
             viewMode: 'list', // 'list' or 'grid'
             selectedIds: [],
 
-            // --- Cleaning / Merge Tools State ---
+            // --- Duplicate Checklist / Merge Tools State ---
             showMergeToolsModal: false,
             mergeIsLoading: false,
             mergeGroups: [],
             mergeSearch: '',
+            mergeSearchQuery: '',
+            mergeSearchResults: [],
+            mergeSearchSelectedIds: [],
+            mergeSearchLoading: false,
 
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
@@ -143,6 +147,9 @@
                 this.showMergeToolsModal = false;
                 this.mergeGroups = [];
                 this.mergeIsLoading = false;
+                this.mergeSearchQuery = '';
+                this.mergeSearchResults = [];
+                this.mergeSearchSelectedIds = [];
             },
             async loadMergeSuggestions() {
                 this.mergeIsLoading = true;
@@ -161,19 +168,120 @@
                     this.mergeGroups = groups.map(g => ({
                         ...g,
                         primary_id: g.products[0]?.id || null,
-                        merge_ids: g.products.slice(1).map(p => p.id),
                         isMerging: false,
                     }));
                 } catch (err) {
                     console.error('Failed to load merge suggestions:', err);
-                    Alpine.store('globals').showToast('Could not load product cleaning suggestions.', 'error');
+                    Alpine.store('globals').showToast('Could not load duplicate suggestions.', 'error');
                 } finally {
                     this.mergeIsLoading = false;
                 }
             },
+            async loadMergeSearch() {
+                const q = (this.mergeSearchQuery || '').trim();
+                if (!q) {
+                    this.mergeSearchResults = [];
+                    return;
+                }
+                this.mergeSearchLoading = true;
+                try {
+                    const params = new URLSearchParams({ search: q, limit: '50' });
+                    const response = await fetch(`{% url 'product:api_product_search' %}?${params.toString()}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    const data = await response.json();
+                    this.mergeSearchResults = data.products || [];
+                } catch (err) {
+                    console.error('Merge search failed:', err);
+                    this.mergeSearchResults = [];
+                } finally {
+                    this.mergeSearchLoading = false;
+                }
+            },
+            toggleMergeSearchSelection(id) {
+                if (this.mergeSearchSelectedIds.includes(id)) {
+                    this.mergeSearchSelectedIds = this.mergeSearchSelectedIds.filter(i => i !== id);
+                } else {
+                    this.mergeSearchSelectedIds = [...this.mergeSearchSelectedIds, id];
+                }
+            },
+            createCustomMergeGroup() {
+                if (this.mergeSearchSelectedIds.length < 2) {
+                    Alpine.store('globals').showToast('Select at least two products to create a merge group.', 'error');
+                    return;
+                }
+                const products = this.mergeSearchResults.filter(p => this.mergeSearchSelectedIds.includes(p.id));
+                if (products.length < 2) {
+                    Alpine.store('globals').showToast('Select at least two products from the search results.', 'error');
+                    return;
+                }
+                const groupId = 'manual-' + Date.now();
+                this.mergeGroups = [...this.mergeGroups, {
+                    group_id: groupId,
+                    products: products,
+                    primary_id: products[0].id,
+                    isMerging: false,
+                }];
+                this.mergeSearchSelectedIds = [];
+                Alpine.store('globals').showToast('Custom merge group created. Choose the master and click Merge into master.');
+            },
+            removeProductFromGroup(group, productId) {
+                const products = (group.products || []).filter(p => p.id !== productId);
+                group.products = products;
+                if (group.primary_id === productId) {
+                    group.primary_id = products.length ? products[0].id : null;
+                }
+                if (products.length <= 1) {
+                    this.mergeGroups = this.mergeGroups.filter(g => g.group_id !== group.group_id);
+                    if (products.length === 1) {
+                        Alpine.store('globals').showToast('Group removed (only one product left).');
+                    }
+                    return;
+                }
+                const fullGroupIds = (group.products || []).map(p => p.id).concat([productId]);
+                if (fullGroupIds.length >= 2) {
+                    fetch(`{% url 'product:api_ignore_merge_suggestion' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ product_ids: fullGroupIds })
+                    }).then(r => r.json()).catch(() => {});
+                }
+            },
+            async dismissGroup(group) {
+                const ids = (group.products || []).map(p => p.id);
+                if (!ids.length) return;
+                try {
+                    const response = await fetch(`{% url 'product:api_ignore_merge_suggestion' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ product_ids: ids })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.mergeGroups = this.mergeGroups.filter(g => g.group_id !== group.group_id);
+                        Alpine.store('globals').showToast('Group dismissed. It will not appear again unless the set of products changes.');
+                    } else {
+                        Alpine.store('globals').showToast(data.error || 'Could not dismiss.', 'error');
+                    }
+                } catch (err) {
+                    console.error('Dismiss failed:', err);
+                    Alpine.store('globals').showToast('Network error.', 'error');
+                }
+            },
             async mergeGroup(group) {
-                if (!group.primary_id || !group.merge_ids.length) {
-                    Alpine.store('globals').showToast('Please choose a primary and at least one product to merge.', 'error');
+                const mergeIds = (group.products || []).filter(p => p.id !== group.primary_id).map(p => p.id);
+                if (!group.primary_id || !mergeIds.length) {
+                    Alpine.store('globals').showToast('Choose the master product; at least one other product in the group is required to merge.', 'error');
                     return;
                 }
                 group.isMerging = true;
@@ -188,7 +296,7 @@
                         },
                         body: JSON.stringify({
                             primary_id: group.primary_id,
-                            merge_ids: group.merge_ids
+                            merge_ids: mergeIds
                         })
                     });
                     const data = await response.json();

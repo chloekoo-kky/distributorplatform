@@ -270,3 +270,25 @@ class ProductContentSection(models.Model):
 
     def __str__(self):
         return f"{self.title} for {self.product.name}"
+
+
+class IgnoredMergeSuggestion(models.Model):
+    """
+    Stores product ID combinations that the user has dismissed as "Not duplicates".
+    Used by the Duplicate Checklist to hide suggestions that exactly match a dismissed set.
+    If a new product is added and the algorithm suggests a group that includes it,
+    the group has a different composition so it will reappear.
+    """
+    product_ids_signature = models.CharField(
+        max_length=500,
+        unique=True,
+        help_text="Sorted comma-separated product IDs, e.g. '12,34,56'. Used to match and exclude dismissed groups."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Ignored merge suggestion"
+        verbose_name_plural = "Ignored merge suggestions"
+
+    def __str__(self):
+        return f"Dismissed: {self.product_ids_signature}"

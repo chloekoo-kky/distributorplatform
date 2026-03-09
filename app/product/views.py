@@ -22,7 +22,7 @@ from django.core.paginator import Paginator, EmptyPage
 from inventory.models import QuotationItem, InventoryBatch
 from inventory.views import staff_required
 
-from .models import Product, Category, CategoryGroup, ProductContentSection
+from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
 
@@ -764,7 +764,7 @@ def api_product_merge_suggestions(request):
     except ValueError:
         limit = 200
 
-    qs = Product.objects.all().only("id", "name", "sku", "selling_price")
+    qs = Product.objects.prefetch_related("suppliers").only("id", "name", "sku", "selling_price")
     if search_query:
         qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
     products = list(qs.order_by("name")[:limit])
@@ -819,12 +819,24 @@ def api_product_merge_suggestions(request):
                         "sku": x.sku or "",
                         "name": x.name,
                         "selling_price": str(x.selling_price) if x.selling_price is not None else None,
+                        "suppliers": [s.name for s in x.suppliers.all()],
                     }
                     for x in component_products
                 ],
             })
 
-    return JsonResponse({"groups": groups})
+    # Exclude groups that exactly match a previously dismissed combination (Duplicate Checklist memory)
+    ignored_signatures = set(
+        IgnoredMergeSuggestion.objects.values_list("product_ids_signature", flat=True)
+    )
+    filtered_groups = []
+    for g in groups:
+        ids = sorted(p["id"] for p in g["products"])
+        signature = ",".join(str(i) for i in ids)
+        if signature not in ignored_signatures:
+            filtered_groups.append(g)
+
+    return JsonResponse({"groups": filtered_groups})
 
 
 @staff_required
@@ -863,19 +875,20 @@ def api_merge_products(request):
 
     try:
         with transaction.atomic():
-            # 1) Merge many-to-many relations on the primary
+            # 1) Merge many-to-many relations on the primary (categories, suppliers, gallery)
             for s in secondaries:
                 primary.categories.add(*s.categories.all())
                 primary.suppliers.add(*s.suppliers.all())
                 primary.gallery_images.add(*s.gallery_images.all())
 
-            # 2) Re-point core foreign keys
+            # 2) Transfer all Supplier Quotations (QuotationItem) and other FKs to the master.
+            #    Master keeps its SKU and Name; merged products' quotation/cost data is retained on primary.
             QuotationItem.objects.filter(product__in=secondaries).update(product=primary)
             InventoryBatch.objects.filter(product__in=secondaries).update(product=primary)
             OrderItem.objects.filter(product__in=secondaries).update(product=primary)
             ProductContentSection.objects.filter(product__in=secondaries).update(product=primary)
 
-            # 3) Finally, delete secondary products
+            # 3) Delete secondary products (their SKUs/names disappear from the active catalog)
             Product.objects.filter(pk__in=[s.id for s in secondaries]).delete()
 
     except Exception as e:
@@ -883,6 +896,66 @@ def api_merge_products(request):
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
     return JsonResponse({"success": True, "merged_count": len(secondaries)})
+
+
+@staff_required
+def api_ignore_merge_suggestion(request):
+    """
+    POST JSON: { "product_ids": [1, 2, 3] }.
+    Stores this combination as a dismissed "Not duplicates" group so it won't appear again.
+    If the same set is suggested later (e.g. after a new product joins the group), the new set
+    has a different signature and will reappear.
+    """
+    if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
+        return JsonResponse({"success": False, "error": "Invalid request method."}, status=400)
+    try:
+        payload = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"success": False, "error": "Invalid JSON payload."}, status=400)
+    product_ids = payload.get("product_ids") or []
+    if not product_ids:
+        return JsonResponse({"success": False, "error": "product_ids is required."}, status=400)
+    try:
+        ids = sorted(int(i) for i in product_ids)
+    except (TypeError, ValueError):
+        return JsonResponse({"success": False, "error": "product_ids must be a list of integers."}, status=400)
+    signature = ",".join(str(i) for i in ids)
+    if len(signature) > 500:
+        return JsonResponse({"success": False, "error": "Too many product IDs."}, status=400)
+    IgnoredMergeSuggestion.objects.get_or_create(
+        product_ids_signature=signature,
+        defaults={},
+    )
+    return JsonResponse({"success": True})
+
+
+@staff_required
+def api_product_search(request):
+    """
+    GET ?search=...&limit=50. Returns products matching name or SKU (for Duplicate Checklist custom group).
+    """
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+    search_query = request.GET.get("search", "").strip()
+    try:
+        limit = min(int(request.GET.get("limit", "50")), 100)
+    except ValueError:
+        limit = 50
+    qs = Product.objects.all().only("id", "name", "sku", "selling_price")
+    if search_query:
+        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+    products = list(qs.order_by("name")[:limit])
+    return JsonResponse({
+        "products": [
+            {
+                "id": p.id,
+                "sku": p.sku or "",
+                "name": p.name,
+                "selling_price": str(p.selling_price) if p.selling_price is not None else None,
+            }
+            for p in products
+        ]
+    })
 
 
 @staff_required
