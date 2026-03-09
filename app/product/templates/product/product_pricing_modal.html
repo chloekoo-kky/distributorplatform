@@ -3,11 +3,11 @@
      x-cloak
      style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4 sm:p-6"
-     @keydown.escape.window="showPricingModal = false">
+     @keydown.escape.window="showPricingModal = false"
+     @mousedown.self="showPricingModal = false">
 
     {# MODAL CARD #}
-    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]"
-         @click.away="showPricingModal = false">
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
 
         {# HEADER #}
         <div class="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">

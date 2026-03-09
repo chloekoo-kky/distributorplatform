@@ -386,7 +386,7 @@
                  aria-modal="true">
                 <div class="flex min-h-screen items-center justify-center p-4">
                     <div x-show="showImportModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeImportModal()"></div>
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @mousedown.self="closeImportModal()"></div>
                     <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
                         <h3 id="import-modal-title" class="text-lg font-semibold text-gray-900 mb-4">Import items from file</h3>
                         <p class="text-sm text-gray-500 mb-4">Upload a CSV or Excel file with columns: <strong>Product</strong> (or Product Name), <strong>Product SKU</strong> (optional), <strong>Category</strong> (optional; used when creating new products), <strong>Quantity</strong>, <strong>Quoted Price (Unit)</strong>.</p>
@@ -427,7 +427,7 @@
                  aria-modal="true">
                 <div class="flex min-h-screen items-center justify-center p-4">
                     <div x-show="showImportMappingModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeImportMappingModal()"></div>
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @mousedown.self="closeImportMappingModal()"></div>
                     <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
                         <div class="p-6 border-b">
                             <h3 id="import-mapping-title" class="text-lg font-semibold text-gray-900">Review and map products</h3>
