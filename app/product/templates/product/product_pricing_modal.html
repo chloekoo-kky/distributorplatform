@@ -114,6 +114,20 @@
                     </div>
                 </div>
 
+                {# --- Actual Profit Display --- #}
+                <div class="mt-2">
+                    <p x-show="commissionProfit() === null"
+                       class="text-xs text-gray-400 italic">
+                        Set a base cost and selling price to see the profit per unit.
+                    </p>
+                    <p x-show="commissionProfit() !== null"
+                       class="text-xs">
+                        <span class="text-gray-600">Profit per unit:</span>
+                        <span class="font-semibold text-green-600"
+                              x-text="`RM ${commissionProfit().toFixed(2)}`"></span>
+                    </p>
+                </div>
+
                 <hr class="border-gray-100">
 
                 {# --- Commission Section --- #}

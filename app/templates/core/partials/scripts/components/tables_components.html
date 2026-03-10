@@ -76,6 +76,23 @@
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
                 this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+
+                // Restore last-used filters from localStorage so the table
+                // comes back with the same search and filters after refresh.
+                try {
+                    const raw = window.localStorage.getItem('manage_products_filters');
+                    if (raw) {
+                        const saved = JSON.parse(raw);
+                        if (saved && typeof saved === 'object') {
+                            this.filterText = saved.filterText || '';
+                            this.filterGroup = saved.filterGroup || '';
+                            this.filterCategory = saved.filterCategory || '';
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Failed to restore manage_products_filters from localStorage', e);
+                }
+
                 this.fetchProducts(1);
             },
             get availableCategories() {
@@ -98,10 +115,28 @@
                     const data = await response.json();
                     this.items = data.items; this.pagination = data.pagination;
                 } catch (error) { console.error('Failed to fetch products:', error); }
-                finally { this.isLoading = false; }
+                finally {
+                    this.isLoading = false;
+                    // Persist current filters so they survive a full page reload.
+                    try {
+                        const payload = {
+                            filterText: this.filterText || '',
+                            filterGroup: this.filterGroup || '',
+                            filterCategory: this.filterCategory || ''
+                        };
+                        window.localStorage.setItem('manage_products_filters', JSON.stringify(payload));
+                    } catch (e) {
+                        console.warn('Failed to persist manage_products_filters to localStorage', e);
+                    }
+                }
             },
             clearFilters() {
                 this.filterText = ''; this.filterGroup = ''; this.filterCategory = '';
+                try {
+                    window.localStorage.removeItem('manage_products_filters');
+                } catch (e) {
+                    console.warn('Failed to clear manage_products_filters from localStorage', e);
+                }
                 this.fetchProducts(1);
             },
             setGroupFilter(groupName) {

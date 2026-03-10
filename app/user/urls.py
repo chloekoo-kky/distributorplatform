@@ -20,4 +20,8 @@ urlpatterns = [
     path('api/manage-users/', views.api_manage_users, name='api_manage_users'),
     path('api/manage-groups/', views.api_manage_user_groups, name='api_manage_user_groups'),
     path('api/update-user-groups/<int:user_id>/', views.api_update_user_groups, name='api_update_user_groups'),
+
+    # Impersonation (role switching)
+    path('impersonate/start/<int:user_id>/', views.start_impersonation, name='start_impersonation'),
+    path('impersonate/stop/', views.stop_impersonation, name='stop_impersonation'),
 ]

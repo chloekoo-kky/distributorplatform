@@ -100,10 +100,34 @@ class Quotation(models.Model):
         return f"Quotation {self.quotation_id} from {supplier_name}"
 
 class QuotationItem(models.Model):
+    INPUT_CURRENCY_EUR = 'EUR'
+    INPUT_CURRENCY_USD = 'USD'
+    INPUT_CURRENCY_MYR = 'MYR'
+    INPUT_CURRENCY_CHOICES = [
+        (INPUT_CURRENCY_EUR, 'EUR'),
+        (INPUT_CURRENCY_USD, 'USD'),
+        (INPUT_CURRENCY_MYR, 'MYR'),
+    ]
+
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('product.Product', on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
-    quoted_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per single unit for this item")
+    quoted_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per single unit in MYR")
+    # When set, rate changes only affect MYR (quoted_price); EUR/USD display stays fixed from input_value.
+    input_currency = models.CharField(
+        max_length=3,
+        choices=INPUT_CURRENCY_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Currency the user entered (EUR/USD/MYR). When rate changes, only MYR is recalculated."
+    )
+    input_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Price in input_currency. Used to recompute quoted_price (MYR) when rate changes."
+    )
 
     @property
     def total_item_price(self):

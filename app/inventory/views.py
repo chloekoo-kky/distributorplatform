@@ -567,6 +567,8 @@ def quotation_detail(request, quotation_id):
                     product_id = item_data.get('product_id')
                     quantity = item_data.get('quantity')
                     price_str = item_data.get('quoted_price')
+                    input_currency = item_data.get('input_currency') or None
+                    input_value_str = item_data.get('input_value')
                     logger.debug(f"[quotation_detail POST] Processing item data: {item_data}")
 
                     if not product_id or quantity is None or price_str is None:
@@ -581,20 +583,39 @@ def quotation_detail(request, quotation_id):
                         logger.warning(f"[quotation_detail POST] Skipping invalid quantity/price: {item_data}")
                         continue
 
+                    input_value = None
+                    if input_value_str is not None and input_value_str != '':
+                        try:
+                            input_value = Decimal(str(input_value_str))
+                            if input_value < Decimal('0.00'):
+                                input_value = None
+                        except (ValueError, TypeError):
+                            pass
+                    if input_currency and input_currency not in ('EUR', 'USD', 'MYR'):
+                        input_currency = None
+
                     product_ids_in_payload.add(product_id)
 
                     if quantity > 0:
                         if product_id in existing_items:
                             item = existing_items[product_id]
-                            if item.quantity != quantity or item.quoted_price != price:
-                                item.quantity = quantity; item.quoted_price = price
+                            if (item.quantity != quantity or item.quoted_price != price or
+                                    getattr(item, 'input_currency', None) != input_currency or
+                                    getattr(item, 'input_value', None) != input_value):
+                                item.quantity = quantity
+                                item.quoted_price = price
+                                item.input_currency = input_currency
+                                item.input_value = input_value
                                 items_to_update.append(item)
                                 logger.debug(f"[quotation_detail POST] Marked item for update: Product ID {product_id}")
                         else:
-                            items_to_create.append(QuotationItem(
+                            new_item = QuotationItem(
                                 quotation=quotation, product_id=product_id,
                                 quantity=quantity, quoted_price=price
-                            ))
+                            )
+                            new_item.input_currency = input_currency
+                            new_item.input_value = input_value
+                            items_to_create.append(new_item)
                             logger.debug(f"[quotation_detail POST] Marked item for creation: Product ID {product_id}")
 
                 ids_to_delete = [pid for pid in existing_items if pid not in product_ids_in_payload]
@@ -603,7 +624,7 @@ def quotation_detail(request, quotation_id):
                     logger.info(f"[quotation_detail POST] Deleted {deleted_count} items for quotation {quotation_id}")
 
                 if items_to_update:
-                    QuotationItem.objects.bulk_update(items_to_update, ['quantity', 'quoted_price'])
+                    QuotationItem.objects.bulk_update(items_to_update, ['quantity', 'quoted_price', 'input_currency', 'input_value'])
                     logger.info(f"[quotation_detail POST] Bulk updated {len(items_to_update)} items for quotation {quotation_id}")
 
                 if items_to_create:
@@ -672,7 +693,9 @@ def quotation_detail(request, quotation_id):
             'name': product.name,
             'quantity': 0,
             'quoted_price': '0.00',
-            'previous_quoted_price': str(previous_price) if previous_price is not None else None # Add the new field
+            'previous_quoted_price': str(previous_price) if previous_price is not None else None,
+            'input_currency': None,
+            'input_value': None,
         }
         # --- END MODIFICATION ---
 
@@ -680,6 +703,10 @@ def quotation_detail(request, quotation_id):
             item = current_items[product.pk]
             item_data['quantity'] = item.quantity
             item_data['quoted_price'] = str(item.quoted_price)
+            if getattr(item, 'input_currency', None):
+                item_data['input_currency'] = item.input_currency
+            if item.input_value is not None:
+                item_data['input_value'] = str(item.input_value)
         cart_items.append(item_data)
     logger.debug(f"[quotation_detail GET] Prepared cart_items list.")
 

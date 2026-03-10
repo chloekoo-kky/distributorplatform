@@ -235,6 +235,10 @@ def api_manage_users(request):
 
 @staff_required
 def api_update_user_groups(request, user_id):
+    """
+    Existing bulk update endpoint used by the modal to assign multiple groups.
+    Kept for backwards compatibility.
+    """
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
     user = get_object_or_404(CustomUser, pk=user_id)
@@ -244,6 +248,83 @@ def api_update_user_groups(request, user_id):
         user.user_groups.set(group_ids)
         return JsonResponse({'success': True})
     except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+def start_impersonation(request, user_id):
+    """
+    Start impersonating the given user.
+
+    - Only a real superuser may initiate impersonation.
+    - Stores the target user ID in the session; middleware will enforce it.
+    """
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
+
+    target_user = get_object_or_404(CustomUser, pk=user_id)
+    request.session['impersonated_user_id'] = target_user.id
+    messages.success(request, f"You are now impersonating {target_user.username}.")
+
+    # Redirect back to Manage Tools or to "next" if provided.
+    next_url = request.POST.get('next') or reverse('core:manage_dashboard')
+    return redirect(next_url)
+
+
+@login_required
+def stop_impersonation(request):
+    """
+    Stop any active impersonation and restore the original superuser context.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
+
+    # Clearing the session flag is enough; middleware will stop overriding request.user.
+    if 'impersonated_user_id' in request.session:
+        request.session.pop('impersonated_user_id', None)
+        messages.info(request, "Impersonation ended. You are back to your own account.")
+
+    next_url = request.POST.get('next') or reverse('core:manage_dashboard')
+    return redirect(next_url)
+
+
+@login_required
+def api_update_user_group(request, user_id):
+    """
+    Superuser-only endpoint to set a single primary user group from the dashboard.
+    Clears any existing groups and assigns the selected one (or none).
+    """
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
+
+    user = get_object_or_404(CustomUser, pk=user_id)
+    try:
+        data = json.loads(request.body or '{}')
+        group_id = data.get('group_id')
+
+        if not group_id:
+            # Clear all groups if no group_id provided
+            user.user_groups.clear()
+            return JsonResponse({'success': True, 'group': None})
+
+        group = get_object_or_404(UserGroup, pk=group_id)
+        user.user_groups.set([group])
+
+        return JsonResponse({
+            'success': True,
+            'group': {
+                'id': group.id,
+                'name': group.name,
+            }
+        })
+    except Exception as e:
+        logger.exception("Error updating user group")
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 

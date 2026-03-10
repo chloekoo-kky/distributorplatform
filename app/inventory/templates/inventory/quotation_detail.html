@@ -106,14 +106,14 @@
                      <div>
                         <dt class="text-sm font-medium text-gray-500">Rate (1 EUR to MYR)</dt>
                         <dd class="mt-1 text-md text-gray-900">
-                             <input type="number" step="0.1" min="0" id="rate-eur-input" x-model.number="rateEUR" @change="formatRateEUR(); updateAllPrices();" :disabled="isLocked"
+                             <input type="number" step="0.1" min="0" id="rate-eur-input" x-model.number="rateEUR" @change="onRateEURChange()" :disabled="isLocked"
                                     class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                         </dd>
                     </div>
                      <div>
                         <dt class="text-sm font-medium text-gray-500">Rate (1 USD to MYR)</dt>
                         <dd class="mt-1 text-md text-gray-900">
-                             <input type="number" step="0.1" min="0" id="rate-usd-input" x-model.number="rateUSD" @change="formatRateUSD(); updateAllPrices();" :disabled="isLocked"
+                             <input type="number" step="0.1" min="0" id="rate-usd-input" x-model.number="rateUSD" @change="onRateUSDChange()" :disabled="isLocked"
                                     class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                         </dd>
                     </div>
@@ -183,10 +183,10 @@
                                      <span class="flex items-center justify-end">Previous Price (RM)<span x-html="sortIcon('previous_quoted_price')"></span></span>
                                 </th>
                                 <th scope="col" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Quantity</th>
-                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Input Price (EUR)</th>
-                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Input Price (USD)</th>
+                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">EUR Price</th>
+                                <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">USD Price</th>
                                 <th scope="col" class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32 cursor-pointer hover:bg-gray-100" @click="sortTable('quoted_price')">
-                                    <span class="flex items-center">Input Price (MYR)<span x-html="sortIcon('quoted_price')"></span></span>
+                                    <span class="flex items-center">MYR Price<span x-html="sortIcon('quoted_price')"></span></span>
                                 </th>
                                 <th scope="col" class="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-28 cursor-pointer hover:bg-gray-100" @click="sortTable('line_total')">
                                     <span class="flex items-center justify-end">Line Total (RM)<span x-html="sortIcon('line_total')"></span></span>
@@ -202,24 +202,30 @@
                                     <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-500" x-text="item.sku || '-'"></td>
                                     <td class="px-3 py-3 whitespace-normal break-words text-sm font-medium text-gray-900" x-text="item.name"></td>
                                     <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-right" x-text="formatPrice(item.previous_quoted_price)"></td>
-                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
-                                        <div class="flex items-center justify-center">
-                                            <button type="button" @click="updateItemQuantity(index, -1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-l text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> - </button>
-                                            <input type="number" min="0" :value="item.quantity" @change="setItemQuantity(index, $event.target.value)" :disabled="isLocked" class="qty-input w-14 md:w-16 p-1 text-center border-t border-b border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                            <button type="button" @click="updateItemQuantity(index, 1)" :disabled="isLocked" class="qty-btn px-2 py-1 border border-gray-300 rounded-r text-gray-700 hover:bg-gray-100 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"> + </button>
+                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-center" x-text="item.quantity"></td>
+                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <span x-text="displayPrice(item, 'EUR')"></span>
+                                            <button type="button" @click="openEditItemModal(index, 'EUR')" :disabled="isLocked" class="p-0.5 text-gray-400 hover:text-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed shrink-0" title="Edit EUR" aria-label="Edit EUR">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                                            </button>
                                         </div>
                                     </td>
-                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
-                                        <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'EUR')" @change="updateItemPrice(index, $event.target.value, 'EUR')" :disabled="isLocked"
-                                               class="price-input w-20 md:w-24 p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <span x-text="displayPrice(item, 'USD')"></span>
+                                            <button type="button" @click="openEditItemModal(index, 'USD')" :disabled="isLocked" class="p-0.5 text-gray-400 hover:text-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed shrink-0" title="Edit USD" aria-label="Edit USD">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                                            </button>
+                                        </div>
                                     </td>
-                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
-                                        <input type="number" step="1" min="0" :value="calculatePrice(item.quoted_price, 'USD')" @change="updateItemPrice(index, $event.target.value, 'USD')" :disabled="isLocked"
-                                               class="price-input w-20 md:w-24 p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                    </td>
-                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500">
-                                        <input type="number" step="0.01" min="0" :value="calculatePrice(item.quoted_price, 'MYR')" @change="updateItemPrice(index, $event.target.value, 'MYR')" :disabled="isLocked"
-                                               class="price-input w-20 md:w-24 p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                    <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-500 text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <span x-text="displayPrice(item, 'MYR')"></span>
+                                            <button type="button" @click="openEditItemModal(index, 'MYR')" :disabled="isLocked" class="p-0.5 text-gray-400 hover:text-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed shrink-0" title="Edit MYR" aria-label="Edit MYR">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                                            </button>
+                                        </div>
                                     </td>
                                     <td class="px-2 py-3 whitespace-nowrap text-sm text-gray-900 text-right line-total" x-text="formatPrice(lineTotal(item))"></td>
                                 </tr>
@@ -373,6 +379,47 @@
                             }
                         })();
                     </script>
+                </div>
+            </div>
+
+            <!-- Edit Quotation Item Modal (EUR / USD / MYR - one modal per currency mode) -->
+            <div x-show="showEditItemModal" x-cloak style="display: none;"
+                 class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+                 x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+                 x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+                <div class="fixed inset-0" @mousedown.self="closeEditItemModal()"></div>
+                <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 m-4"
+                     x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+                     x-transition:enter-end="opacity-100 transform scale-100"
+                     x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
+                     x-transition:leave-end="opacity-0 transform scale-95">
+                    <button type="button" @click="closeEditItemModal()"
+                            class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4" x-text="'Edit item (' + (editItemCurrencyMode || 'MYR') + ')'"></h3>
+                    <template x-if="editItemRef">
+                        <div class="space-y-4">
+                            <p class="text-sm text-gray-600" x-text="'Product: ' + (editItemRef ? editItemRef.name : '')"></p>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                                <input type="number" min="1" x-model.number="editItemQuantity"
+                                       class="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1" x-text="'Price per unit (' + (editItemCurrencyMode === 'MYR' ? 'MYR / RM' : editItemCurrencyMode) + ')'"></label>
+                                <input type="number" step="0.01" min="0" x-model="editItemPrice"
+                                       class="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <div class="flex justify-end gap-2 pt-4 border-t">
+                                <button type="button" @click="closeEditItemModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-md hover:bg-gray-50">Cancel</button>
+                                <button type="button" @click="saveEditItem()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">Save</button>
+                            </div>
+                        </div>
+                    </template>
                 </div>
             </div>
 
@@ -541,6 +588,13 @@
             rateUSD: 4.2, // Default (will be overridden by latest saved value, if any)
             isSaving: false,
             showAssignProductsModal: false,
+            showEditItemModal: false,
+            editItemRef: null,
+            editItemOriginalIndex: null,
+            editItemCurrencyMode: 'MYR',  // which of EUR / USD / MYR this modal is editing
+            editItemQuantity: 1,
+            editItemCurrency: 'MYR',
+            editItemPrice: '',
             showImportModal: false,
             showImportMappingModal: false,
             importCurrency: 'MYR',
@@ -597,17 +651,20 @@
                     if (currentPrice > 0) { finalQuotedPrice = currentPrice.toFixed(2); }
                     else if (prevPrice > 0) { finalQuotedPrice = prevPrice.toFixed(2); }
 
-                    // Default quantity to 1 (to avoid losing lines when user forgets to input quantity)
                     let qty = parseInt(item.quantity);
-                    if (isNaN(qty) || qty < 1) {
-                        qty = 1;
-                    }
+                    if (isNaN(qty) || qty < 1) { qty = 1; }
+
+                    // Legacy items may lack input_currency/input_value; treat as MYR so rate change doesn't alter them
+                    const inputCurrency = item.input_currency || 'MYR';
+                    const inputValue = item.input_value != null && item.input_value !== '' ? String(item.input_value) : finalQuotedPrice;
 
                     return {
                         ...item,
                         quoted_price: finalQuotedPrice,
-                        previous_quoted_price: prevPrice.toFixed(2),
-                        quantity: qty
+                        previous_quoted_price: (prevPrice > 0 ? prevPrice : 0).toFixed(2),
+                        quantity: qty,
+                        input_currency: inputCurrency,
+                        input_value: inputValue
                     };
                 });
                 // Read initial values from potentially autofilled inputs OR defaults
@@ -630,6 +687,8 @@
                 this.formatTransportCost();
                 this.formatRateEUR();
                 this.formatRateUSD();
+                this._prevRateEUR = this.rateEUR;
+                this._prevRateUSD = this.rateUSD;
                 console.log('Initial items processed:', this.items);
             },
             sortTable(column) {
@@ -654,80 +713,96 @@
                 const priceMYR = parseFloat(item.quoted_price || 0);
                 return qty * priceMYR;
             },
+            // Display price for a currency. When input_currency is set, that currency shows input_value; others and MYR are derived from quoted_price and rates.
+            displayPrice(item, currency) {
+                const myr = parseFloat(item.quoted_price || 0);
+                if (currency === 'EUR') {
+                    if (item.input_currency === 'EUR' && item.input_value != null && item.input_value !== '')
+                        return parseFloat(item.input_value).toFixed(2);
+                    return (this.rateEUR > 0 ? myr / this.rateEUR : 0).toFixed(2);
+                }
+                if (currency === 'USD') {
+                    if (item.input_currency === 'USD' && item.input_value != null && item.input_value !== '')
+                        return parseFloat(item.input_value).toFixed(2);
+                    return (this.rateUSD > 0 ? myr / this.rateUSD : 0).toFixed(2);
+                }
+                if (currency === 'MYR') {
+                    return myr.toFixed(2);
+                }
+                return '-';
+            },
+            openEditItemModal(index, currency) {
+                const item = this.sortedItems[index];
+                if (!item || !['EUR', 'USD', 'MYR'].includes(currency)) return;
+                this.editItemRef = item;
+                this.editItemOriginalIndex = index;
+                this.editItemCurrencyMode = currency;
+                this.editItemCurrency = currency;
+                this.editItemQuantity = parseInt(item.quantity || 1);
+                const myr = parseFloat(item.quoted_price || 0);
+                if (currency === 'EUR')
+                    this.editItemPrice = (item.input_currency === 'EUR' && item.input_value != null && item.input_value !== '') ? parseFloat(item.input_value).toFixed(2) : (this.rateEUR > 0 ? myr / this.rateEUR : 0).toFixed(2);
+                else if (currency === 'USD')
+                    this.editItemPrice = (item.input_currency === 'USD' && item.input_value != null && item.input_value !== '') ? parseFloat(item.input_value).toFixed(2) : (this.rateUSD > 0 ? myr / this.rateUSD : 0).toFixed(2);
+                else
+                    this.editItemPrice = myr.toFixed(2);
+                this.showEditItemModal = true;
+            },
+            closeEditItemModal() {
+                this.showEditItemModal = false;
+                this.editItemRef = null;
+                this.editItemOriginalIndex = null;
+                this.editItemCurrencyMode = 'MYR';
+            },
+            saveEditItem() {
+                if (!this.editItemRef) return;
+                const origIndex = this.items.findIndex(i => i.product_id === this.editItemRef.product_id);
+                if (origIndex === -1) return;
+                const qty = Math.max(1, parseInt(this.editItemQuantity) || 1);
+                const priceVal = parseFloat(this.editItemPrice) || 0;
+                let myr = 0;
+                if (this.editItemCurrency === 'EUR') {
+                    myr = priceVal * this.rateEUR;
+                } else if (this.editItemCurrency === 'USD') {
+                    myr = priceVal * this.rateUSD;
+                } else {
+                    myr = priceVal;
+                }
+                this.items[origIndex].quantity = qty;
+                this.items[origIndex].quoted_price = Math.max(0, myr).toFixed(2);
+                this.items[origIndex].input_currency = this.editItemCurrency;
+                this.items[origIndex].input_value = priceVal.toFixed(2);
+                this.closeEditItemModal();
+            },
             formatPrice(value) {
                 const num = parseFloat(value); // Don't default to 0 here
                  if (isNaN(num)) return '-'; // Return '-' if not a number
                  return `RM ${num.toFixed(2)}`;
             },
-            updateItemQuantity(index, delta) {
-                 if (this.isLocked) return;
-                // Find item in the *currently displayed* sorted list
-                 const displayedItem = this.sortedItems[index];
-                 if (!displayedItem) return;
-                // Find the corresponding item in the original unsorted list to modify its state
-                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
-                 if (originalItemIndex === -1) return;
-
-                let currentQty = parseInt(this.items[originalItemIndex].quantity || 0);
-                let newQty = Math.max(0, currentQty + delta);
-                this.items[originalItemIndex].quantity = newQty;
-                // Input value will update automatically via :value binding in x-for
-            },
-             setItemQuantity(index, value) {
-                 if (this.isLocked) return;
-                 const displayedItem = this.sortedItems[index];
-                 if (!displayedItem) return;
-                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
-                 if (originalItemIndex === -1) return;
-
-                 let newQty = Math.max(0, parseInt(value || 0));
-                 this.items[originalItemIndex].quantity = newQty;
-
-                 // Force update input value in case parsing differs slightly
-                 this.$nextTick(() => {
-                    const input = this.$el.querySelector(`#product-table-body tr:nth-child(${index + 1}) input[data-action='set-quantity']`);
-                    if(input && input.value !== newQty.toString()) {
-                         input.value = newQty;
+            // When rate changes: recompute MYR so displayed EUR and MYR update. rateChanged = 'EUR' | 'USD' so we use the correct previous rate for MYR items.
+            updateAllPrices(rateChanged) {
+                this.items = this.items.map(item => {
+                    const cur = item.input_currency || 'MYR';
+                    const val = parseFloat(item.input_value);
+                    if (cur === 'EUR' && !isNaN(val) && this.rateEUR > 0) {
+                        return { ...item, quoted_price: (val * this.rateEUR).toFixed(2) };
                     }
+                    if (cur === 'USD' && !isNaN(val) && this.rateUSD > 0) {
+                        return { ...item, quoted_price: (val * this.rateUSD).toFixed(2) };
+                    }
+                    if (cur !== 'MYR') return item;
+                    const prevUsd = this._prevRateUSD;
+                    const prevEur = this._prevRateEUR;
+                    if (rateChanged === 'USD' && prevUsd > 0 && this.rateUSD > 0) {
+                        const effectiveUsd = parseFloat(item.quoted_price || 0) / prevUsd;
+                        return { ...item, quoted_price: (effectiveUsd * this.rateUSD).toFixed(2) };
+                    }
+                    if (rateChanged === 'EUR' && prevEur > 0 && this.rateEUR > 0) {
+                        const effectiveEur = parseFloat(item.quoted_price || 0) / prevEur;
+                        return { ...item, quoted_price: (effectiveEur * this.rateEUR).toFixed(2) };
+                    }
+                    return item;
                 });
-            },
-            updateItemPrice(index, value, currency) {
-                 if (this.isLocked) return;
-                 const displayedItem = this.sortedItems[index];
-                 if (!displayedItem) return;
-                 const originalItemIndex = this.items.findIndex(i => i.product_id === displayedItem.product_id);
-                 if (originalItemIndex === -1) return;
-
-                 let numericValue = (currency === 'EUR' || currency === 'USD')
-                                ? (parseInt(value, 10) || 0)
-                                : (parseFloat(value) || 0);
-                if (numericValue < 0) numericValue = 0;
-
-                let priceMYR = 0;
-                if (currency === 'EUR') { priceMYR = numericValue * this.rateEUR; }
-                else if (currency === 'USD') { priceMYR = numericValue * this.rateUSD; }
-                else { priceMYR = numericValue; }
-
-                this.items[originalItemIndex].quoted_price = priceMYR.toFixed(2);
-                // Other price inputs update automatically via :value binding
-            },
-            calculatePrice(myrPriceStr, targetCurrency) {
-                 const priceMYR = parseFloat(myrPriceStr || 0);
-                 if (targetCurrency === 'EUR') {
-                    return (this.rateEUR > 0 ? priceMYR / this.rateEUR : 0).toFixed(0);
-                 } else if (targetCurrency === 'USD') {
-                    return (this.rateUSD > 0 ? priceMYR / this.rateUSD : 0).toFixed(0);
-                 } else { // MYR
-                    return priceMYR.toFixed(2);
-                 }
-            },
-             // Method to explicitly update all price inputs when rate changes
-             updateAllPrices() {
-                console.log('updateAllPrices called due to rate change.');
-                // Trigger reactivity by slightly modifying the items array
-                // This forces Alpine to re-evaluate computed properties and bindings
-                // A more robust way might involve deeper reactivity setup if this becomes unreliable.
-                this.items = [...this.items];
             },
             formatTransportCost() {
                 if (isNaN(this.transportCost) || this.transportCost < 0) this.transportCost = 0;
@@ -737,17 +812,23 @@
             formatRateEUR() {
                  if (isNaN(this.rateEUR) || this.rateEUR <= 0) this.rateEUR = 0.1;
                  this.rateEUR = parseFloat(this.rateEUR.toFixed(1));
-                 // Input updates via x-model
             },
             formatRateUSD() {
                  if (isNaN(this.rateUSD) || this.rateUSD <= 0) this.rateUSD = 0.1;
                  this.rateUSD = parseFloat(this.rateUSD.toFixed(1));
-                 // Persist the last-used USD/MYR rate so new quotations can default to it
                  try {
                      window.localStorage.setItem('quotation_rate_usd', this.rateUSD.toString());
-                 } catch (e) {
-                     // ignore storage errors
-                 }
+                 } catch (e) {}
+            },
+            onRateEURChange() {
+                 this.formatRateEUR();
+                 this.updateAllPrices('EUR');
+                 this._prevRateEUR = this.rateEUR;
+            },
+            onRateUSDChange() {
+                 this.formatRateUSD();
+                 this.updateAllPrices('USD');
+                 this._prevRateUSD = this.rateUSD;
             },
 
             async submitUpdate() {
@@ -765,7 +846,9 @@
                      items: itemsToSave.map(item => ({
                         product_id: item.product_id,
                         quantity: parseInt(item.quantity),
-                        quoted_price: parseFloat(item.quoted_price).toFixed(2)
+                        quoted_price: parseFloat(item.quoted_price).toFixed(2),
+                        input_currency: item.input_currency || null,
+                        input_value: item.input_value != null && item.input_value !== '' ? String(item.input_value) : null
                      })),
                      transportation_cost: this.transportCost.toFixed(2),
                      date_quoted: this.dateQuoted,

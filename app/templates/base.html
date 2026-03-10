@@ -324,6 +324,28 @@
     </nav>
 
     {% block full_width_banner %}
+    {# Impersonation warning banner (shown above any marketing banner) #}
+    {% if request.real_user and request.impersonated_user %}
+    <div class="bg-red-700 text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col sm:flex-row items-center justify-between text-sm">
+            <div class="mb-2 sm:mb-0">
+                You are currently impersonating
+                <strong>{{ request.impersonated_user.username }}</strong>
+                (original: {{ request.real_user.username }}).
+            </div>
+            <form method="post" action="{% url 'user:stop_impersonation' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <button type="submit"
+                        class="inline-flex items-center px-3 py-1 rounded bg-white text-red-700 text-xs font-semibold hover:bg-gray-100">
+                    Switch back to superuser
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Existing marketing / global banner #}
     {% if active_global_banner %}
     <div class="relative overflow-hidden shadow-md transition-colors duration-300"
          style="background-color: {{ active_global_banner.rgba_color }}; color: white;">
