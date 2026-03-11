@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Manual Order Entry{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8 px-4"
+     x-data="manualOrderData()"
+     x-init="init()">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Manual Order Entry</h1>
+    <p class="text-gray-600 mb-6">Record a sale from an external channel (WhatsApp, Shopee, etc.) at custom prices. No commission is generated.</p>
+
+    <form @submit.prevent="submitOrder()" class="space-y-6">
+        <div class="bg-white shadow rounded-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">Customer & Channel</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Sales channel</label>
+                    <select x-model="salesChannel" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        {% for value, label in sales_channel_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Customer name</label>
+                    <input type="text" x-model="customerName" placeholder="Optional" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Customer phone</label>
+                    <input type="text" x-model="customerPhone" placeholder="Optional" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Shipping address</label>
+                    <textarea x-model="shippingAddress" rows="2" placeholder="Optional" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white shadow rounded-lg p-6">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">Order items</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Add product</label>
+                <div class="flex gap-2">
+                    <select x-model="selectedProductId" @change="selectedProductId && addLine()" class="flex-1 rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">-- Select product --</option>
+                        <template x-for="p in products" :key="p.id">
+                            <option :value="p.id" x-text="p.sku + ' - ' + p.name"></option>
+                        </template>
+                    </select>
+                    <button type="button" @click="addLine()" :disabled="!selectedProductId" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Add</button>
+                </div>
+            </div>
+            <div class="border rounded-lg overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Qty</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-32">Unit price (RM)</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Subtotal</th>
+                            <th class="px-3 py-2 w-10"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="(line, idx) in lines" :key="line.productId + '-' + idx">
+                            <tr>
+                                <td class="px-3 py-2 text-sm text-gray-900" x-text="lineName(line)"></td>
+                                <td class="px-3 py-2 text-right"><input type="number" min="1" x-model.number="line.quantity" class="w-16 text-right rounded border border-gray-300 px-1 py-0.5"></td>
+                                <td class="px-3 py-2 text-right"><input type="number" step="0.01" min="0" x-model="line.unitPrice" class="w-24 text-right rounded border border-gray-300 px-1 py-0.5"></td>
+                                <td class="px-3 py-2 text-sm text-right text-gray-700" x-text="lineSubtotal(line)"></td>
+                                <td class="px-3 py-2"><button type="button" @click="removeLine(idx)" class="text-red-600 hover:text-red-800 text-sm">Remove</button></td>
+                            </tr>
+                        </template>
+                        <tr x-show="lines.length === 0">
+                            <td colspan="5" class="px-3 py-4 text-center text-gray-500 text-sm">Add products above.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-4 flex justify-between items-center">
+                <span class="text-sm text-gray-500">Total: <strong class="text-gray-900" x-text="'RM ' + totalAmount()"></strong></span>
+                <button type="submit" :disabled="lines.length === 0 || isSubmitting" class="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!isSubmitting">Create order</span>
+                    <span x-show="isSubmitting">Saving...</span>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function manualOrderData() {
+    return {
+        products: [],
+        lines: [],
+        selectedProductId: '',
+        salesChannel: 'Other',
+        customerName: '',
+        customerPhone: '',
+        shippingAddress: '',
+        isSubmitting: false,
+        productsUrl: '{% url "order:api_manual_order_products" %}',
+        submitUrl: '{% url "order:api_submit_manual_order" %}',
+        csrfToken: '{{ csrf_token }}',
+
+        async init() {
+            try {
+                const r = await fetch(this.productsUrl);
+                const d = await r.json();
+                if (d.success) this.products = d.products || [];
+            } catch (e) {
+                console.error('Failed to load products', e);
+            }
+        },
+        lineName(line) {
+            const p = this.products.find(x => x.id === line.productId);
+            return p ? (p.sku + ' - ' + p.name) : '—';
+        },
+        lineSubtotal(line) {
+            const q = parseInt(line.quantity, 10) || 0;
+            const u = parseFloat(line.unitPrice) || 0;
+            return (q * u).toFixed(2);
+        },
+        totalAmount() {
+            return this.lines.reduce((sum, line) => {
+                const q = parseInt(line.quantity, 10) || 0;
+                const u = parseFloat(line.unitPrice) || 0;
+                return sum + q * u;
+            }, 0).toFixed(2);
+        },
+        addLine() {
+            if (!this.selectedProductId) return;
+            const p = this.products.find(x => x.id == this.selectedProductId);
+            if (!p) return;
+            const unitPrice = p.selling_price || '0.00';
+            this.lines.push({ productId: parseInt(this.selectedProductId, 10), quantity: 1, unitPrice });
+            this.selectedProductId = '';
+        },
+        removeLine(idx) {
+            this.lines.splice(idx, 1);
+        },
+        async submitOrder() {
+            if (this.lines.length === 0 || this.isSubmitting) return;
+            this.isSubmitting = true;
+            const payload = {
+                sales_channel: this.salesChannel,
+                customer_name: this.customerName,
+                customer_phone: this.customerPhone,
+                shipping_address: this.shippingAddress,
+                items: this.lines.map(l => ({ product_id: l.productId, quantity: l.quantity, unit_price: l.unitPrice }))
+            };
+            try {
+                const r = await fetch(this.submitUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const d = await r.json();
+                if (d.success && d.redirect_url) {
+                    window.location.href = d.redirect_url;
+                } else {
+                    alert(d.error || 'Failed to create order');
+                }
+            } catch (e) {
+                alert('Request failed');
+            } finally {
+                this.isSubmitting = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

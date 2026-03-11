@@ -278,9 +278,11 @@ def start_impersonation(request, user_id):
 def stop_impersonation(request):
     """
     Stop any active impersonation and restore the original superuser context.
+
+    This view is triggered by a standard POST form that already includes
+    {% csrf_token %} in the global banner. If you hit this URL manually
+    without a valid CSRF token, Django will respond with 403 (expected).
     """
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
 
     # Clearing the session flag is enough; middleware will stop overriding request.user.
     if 'impersonated_user_id' in request.session:
@@ -358,13 +360,18 @@ def profile_view(request):
     # --- NEW: Get Payment Options for the Modal ---
     payment_options = PaymentOption.objects.filter(is_active=True)
 
+    # --- Manual Order Entry permission for profile (sales team) ---
+    can_manual_order_profile = user.user_groups.filter(name__iexact='salesteam').exists()
+
     context = {
         'is_agent': is_agent,
         'orders': orders,
         'plans': plans,
         'current_plan_id': current_plan_id,
-        'payment_options': payment_options, # Passed to template
+        'payment_options': payment_options,  # Passed to template
         'can_manage_subscription': can_manage_subscription,
+        'can_manual_order_profile': can_manual_order_profile,
+        'sales_channel_choices': Order.SalesChannel.choices,
     }
 
     # 3. Get Commission Data (Agent Only)

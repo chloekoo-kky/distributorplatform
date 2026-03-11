@@ -4,7 +4,10 @@
 {% block title %}My Profile{% endblock %}
 
 {% block content %}
-<div class="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div id="profile-root"
+     class="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+     x-data="{ showManualOrderModal: false }"
+     @close-manual-order.window="showManualOrderModal = false">
 
     {# --- Header Section --- #}
     <div class="bg-white shadow rounded-lg p-6 mb-8">
@@ -190,14 +193,24 @@
 
     {# --- ORDER HISTORY (Visible to Everyone) --- #}
     <div class="mb-8">
-        <h2 class="text-2xl font-bold text-gray-800 mb-4 flex flex-col">
-            {% with lines=site_settings.order_history_title_lines %}
-                <span>{{ lines.0 }}</span>
-                {% if lines|length > 1 %}
-                    <span class="text-base font-normal text-gray-500">{{ lines.1 }}</span>
-                {% endif %}
-            {% endwith %}
-        </h2>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h2 class="text-2xl font-bold text-gray-800 flex flex-col">
+                {% with lines=site_settings.order_history_title_lines %}
+                    <span>{{ lines.0 }}</span>
+                    {% if lines|length > 1 %}
+                        <span class="text-base font-normal text-gray-500">{{ lines.1 }}</span>
+                    {% endif %}
+                {% endwith %}
+            </h2>
+            {% if can_manual_order_profile %}
+            <button type="button"
+                    @click="showManualOrderModal = true"
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
+                <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                Manual order entry
+            </button>
+            {% endif %}
+        </div>
         <div class="bg-white shadow rounded-lg overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
@@ -240,15 +253,26 @@
                                 RM {{ order.calculated_total|floatformat:2 }}
                             </td>
 
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                 {% if order.status == 'TO_PAY' %}
-                                    {# --- UPDATED: Open Payment Modal --- #}
                                     <button onclick="openPaymentModal('{{ order.id }}')"
                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                         Pay Now
                                     </button>
-                                {% else %}
-                                    <span class="text-gray-400">-</span>
+                                {% endif %}
+
+                                {% if can_manual_order_profile and order.status == 'PENDING' and order.created_by_id == user.id %}
+                                    <button type="button"
+                                            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                            onclick="window.editManualOrder('{{ order.id }}')">
+                                        Edit
+                                    </button>
+                                {% endif %}
+
+                                {% if order.status != 'TO_PAY' %}
+                                    {% if not can_manual_order_profile or order.status != 'PENDING' or order.created_by_id != user.id %}
+                                        <span class="text-gray-400">-</span>
+                                    {% endif %}
                                 {% endif %}
                             </td>
                         </tr>
@@ -262,6 +286,10 @@
             </div>
         </div>
     </div>
+
+    {% if can_manual_order_profile %}
+        {% include 'order/partials/manual_order_modal.html' %}
+    {% endif %}
 
 </div>
 
@@ -314,6 +342,195 @@
         </div>
     </div>
 </div>
+
+{% if can_manual_order_profile %}
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('manualOrderData', () => ({
+        products: [],
+        lines: [],
+        productSearchQuery: '',
+        productSearchOpen: false,
+        salesChannel: 'Other',
+        transactionDate: '',
+        customerName: '',
+        customerPhone: '',
+        shippingAddress: '',
+        isSubmitting: false,
+        currentOrderId: null,
+        productsUrl: '{% url "order:api_manual_order_products" %}',
+        submitUrl: '{% url "order:api_submit_manual_order" %}',
+        csrfToken: '{{ csrf_token }}',
+
+        filteredProducts() {
+            const q = (this.productSearchQuery || '').trim().toLowerCase();
+            if (!q) return this.products.slice(0, 20);
+            return this.products.filter(p => {
+                const sku = (p.sku || '').toString().toLowerCase();
+                const name = (p.name || '').toString().toLowerCase();
+                return sku.includes(q) || name.includes(q);
+            }).slice(0, 15);
+        },
+
+        async loadProducts() {
+            if (this.products.length > 0) return;
+            try {
+                const r = await fetch(this.productsUrl, { credentials: 'same-origin' });
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d && d.success && Array.isArray(d.products)) this.products = d.products;
+            } catch (e) { console.error('Manual order: load products failed', e); }
+        },
+
+        openSearchDropdown() {
+            this.productSearchOpen = true;
+            this.loadProducts();
+        },
+
+        searchDropdownStyle() {
+            if (!this.productSearchOpen) return { visibility: 'hidden', position: 'fixed', top: 0, left: 0 };
+            const el = this.$refs && this.$refs.searchWrap;
+            if (!el || typeof el.getBoundingClientRect !== 'function') return { position: 'fixed', top: '10px', left: '10px', width: '300px', zIndex: 9999 };
+            const r = el.getBoundingClientRect();
+            return {
+                position: 'fixed',
+                top: (r.bottom + 4) + 'px',
+                left: r.left + 'px',
+                width: Math.max(r.width, 280) + 'px',
+                zIndex: 9999,
+                minHeight: '2rem'
+            };
+        },
+
+        async init() {
+            const today = new Date();
+            this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+            await this.loadProducts();
+        },
+        async loadExistingOrder(orderId) {
+            try {
+                const url = `{% url "order:api_manual_order_detail" "ORDER_ID_PLACEHOLDER" %}`.replace('ORDER_ID_PLACEHOLDER', orderId);
+                const r = await fetch(url, { credentials: 'same-origin' });
+                if (!r.ok) throw new Error('Failed to load order');
+                const d = await r.json();
+                if (!d.success || !d.order) throw new Error(d.error || 'Invalid response');
+
+                const o = d.order;
+                this.salesChannel = o.sales_channel || 'Other';
+                this.transactionDate = o.transaction_date || this.transactionDate;
+                this.customerName = o.customer_name || '';
+                this.customerPhone = o.customer_phone || '';
+                this.shippingAddress = o.shipping_address || '';
+
+                // Ensure products are loaded so lineName works nicely later
+                await this.loadProducts();
+
+                this.lines = (o.items || []).map(item => ({
+                    productId: item.product_id,
+                    quantity: item.quantity,
+                    platformPrice: item.platform_price || '',
+                    actualUnitPrice: item.actual_unit_price || '0.00',
+                }));
+            } catch (e) {
+                console.error('Failed to load manual order', e);
+                alert('Failed to load order for editing.');
+            }
+        },
+        lineName(line) {
+            const p = this.products.find(x => x.id === line.productId);
+            return p ? (p.sku + ' – ' + p.name) : '—';
+        },
+        lineSubtotal(line) {
+            const q = parseInt(line.quantity, 10) || 0;
+            const u = parseFloat(line.actualUnitPrice) || 0;
+            return (q * u).toFixed(2);
+        },
+        totalAmount() {
+            return this.lines.reduce((sum, line) => {
+                const q = parseInt(line.quantity, 10) || 0;
+                const u = parseFloat(line.actualUnitPrice) || 0;
+                return sum + q * u;
+            }, 0).toFixed(2);
+        },
+        addProductLine(p) {
+            const price = p.selling_price || '0.00';
+            this.lines.push({
+                productId: parseInt(p.id, 10),
+                quantity: 1,
+                platformPrice: price,
+                actualUnitPrice: price
+            });
+        },
+        removeLine(idx) {
+            this.lines.splice(idx, 1);
+        },
+        async submitOrder() {
+            if (this.lines.length === 0 || this.isSubmitting) return;
+            this.isSubmitting = true;
+            const payload = {
+                sales_channel: this.salesChannel,
+                transaction_date: this.transactionDate || null,
+                customer_name: this.customerName,
+                customer_phone: this.customerPhone,
+                shipping_address: this.shippingAddress,
+                items: this.lines.map(line => ({
+                    product_id: line.productId,
+                    quantity: line.quantity,
+                    platform_price: line.platformPrice,
+                    actual_unit_price: line.actualUnitPrice,
+                }))
+            };
+
+            try {
+                // If we have an existing order id (set externally), call update endpoint; otherwise create new.
+                const targetUrl = this.currentOrderId
+                    ? `{% url "order:api_update_manual_order" "ORDER_ID_PLACEHOLDER" %}`.replace('ORDER_ID_PLACEHOLDER', this.currentOrderId)
+                    : this.submitUrl;
+
+                const response = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (data.success && data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    throw new Error(data.error || 'Failed to create order');
+                }
+            } catch (e) {
+                console.error('Manual order submit failed', e);
+                alert('Failed to create order: ' + (e.message || 'Unknown error'));
+            } finally {
+                this.isSubmitting = false;
+            }
+        },
+    }));
+});
+
+// Expose a small helper so the table row button can trigger edit mode.
+window.editManualOrder = function(orderId) {
+    const root = document.querySelector('#profile-root');
+    if (!root || !window.Alpine) return;
+    const comp = Alpine.$data(root);
+    if (!comp || typeof comp.showManualOrderModal === 'undefined') return;
+
+    comp.showManualOrderModal = true;
+    // Wait a tick for the modal component to mount, then load the order data.
+    setTimeout(() => {
+        const modalRoot = document.querySelector('[x-data="manualOrderData()"]') || document.querySelector('[x-data^="manualOrderData"]');
+        if (!modalRoot) return;
+        const store = Alpine.$data(modalRoot);
+        if (!store) return;
+        store.currentOrderId = orderId;
+        store.loadExistingOrder(orderId);
+    }, 50);
+};
+</script>
+{% endif %}
 
 {# --- Existing Subscription Modal --- #}
 <div id="subscription-modal" class="hidden fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">

@@ -21,6 +21,13 @@ class Order(models.Model):
         COMPLETED = 'COMPLETED', 'Completed'
         CANCELLED = 'CANCELLED', 'Cancelled'
 
+    class SalesChannel(models.TextChoices):
+        WHATSAPP = 'WhatsApp', 'WhatsApp'
+        SHOPEE = 'Shopee', 'Shopee'
+        LAZADA = 'Lazada', 'Lazada'
+        OFFLINE = 'Offline', 'Offline'
+        OTHER = 'Other', 'Other'
+
     # --- CHANGED: Use CharField with custom generator for ID ---
     id = models.CharField(
         primary_key=True,
@@ -29,12 +36,38 @@ class Order(models.Model):
         editable=False
     )
 
-    # Link to the agent who placed the order
+    # Link to the agent who placed the order (for manual orders, this is the salesperson)
     agent = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='orders'
     )
+
+    # Manual order entry: who created the order (salesperson). If set, no commission is generated.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders_created',
+        help_text='Staff/salesperson who entered this order. When set, commission is skipped.'
+    )
+
+    # Sales channel for manual orders (e.g. WhatsApp, Shopee, Offline)
+    sales_channel = models.CharField(
+        max_length=50,
+        choices=SalesChannel.choices,
+        default=SalesChannel.OTHER,
+        blank=True
+    )
+
+    # Guest customer details (for manual orders when customer has no account)
+    customer_name = models.CharField(max_length=255, blank=True, null=True)
+    customer_phone = models.CharField(max_length=50, blank=True, null=True)
+    shipping_address = models.TextField(blank=True, null=True)
+
+    # Transaction date for manual orders (e.g. date of sale on platform)
+    transaction_date = models.DateField(blank=True, null=True, help_text='Date of transaction (manual orders).')
 
     payment_method = models.CharField(max_length=50, blank=True, null=True, help_text="The selected payment method (e.g., COD).")
     
@@ -69,24 +102,41 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
 
     # --- Snapshots at time of sale ---
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per unit at time of sale.")
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Unit price at time of sale; for manual orders equals actual_unit_price.")
     landed_cost = models.DecimalField(max_digits=10, decimal_places=2, help_text="Landed cost per unit at time of sale.")
+
+    # --- Manual orders: platform vs net price ---
+    platform_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Original price on platform (for record-keeping)."
+    )
+    actual_unit_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Net amount received after platform fees; used for order total."
+    )
 
     # --- Calculated Profit ---
     profit = models.DecimalField(
         max_digits=10, decimal_places=2,
         editable=False,
-        help_text="Total profit for this line item (selling_price - landed_cost) * quantity"
+        help_text="(effective_unit_price - landed_cost) * quantity"
     )
 
     @property
+    def effective_unit_price(self):
+        """Price used for totals: actual_unit_price if set (manual orders), else selling_price."""
+        if self.actual_unit_price is not None:
+            return self.actual_unit_price
+        return self.selling_price
+
+    @property
     def total_price(self):
-        """Calculates total selling price for this line item."""
-        return self.selling_price * self.quantity
+        """Order total for this line: based on effective_unit_price (actual received for manual orders)."""
+        return self.effective_unit_price * self.quantity
 
     def save(self, *args, **kwargs):
-        # Calculate profit before saving
-        self.profit = (self.selling_price - self.landed_cost) * self.quantity
+        unit = self.effective_unit_price
+        self.profit = (unit - self.landed_cost) * self.quantity
         super().save(*args, **kwargs)
 
     def __str__(self):

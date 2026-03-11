@@ -8,79 +8,84 @@
 {% block title %}Manage Orders{% endblock %}
 
 {% block content %}
-<div class="py-8 bg-gray-50 min-h-screen" x-data="ordersManager">
+<div class="py-8 bg-gray-50 min-h-screen" x-data="ordersManager" @close-manual-order.window="showManualOrderModal = false">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {# --- Header --- #}
-        <div class="flex flex-col md:flex-row justify-between items-center mb-8">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-gray-900">Order Management</h1>
                 <p class="mt-1 text-sm text-gray-500">Overview of customer orders and revenue.</p>
             </div>
+            {% if show_manual_order_link %}
+            <button type="button" @click="showManualOrderModal = true" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
+                Manual order entry
+            </button>
+            {% endif %}
         </div>
 
 
         {# --- Filters --- #}
-        <div class="bg-white rounded-lg shadow mb-6 p-4">
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200/80 mb-6 overflow-hidden">
+            <div class="px-5 py-4 sm:px-6">
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">
 
-                {# 1. Month Selector (Col span 3) #}
-                <div class="md:col-span-3">
-                    <div class="flex justify-between items-center mb-1">
-                        <label class="block text-sm font-medium text-gray-700">Period</label>
-                        <button type="button"
-                                x-show="filters.month !== 0"
-                                @click="resetPeriod()"
-                                class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
-                                x-cloak>
-                            Reset
-                        </button>
-                    </div>
-                    <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2">
-                        <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                        </button>
-                        <span class="text-sm font-semibold text-gray-700 select-none min-w-[8rem] text-center" x-text="currentMonthLabel"></span>
-                        <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Next Month">
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                        </button>
-                    </div>
-                </div>
-
-                {# 2. Search (Col span 4) #}
-                <div class="md:col-span-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
-                    <div class="relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    {# 1. Period #}
+                    <div class="md:col-span-3">
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <label class="text-sm font-medium text-gray-700">Period</label>
+                            <button type="button"
+                                    x-show="filters.month !== 0"
+                                    @click="resetPeriod()"
+                                    class="text-xs text-indigo-600 hover:text-indigo-800 focus:outline-none focus:underline"
+                                    x-cloak>
+                                Reset
+                            </button>
                         </div>
-                        <input type="text" x-model.debounce.500ms="filters.search" @input="fetchOrders(1)"
-                               class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md h-10"
-                               placeholder="Order ID or Customer Name...">
+                        <div class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg h-10 px-2">
+                            <button @click="prevMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Previous month">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            </button>
+                            <span class="text-sm font-semibold text-gray-800 select-none min-w-[7rem] text-center" x-text="currentMonthLabel"></span>
+                            <button @click="nextMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Next month">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </button>
+                        </div>
                     </div>
-                </div>
 
-                {# 3. Status (Col span 3) #}
-                <div class="md:col-span-3">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select x-model="filters.status" @change="fetchOrders(1)" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md h-10">
-                        <option value="">All Statuses</option>
-                        {% for code, label in order_statuses %}
-                            <option value="{{ code }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                    {# 2. Search #}
+                    <div class="md:col-span-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Search</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input type="text" x-model.debounce.500ms="filters.search" @input="fetchOrders(1)"
+                                   class="block w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"
+                                   placeholder="Order ID or Customer Name...">
+                        </div>
+                    </div>
 
-                {# 4. Buttons (Col span 2) #}
-                <div class="md:col-span-2 flex space-x-2">
-                    <button @click="fetchOrders(1)" class="flex-1 inline-flex justify-center items-center px-2 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 h-10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        Refresh
-                    </button>
+                    {# 3. Status #}
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                        <select x-model="filters.status" @change="fetchOrders(1)" class="block w-full pl-3 pr-9 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="">All Statuses</option>
+                            {% for code, label in order_statuses %}
+                                <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
 
-                    <button @click="openExportModal()" class="inline-flex justify-center items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" title="Export CSV">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    </button>
+                    {# 4. Actions: keep only refresh here; exports live above table #}
+                    <div class="md:col-span-3 flex justify-start md:justify-end">
+                        <button type="button"
+                                @click="fetchOrders(1)"
+                                class="inline-flex justify-center items-center gap-1.5 px-3 py-2.5 h-10 rounded-lg text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Refresh
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -123,6 +128,29 @@
         {# --- Orders Table --- #}
         <div class="bg-white shadow overflow-hidden sm:rounded-lg">
 
+            {# Table header with exports in top-right #}
+            <div class="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-semibold text-gray-900">Orders</h2>
+                    <p class="mt-0.5 text-xs text-gray-500">Select orders below and export as an itemized CSV.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button"
+                            @click="exportSelectedOrders()"
+                            :disabled="selectedOrderIds.length === 0"
+                            class="inline-flex justify-center items-center gap-1.5 px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Export Selected
+                    </button>
+                    <button type="button"
+                            @click="openExportModal()"
+                            class="inline-flex justify-center items-center w-9 h-9 rounded-md border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                            title="Export by period (CSV)">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    </button>
+                </div>
+            </div>
+
             <div x-show="isLoading" class="p-8 flex justify-center">
                 <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -137,6 +165,13 @@
             <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200" style="display: none;">
                 <thead class="bg-gray-50">
                     <tr>
+                        <th scope="col" class="px-4 py-3 text-left">
+                            <input type="checkbox"
+                                   :checked="items.length > 0 && selectedOrderIds.length === items.length"
+                                   :indeterminate="selectedOrderIds.length > 0 && selectedOrderIds.length < items.length"
+                                   @change="toggleSelectAll()"
+                                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        </th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
@@ -149,6 +184,12 @@
                 <template x-for="order in items" :key="order.id">
                     <tbody x-data="{ expanded: false, details: [], detailsLoading: false }" class="bg-white divide-y divide-gray-200 border-b border-gray-200 group hover:bg-gray-50 transition-colors">
                         <tr>
+                            <td class="px-4 py-4 whitespace-nowrap">
+                                <input type="checkbox"
+                                       :checked="selectedOrderIds.includes(order.id)"
+                                       @change="toggleOrderSelection(order.id)"
+                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                                 <button @click="
                                     expanded = !expanded;
@@ -208,7 +249,7 @@
                         </tr>
 
                         <tr x-show="expanded" x-transition class="bg-gray-50 shadow-inner">
-                            <td colspan="6" class="px-6 py-4">
+                            <td colspan="7" class="px-6 py-4">
                                 <div class="ml-6 border-l-2 border-indigo-200 pl-4">
                                     <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Order Items</h4>
 
@@ -272,6 +313,9 @@
 
     {# --- MODALS INCLUDED HERE --- #}
     {% include 'order/partials/update_status_modal.html' %}
+    {% if show_manual_order_link %}
+    {% include 'order/partials/manual_order_modal.html' %}
+    {% endif %}
 
     {# --- EXPORT STATEMENT MODAL --- #}
     <div x-show="showExportModal"
@@ -367,9 +411,13 @@
             // --- Modal State ---
             showStatusModal: false,
             showExportModal: false,
+            showManualOrderModal: false,
             editingOrder: null,
             newStatus: '',
             isUpdating: false,
+
+            // --- Export Selected (checkboxes) ---
+            selectedOrderIds: [],
 
             init() {
                 this.fetchOrders(1);
@@ -425,6 +473,48 @@
                 this.exportFilters.month = this.filters.month === 0 ? new Date().getMonth() + 1 : this.filters.month;
                 this.exportFilters.year = this.filters.year === 0 ? new Date().getFullYear() : this.filters.year;
                 this.showExportModal = true;
+            },
+
+            toggleOrderSelection(orderId) {
+                const idx = this.selectedOrderIds.indexOf(orderId);
+                if (idx === -1) this.selectedOrderIds.push(orderId);
+                else this.selectedOrderIds.splice(idx, 1);
+            },
+
+            toggleSelectAll() {
+                if (this.selectedOrderIds.length === this.items.length) {
+                    this.selectedOrderIds = [];
+                } else {
+                    this.selectedOrderIds = this.items.map(o => o.id);
+                }
+            },
+
+            async exportSelectedOrders() {
+                if (this.selectedOrderIds.length === 0) return;
+                const url = '{% url "order:export_selected_orders" %}';
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.csrfToken
+                        },
+                        body: JSON.stringify({ order_ids: this.selectedOrderIds })
+                    });
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || 'Export failed');
+                    }
+                    const blob = await response.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'orders_export.csv';
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                } catch (e) {
+                    console.error('Export error:', e);
+                    alert('Export failed: ' + (e.message || 'Unknown error'));
+                }
             },
 
             async fetchOrders(page = 1) {
@@ -508,6 +598,134 @@
             formatRevenue(amount) {
                  if (amount === null || amount === undefined) return 'RM 0.00';
                  return 'RM ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            }
+        }));
+
+        Alpine.data('manualOrderData', () => ({
+            products: [],
+            lines: [],
+            productSearchQuery: '',
+            productSearchOpen: false,
+            salesChannel: 'Other',
+            transactionDate: '',
+            customerName: '',
+            customerPhone: '',
+            shippingAddress: '',
+            isSubmitting: false,
+            productsUrl: '{% url "order:api_manual_order_products" %}',
+            submitUrl: '{% url "order:api_submit_manual_order" %}',
+            csrfToken: '{{ csrf_token }}',
+
+            filteredProducts() {
+                const q = (this.productSearchQuery || '').trim().toLowerCase();
+                if (!q) return this.products.slice(0, 20);
+                return this.products.filter(p => {
+                    const sku = (p.sku || '').toString().toLowerCase();
+                    const name = (p.name || '').toString().toLowerCase();
+                    return sku.includes(q) || name.includes(q);
+                }).slice(0, 15);
+            },
+
+            async loadProducts() {
+                if (this.products.length > 0) return;
+                try {
+                    const r = await fetch(this.productsUrl, { credentials: 'same-origin' });
+                    if (!r.ok) return;
+                    const d = await r.json();
+                    if (d && d.success && Array.isArray(d.products)) this.products = d.products;
+                } catch (e) { console.error('Manual order: load products failed', e); }
+            },
+
+            openSearchDropdown() {
+                this.productSearchOpen = true;
+                this.loadProducts();
+            },
+
+            searchDropdownStyle() {
+                if (!this.productSearchOpen) return { visibility: 'hidden', position: 'fixed', top: 0, left: 0 };
+                const el = this.$refs && this.$refs.searchWrap;
+                if (!el || typeof el.getBoundingClientRect !== 'function') return { position: 'fixed', top: '10px', left: '10px', width: '300px', zIndex: 9999 };
+                const r = el.getBoundingClientRect();
+                return {
+                    position: 'fixed',
+                    top: (r.bottom + 4) + 'px',
+                    left: r.left + 'px',
+                    width: Math.max(r.width, 280) + 'px',
+                    zIndex: 9999,
+                    minHeight: '2rem'
+                };
+            },
+
+            async init() {
+                const today = new Date();
+                this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+                await this.loadProducts();
+            },
+            lineName(line) {
+                const p = this.products.find(x => x.id === line.productId);
+                return p ? (p.sku + ' – ' + p.name) : '—';
+            },
+            lineSubtotal(line) {
+                const q = parseInt(line.quantity, 10) || 0;
+                const u = parseFloat(line.actualUnitPrice) || 0;
+                return (q * u).toFixed(2);
+            },
+            totalAmount() {
+                return this.lines.reduce((sum, line) => {
+                    const q = parseInt(line.quantity, 10) || 0;
+                    const u = parseFloat(line.actualUnitPrice) || 0;
+                    return sum + q * u;
+                }, 0).toFixed(2);
+            },
+            addProductLine(p) {
+                const price = p.selling_price || '0.00';
+                this.lines.push({
+                    productId: parseInt(p.id, 10),
+                    quantity: 1,
+                    platformPrice: price,
+                    actualUnitPrice: price
+                });
+            },
+            removeLine(idx) {
+                this.lines.splice(idx, 1);
+            },
+            async submitOrder() {
+                if (this.lines.length === 0 || this.isSubmitting) return;
+                this.isSubmitting = true;
+                const payload = {
+                    sales_channel: this.salesChannel,
+                    transaction_date: this.transactionDate || null,
+                    customer_name: this.customerName,
+                    customer_phone: this.customerPhone,
+                    shipping_address: this.shippingAddress,
+                    items: this.lines.map(l => ({
+                        product_id: l.productId,
+                        quantity: l.quantity,
+                        platform_price: l.platformPrice || null,
+                        actual_unit_price: l.actualUnitPrice
+                    }))
+                };
+                try {
+                    const r = await fetch(this.submitUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': this.csrfToken
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const d = await r.json();
+                    if (d.success && d.redirect_url) {
+                        window.location.href = d.redirect_url;
+                    } else {
+                        alert(d.error || 'Failed to create order');
+                    }
+                } catch (e) {
+                    alert('Request failed');
+                } finally {
+                    this.isSubmitting = false;
+                }
             }
         }));
     });

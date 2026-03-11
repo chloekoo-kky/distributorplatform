@@ -1,6 +1,8 @@
 # distributorplatform/app/order/views.py
 import csv
+import io
 from django.shortcuts import render, redirect, get_object_or_404
+from django.http import Http404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction, IntegrityError
@@ -9,6 +11,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
 from django.core.paginator import Paginator
 from django.contrib.admin.views.decorators import staff_member_required
@@ -20,7 +23,27 @@ import urllib.parse
 from inventory.models import QuotationItem
 from product.models import Product, Category
 from .models import Order, OrderItem
+from .forms import ManualOrderForm
 from core.models import SiteSetting, PaymentOption
+
+
+def salesperson_required(view_func):
+    """
+    Allow only superusers or users in sales-related groups
+    (e.g. 'Salesperson' or 'salesteam').
+    """
+    @login_required
+    def _wrapped(request, *args, **kwargs):
+        if request.user.is_superuser:
+            return view_func(request, *args, **kwargs)
+        if request.user.user_groups.filter(
+            Q(name__iexact='Salesperson') | Q(name__iexact='salesteam')
+        ).exists():
+            return view_func(request, *args, **kwargs)
+        messages.error(request, 'You do not have permission to access Manual Order Entry.')
+        return redirect(reverse('core:manage_dashboard'))
+    return _wrapped
+
 
 def agent_required(view_func):
     """
@@ -184,9 +207,292 @@ def api_submit_order(request):
         return JsonResponse({'success': False, 'error': f'An unexpected error occurred: {e}'}, status=500)
 
 
+# --- Manual Order Entry (Salesperson) ---
+
+@salesperson_required
+def create_manual_order_view(request):
+    """Manual order entry: form for sales channel + customer details; product selection with custom unit_price."""
+    form = ManualOrderForm()
+    context = {
+        'form': form,
+        'sales_channel_choices': Order.SalesChannel.choices,
+    }
+    return render(request, 'order/create_manual_order.html', context)
+
+
+@salesperson_required
+def api_manual_order_products(request):
+    """GET: list products for manual order (id, name, sku, default selling_price, base_cost)."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    allowed_categories = Category.objects.filter(user_groups__users=request.user)
+    if request.user.is_superuser or not allowed_categories.exists():
+        products_query = Product.objects.all()
+    else:
+        products_query = Product.objects.filter(categories__in=allowed_categories)
+    products_query = products_query.distinct().order_by('name')
+    product_list = []
+    for p in products_query:
+        product_list.append({
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku or '-',
+            'selling_price': str(p.selling_price) if p.selling_price is not None else None,
+            'base_cost': str(p.base_cost) if p.base_cost is not None else '0.00',
+        })
+    return JsonResponse({'success': True, 'products': product_list})
+
+
+@salesperson_required
+@transaction.atomic
+def api_submit_manual_order(request):
+    """
+    POST: create a manual order (no commission).
+    Expects JSON: sales_channel, customer_name, customer_phone, shipping_address,
+    items: [{ product_id, quantity, unit_price }]
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    items = data.get('items') or []
+    if not items:
+        return JsonResponse({'success': False, 'error': 'At least one order item is required.'}, status=400)
+
+    product_ids = [int(i.get('product_id')) for i in items if i.get('product_id')]
+    if not product_ids:
+        return JsonResponse({'success': False, 'error': 'Invalid items.'}, status=400)
+
+    products = Product.objects.filter(id__in=product_ids)
+    product_map = {p.id: p for p in products}
+
+    sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
+    if sales_channel not in dict(Order.SalesChannel.choices):
+        sales_channel = Order.SalesChannel.OTHER
+
+    transaction_date = None
+    if data.get('transaction_date'):
+        try:
+            from datetime import datetime
+            transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            pass
+
+    new_order = Order.objects.create(
+        agent=request.user,
+        created_by=request.user,
+        sales_channel=sales_channel,
+        transaction_date=transaction_date,
+        customer_name=(data.get('customer_name') or '').strip() or None,
+        customer_phone=(data.get('customer_phone') or '').strip() or None,
+        shipping_address=(data.get('shipping_address') or '').strip() or None,
+        status=Order.OrderStatus.PENDING,
+    )
+
+    order_items_to_create = []
+    for row in items:
+        product_id = row.get('product_id')
+        try:
+            product_id = int(product_id)
+        except (TypeError, ValueError):
+            continue
+        if product_id not in product_map:
+            continue
+        product = product_map[product_id]
+        quantity = int(row.get('quantity') or 0)
+        if quantity <= 0:
+            continue
+        try:
+            actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
+        except Exception:
+            actual_unit_price = product.selling_price or Decimal('0.00')
+        if actual_unit_price < 0:
+            actual_unit_price = Decimal('0.00')
+        try:
+            platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
+        except Exception:
+            platform_price = None
+        if platform_price is not None and platform_price < 0:
+            platform_price = None
+        landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+
+        order_items_to_create.append(
+            OrderItem(
+                order=new_order,
+                product=product,
+                quantity=quantity,
+                selling_price=actual_unit_price,
+                landed_cost=landed_cost,
+                platform_price=platform_price,
+                actual_unit_price=actual_unit_price,
+            )
+        )
+
+    if not order_items_to_create:
+        new_order.delete()
+        return JsonResponse({'success': False, 'error': 'No valid items.'}, status=400)
+
+    for oi in order_items_to_create:
+        oi.save()
+
+    success_url = reverse('order:order_success', kwargs={'order_id': new_order.id})
+    return JsonResponse({'success': True, 'redirect_url': success_url, 'order_id': new_order.id})
+
+
+@salesperson_required
+@transaction.atomic
+def api_manual_order_detail(request, order_id):
+    """
+    GET: return details for a manual order that can be edited by the salesperson.
+    Only pending orders created_by the current user are editable.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    order = get_object_or_404(
+        Order.objects.prefetch_related('items__product'),
+        id=order_id,
+        created_by=request.user,
+        status=Order.OrderStatus.PENDING,
+    )
+
+    items_data = []
+    for item in order.items.all():
+        items_data.append({
+            'product_id': item.product_id,
+            'sku': item.product.sku or '',
+            'name': item.product.name,
+            'quantity': item.quantity,
+            'platform_price': str(item.platform_price) if item.platform_price is not None else '',
+            'actual_unit_price': str(item.actual_unit_price or item.selling_price),
+        })
+
+    data = {
+        'id': order.id,
+        'sales_channel': order.sales_channel or Order.SalesChannel.OTHER,
+        'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
+        'customer_name': order.customer_name or '',
+        'customer_phone': order.customer_phone or '',
+        'shipping_address': order.shipping_address or '',
+        'items': items_data,
+    }
+    return JsonResponse({'success': True, 'order': data})
+
+
+@salesperson_required
+@transaction.atomic
+def api_update_manual_order(request, order_id):
+    """
+    POST: update a pending manual order created by the current salesperson.
+    Replaces the existing items with the provided list.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    order = get_object_or_404(
+        Order,
+        id=order_id,
+        created_by=request.user,
+        status=Order.OrderStatus.PENDING,
+    )
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    items = data.get('items') or []
+    if not items:
+        return JsonResponse({'success': False, 'error': 'At least one order item is required.'}, status=400)
+
+    product_ids = [int(i.get('product_id')) for i in items if i.get('product_id')]
+    if not product_ids:
+        return JsonResponse({'success': False, 'error': 'Invalid items.'}, status=400)
+
+    products = Product.objects.filter(id__in=product_ids)
+    product_map = {p.id: p for p in products}
+
+    sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
+    if sales_channel not in dict(Order.SalesChannel.choices):
+        sales_channel = Order.SalesChannel.OTHER
+
+    transaction_date = None
+    if data.get('transaction_date'):
+        try:
+            from datetime import datetime
+            transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            pass
+
+    # Update order header fields
+    order.sales_channel = sales_channel
+    order.transaction_date = transaction_date
+    order.customer_name = (data.get('customer_name') or '').strip() or None
+    order.customer_phone = (data.get('customer_phone') or '').strip() or None
+    order.shipping_address = (data.get('shipping_address') or '').strip() or None
+    order.save()
+
+    # Replace items
+    order.items.all().delete()
+
+    order_items_to_create = []
+    for row in items:
+        product_id = row.get('product_id')
+        try:
+            product_id = int(product_id)
+        except (TypeError, ValueError):
+            continue
+        if product_id not in product_map:
+            continue
+        product = product_map[product_id]
+        quantity = int(row.get('quantity') or 0)
+        if quantity <= 0:
+            continue
+        try:
+            actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
+        except Exception:
+            actual_unit_price = product.selling_price or Decimal('0.00')
+        if actual_unit_price < 0:
+            actual_unit_price = Decimal('0.00')
+        try:
+            platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
+        except Exception:
+            platform_price = None
+        if platform_price is not None and platform_price < 0:
+            platform_price = None
+        landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+
+        order_items_to_create.append(
+            OrderItem(
+                order=order,
+                product=product,
+                quantity=quantity,
+                selling_price=actual_unit_price,
+                landed_cost=landed_cost,
+                platform_price=platform_price,
+                actual_unit_price=actual_unit_price,
+            )
+        )
+
+    if not order_items_to_create:
+        return JsonResponse({'success': False, 'error': 'No valid items.'}, status=400)
+
+    for oi in order_items_to_create:
+        oi.save()
+
+    success_url = reverse('order:order_success', kwargs={'order_id': order.id})
+    return JsonResponse({'success': True, 'redirect_url': success_url, 'order_id': order.id})
+
+
 @login_required
 def order_success_view(request, order_id):
-    order = get_object_or_404(Order, id=order_id, agent=request.user)
+    # Allow access if user is agent or created_by (salesperson)
+    order = get_object_or_404(Order, id=order_id)
+    if order.agent_id != request.user.id and (not order.created_by_id or order.created_by_id != request.user.id):
+        raise Http404()
 
     # Calculate totals for the template
     order_items = order.items.select_related('product')
@@ -224,6 +530,12 @@ def order_success_view(request, order_id):
     }
     return render(request, 'order/order_success.html', context)
 
+def _user_can_manual_order(user):
+    return user.is_superuser or user.user_groups.filter(
+        Q(name__iexact='Salesperson') | Q(name__iexact='salesteam')
+    ).exists()
+
+
 @staff_member_required
 def manage_orders_dashboard(request):
     """Renders the dedicated Order Management Dashboard with Statistics."""
@@ -233,6 +545,8 @@ def manage_orders_dashboard(request):
     context = {
         'title': 'Manage Orders',
         'order_statuses': Order.OrderStatus.choices,
+        'sales_channel_choices': Order.SalesChannel.choices,
+        'show_manual_order_link': _user_can_manual_order(request.user),
         'stats': {
             'total_orders': 0,
             'pending_orders': 0,
@@ -270,11 +584,14 @@ def api_manage_orders(request):
     if status_filter:
         orders = orders.filter(status=status_filter)
 
-    # 3. Apply Search Filter
+    # 3. Apply Search Filter: customer_name (manual orders) and agent name fields (standard orders)
     if search_query:
         orders = orders.filter(
             Q(id__icontains=search_query) |
-            Q(agent__username__icontains=search_query)
+            Q(customer_name__icontains=search_query) |
+            Q(agent__username__icontains=search_query) |
+            Q(agent__first_name__icontains=search_query) |
+            Q(agent__last_name__icontains=search_query)
         )
 
     # --- Statistics Calculation (Scoped to current Month/Search filters) ---
@@ -288,7 +605,10 @@ def api_manage_orders(request):
     if search_query:
         stats_qs = stats_qs.filter(
             Q(id__icontains=search_query) |
-            Q(agent__username__icontains=search_query)
+            Q(customer_name__icontains=search_query) |
+            Q(agent__username__icontains=search_query) |
+            Q(agent__first_name__icontains=search_query) |
+            Q(agent__last_name__icontains=search_query)
         )
 
     total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()
@@ -313,6 +633,7 @@ def api_manage_orders(request):
     }
 
     # --- Pagination & Serialization ---
+    orders = orders.select_related('created_by')
     paginator = Paginator(orders, limit)
     page_obj = paginator.get_page(page_number)
 
@@ -321,13 +642,17 @@ def api_manage_orders(request):
         total_items = sum(item.quantity for item in order.items.all())
         total_value = sum(item.selling_price * item.quantity for item in order.items.all())
         gross_profit = sum(item.profit for item in order.items.all())
+        customer_display = (order.customer_name and order.customer_name.strip()) or order.agent.username
 
         data.append({
             'id': order.id,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M'),
             'agent': order.agent.username,
-            'customer': str(order.agent.username) if hasattr(order, 'is_agent_order') and order.is_agent_order else order.agent.username,
+            'customer': customer_display,
             'is_agent': False,
+            'is_manual_order': bool(order.created_by_id),
+            'sales_channel': order.sales_channel or '',
+            'created_by_username': order.created_by.username if order.created_by_id else None,
             'status': order.get_status_display(),
             'status_code': order.status,
             'total_items': total_items,
@@ -387,6 +712,73 @@ def api_update_order_status(request, order_id):
         return JsonResponse({'success': True, 'message': 'Status updated'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+def export_selected_orders(request):
+    """
+    Export selected orders as an itemized CSV (one row per OrderItem).
+    Accepts JSON body: { "order_ids": ["id1", "id2", ...] }.
+    """
+    try:
+        data = json.loads(request.body)
+        order_ids = data.get('order_ids') or []
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON or missing order_ids'}, status=400)
+
+    if not order_ids or not isinstance(order_ids, list):
+        return JsonResponse({'success': False, 'error': 'No order IDs provided'}, status=400)
+
+    # Limit to avoid huge exports
+    order_ids = list(set(str(oid).strip() for oid in order_ids if oid))[:500]
+
+    orders = (
+        Order.objects.filter(id__in=order_ids)
+        .select_related('agent')
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    # Header row
+    writer.writerow([
+        'Order ID', 'Date', 'Customer Name', 'Product Name', 'Product Base Cost',
+        'Platform Price', 'Actual Received', 'Profit'
+    ])
+
+    for order in orders:
+        customer_name = (
+            (order.customer_name and order.customer_name.strip())
+            or (order.agent.get_full_name() and order.agent.get_full_name().strip())
+            or order.agent.username
+        )
+        order_date = (order.transaction_date or order.created_at.date()) if order.created_at else ''
+        if hasattr(order_date, 'strftime'):
+            order_date = order_date.strftime('%Y-%m-%d')
+
+        for item in order.items.all():
+            product = item.product
+            base_cost = product.saved_base_cost if (product.saved_base_cost is not None) else item.landed_cost
+            platform_price = item.platform_price if item.platform_price is not None else ''
+            actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+            writer.writerow([
+                order.id,
+                order_date,
+                customer_name or '',
+                product.name or '',
+                float(base_cost) if base_cost is not None else '',
+                float(platform_price) if platform_price != '' else '',
+                float(actual_received),
+                float(item.profit),
+            ])
+
+    response = HttpResponse(buffer.getvalue(), content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="orders_export.csv"'
+    return response
+
 
 @login_required
 def api_prepare_checkout(request):

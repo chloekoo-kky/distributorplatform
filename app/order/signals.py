@@ -13,12 +13,20 @@ logger = logging.getLogger(__name__)
 def create_commission_on_sale(sender, instance, created, **kwargs):
     """
     When a new OrderItem is created, calculate and create its commission record.
+    Skip commission for manual orders (entered by salesperson) where order.created_by is set.
     """
     if not created:
-        return # Only run on creation
+        return  # Only run on creation
 
     order_item = instance
-    buyer = order_item.order.agent
+    order = order_item.order
+
+    # Manual order entry: no commission when a salesperson created the order
+    if getattr(order, 'created_by_id', None) or getattr(order, 'created_by', None):
+        logger.info(f"[Commission Signal] Skipping commission: manual order (created_by set) for OrderItem {order_item.id}.")
+        return
+
+    buyer = order.agent
 
     logger.info(f"[Commission Signal] Processing Item ID: {order_item.id} | Product: {order_item.product.name} | Buyer: {buyer.username}")
 

@@ -7,10 +7,17 @@ urlpatterns = [
     path('place-order/', views.place_order_view, name='place_order'),
     path('api/submit-order/', views.api_submit_order, name='api_submit_order'),
 
+    path('manual-order/', views.create_manual_order_view, name='create_manual_order'),
+    path('api/manual-order/products/', views.api_manual_order_products, name='api_manual_order_products'),
+    path('api/manual-order/submit/', views.api_submit_manual_order, name='api_submit_manual_order'),
+    path('api/manual-order/<str:order_id>/detail/', views.api_manual_order_detail, name='api_manual_order_detail'),
+    path('api/manual-order/<str:order_id>/update/', views.api_update_manual_order, name='api_update_manual_order'),
+
     path('order-success/<str:order_id>/', views.order_success_view, name='order_success'),
 
     path('manage/', views.manage_orders_dashboard, name='manage_orders'),
     path('api/manage-orders/', views.api_manage_orders, name='api_manage_orders'),
+    path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
 
     path('api/order/<str:order_id>/items/', views.api_get_order_items, name='api_get_order_items'),
     path('api/order/<str:order_id>/update-status/', views.api_update_order_status, name='api_update_order_status'),
