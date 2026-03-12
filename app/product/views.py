@@ -1071,27 +1071,40 @@ def api_manage_pricing(request, product_id):
         # --- CRITICAL: Ensure 'is_promotion' is in this list ---
         product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate', 'saved_base_cost'])
 
-        # --- Price tiers: replace all tiers with payload (min_quantity + profit_margin → price) ---
+        # --- Price tiers: replace all tiers with payload ---
+        # Price is the source of truth; profit_margin (if provided) is for backward compatibility.
         base_cost = product.saved_base_cost if product.saved_base_cost is not None else product.base_cost
         tiers_payload = data.get('price_tiers') or []
         ProductPriceTier.objects.filter(product=product).delete()
         for row in tiers_payload:
             try:
                 min_qty = int(row.get('min_quantity', 0))
-                margin_val = row.get('profit_margin')
                 if min_qty < 1:
                     continue
-                if margin_val is None or margin_val == '':
+                price_val = row.get('price')
+
+                price = None
+                # 1) Prefer explicit price from payload
+                if price_val not in (None, ''):
+                    price = Decimal(str(price_val))
+                else:
+                    # 2) Fallback: compute from profit_margin (legacy behaviour)
+                    margin_val = row.get('profit_margin')
+                    if margin_val is None or margin_val == '':
+                        continue
+                    if base_cost is None or base_cost <= 0:
+                        continue
+                    margin = Decimal(str(margin_val))
+                    if margin >= 100:
+                        continue
+                    # selling_price = base_cost / (1 - margin/100)
+                    price = base_cost / (1 - margin / Decimal('100'))
+
+                if price is None or price <= 0:
                     continue
-                margin = Decimal(str(margin_val))
-                if base_cost is None or base_cost <= 0:
-                    continue
-                if margin >= 100:
-                    continue
-                # selling_price = base_cost / (1 - margin/100)
-                price = base_cost / (1 - margin / Decimal('100'))
+
                 ProductPriceTier.objects.create(product=product, min_quantity=min_qty, price=price)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, InvalidOperation):
                 continue
 
         # [DEBUG] Verify the save by reloading from DB
