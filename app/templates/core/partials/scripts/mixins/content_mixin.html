@@ -73,8 +73,8 @@
                 this.bannerIsSubmitting = true;
                 const form = document.getElementById('banner-form');
                 const formData = new FormData(form);
-                if(!form.querySelector('[name=is_active]').checked) { formData.set('is_active', 'False'); }
-                else { formData.set('is_active', 'True'); }
+                // Toggle uses currentBanner.is_active (no checkbox in form); send lowercase for backend
+                formData.set('is_active', this.currentBanner.is_active ? 'true' : 'false');
 
                 let url = '{% url "core:api_save_banner" %}';
                 if (this.currentBanner.id) { url = `/manage/api/save-banner/${this.currentBanner.id}/`; }

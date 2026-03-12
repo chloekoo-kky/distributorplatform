@@ -143,10 +143,17 @@
                     <input type="number" name="order" x-model="currentBanner.order"
                            class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
-                <div class="flex items-center p-3 border border-gray-300 rounded-md shadow-sm bg-white h-[42px]">
-                    <input type="checkbox" name="is_active" id="banner_is_active" x-model="currentBanner.is_active"
-                           class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-                    <label for="banner_is_active" class="ml-3 text-sm font-medium text-gray-700">Active</label>
+                <div class="flex items-center justify-between p-3 border border-gray-300 rounded-md shadow-sm bg-white h-[42px]">
+                    <span class="text-sm font-medium text-gray-700">Active</span>
+                    <button type="button"
+                            role="switch"
+                            :aria-checked="currentBanner.is_active"
+                            @click="currentBanner.is_active = !currentBanner.is_active"
+                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            :class="currentBanner.is_active ? 'bg-indigo-600' : 'bg-gray-200'">
+                        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                              :class="currentBanner.is_active ? 'translate-x-5' : 'translate-x-1'"></span>
+                    </button>
                 </div>
             </div>
 

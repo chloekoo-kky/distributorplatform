@@ -1056,7 +1056,13 @@ def import_quotation_items_confirm(request, quotation_id):
                     existing_item.quoted_price = price
                     existing_item.save(update_fields=['quantity', 'quoted_price'])
                 else:
-                    QuotationItem.objects.create(quotation=quotation, product=product, quantity=qty, quoted_price=price)
+                    item = QuotationItem.objects.create(quotation=quotation, product=product, quantity=qty, quoted_price=price)
+                    # When product was just created from this import, set base cost from this quote so Set Product Pricing shows it.
+                    if product.id in created_products:
+                        landed = item.landed_cost_per_unit
+                        if landed is not None:
+                            product.saved_base_cost = landed
+                            product.save(update_fields=['saved_base_cost'])
     except Exception as e:
         logger.exception("import_quotation_items_confirm failed")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

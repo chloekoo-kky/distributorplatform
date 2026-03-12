@@ -96,9 +96,12 @@
 
                     const supplierCosts = (data.supplier_costs || []).map(sc => ({ ...sc }));
                     let baseCost = null;
-                    // Only consider a base cost \"selected\" when saved_base_cost exists.
+                    // Use saved_base_cost when set (user has chosen a source); otherwise use computed base_cost
+                    // (e.g. latest quoted cost) so products created from quotation import show their cost.
                     if (data.saved_base_cost != null) {
                         baseCost = parseFloat(data.saved_base_cost);
+                    } else if (data.base_cost != null && data.base_cost !== '') {
+                        baseCost = parseFloat(data.base_cost);
                     }
 
                     let profitMargin = data.profit_margin != null ? parseFloat(data.profit_margin) : null;

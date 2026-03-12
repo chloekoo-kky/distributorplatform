@@ -136,11 +136,16 @@ def manage_dashboard(request):
 @staff_required
 @require_POST
 def api_save_banner(request, banner_id=None):
+    # Normalize is_active: unchecked checkbox is omitted from POST; ensure backend treats it as False
+    post_data = request.POST.copy()
+    raw = post_data.get('is_active', '')
+    post_data['is_active'] = str(raw).lower() in ('true', '1', 'yes', 'on')
+
     if banner_id:
         banner = get_object_or_404(Banner, pk=banner_id)
-        form = BannerForm(request.POST, request.FILES, instance=banner)
+        form = BannerForm(post_data, request.FILES, instance=banner)
     else:
-        form = BannerForm(request.POST, request.FILES)
+        form = BannerForm(post_data, request.FILES)
 
     if form.is_valid():
         banner = form.save()

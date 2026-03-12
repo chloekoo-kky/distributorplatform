@@ -25,7 +25,7 @@ class Order(models.Model):
         WHATSAPP = 'WhatsApp', 'WhatsApp'
         SHOPEE = 'Shopee', 'Shopee'
         LAZADA = 'Lazada', 'Lazada'
-        OFFLINE = 'Offline', 'Offline'
+        Website = 'Website', 'Website'
         OTHER = 'Other', 'Other'
 
     # --- CHANGED: Use CharField with custom generator for ID ---
@@ -53,7 +53,7 @@ class Order(models.Model):
         help_text='Staff/salesperson who entered this order. When set, commission is skipped.'
     )
 
-    # Sales channel for manual orders (e.g. WhatsApp, Shopee, Offline)
+    # Sales channel for manual orders (e.g. WhatsApp, Shopee, Website)
     sales_channel = models.CharField(
         max_length=50,
         choices=SalesChannel.choices,

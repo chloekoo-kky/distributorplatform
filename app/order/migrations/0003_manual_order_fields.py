@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                     ('WhatsApp', 'WhatsApp'),
                     ('Shopee', 'Shopee'),
                     ('Lazada', 'Lazada'),
-                    ('Offline', 'Offline'),
+                    ('Website', 'Website'),
                     ('Other', 'Other'),
                 ],
                 default='Other',
