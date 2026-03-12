@@ -124,7 +124,7 @@
                        class="text-xs">
                         <span class="text-gray-600">Profit per unit:</span>
                         <span class="font-semibold text-green-600"
-                              x-text="`RM ${commissionProfit().toFixed(2)}`"></span>
+                              x-text="commissionProfit() !== null ? ('RM ' + commissionProfit().toFixed(2)) : 'RM 0.00'"></span>
                     </p>
                 </div>
 
