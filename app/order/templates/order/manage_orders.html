@@ -17,11 +17,6 @@
                 <h1 class="text-3xl font-bold text-gray-900">Order Management</h1>
                 <p class="mt-1 text-sm text-gray-500">Overview of customer orders and revenue.</p>
             </div>
-            {% if show_manual_order_link %}
-            <button type="button" @click="showManualOrderModal = true" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
-                Manual order entry
-            </button>
-            {% endif %}
         </div>
 
 
@@ -42,13 +37,21 @@
                                 Reset
                             </button>
                         </div>
-                        <div class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg h-10 px-2">
-                            <button @click="prevMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Previous month">
-                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                            </button>
-                            <span class="text-sm font-semibold text-gray-800 select-none min-w-[7rem] text-center" x-text="currentMonthLabel"></span>
-                            <button @click="nextMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Next month">
-                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg h-10 px-2">
+                                <button @click="prevMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Previous month">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                                </button>
+                                <span class="text-sm font-semibold text-gray-800 select-none min-w-[7rem] text-center" x-text="currentMonthLabel"></span>
+                                <button @click="nextMonth()" class="p-1.5 hover:bg-gray-200 rounded-md text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" title="Next month">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                </button>
+                            </div>
+                            <button type="button"
+                                    @click="openExportModal()"
+                                    class="inline-flex justify-center items-center w-10 h-10 rounded-lg text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                                    title="Export by period (CSV)">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             </button>
                         </div>
                     </div>
@@ -77,8 +80,8 @@
                         </select>
                     </div>
 
-                    {# 4. Actions: keep only refresh here; exports live above table #}
-                    <div class="md:col-span-3 flex justify-start md:justify-end">
+                    {# 4. Actions #}
+                    <div class="md:col-span-3 flex flex-wrap justify-start md:justify-end gap-2">
                         <button type="button"
                                 @click="fetchOrders(1)"
                                 class="inline-flex justify-center items-center gap-1.5 px-3 py-2.5 h-10 rounded-lg text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors">
@@ -128,7 +131,7 @@
         {# --- Orders Table --- #}
         <div class="bg-white shadow overflow-hidden sm:rounded-lg">
 
-            {# Table header with exports in top-right #}
+            {# Table header #}
             <div class="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 flex items-center justify-between gap-3">
                 <div>
                     <h2 class="text-sm font-semibold text-gray-900">Orders</h2>
@@ -141,12 +144,6 @@
                             class="inline-flex justify-center items-center gap-1.5 px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         Export Selected
-                    </button>
-                    <button type="button"
-                            @click="openExportModal()"
-                            class="inline-flex justify-center items-center w-9 h-9 rounded-md border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
-                            title="Export by period (CSV)">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     </button>
                 </div>
             </div>
@@ -162,6 +159,7 @@
                 No orders found for <span x-text="currentMonthLabel"></span> matching your criteria.
             </div>
 
+            <div class="overflow-x-auto">
             <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200" style="display: none;">
                 <thead class="bg-gray-50">
                     <tr>
@@ -213,11 +211,9 @@
                                     lines.push('');
                                     lines.push('Items:');
                                     this.details.forEach(item => {
-                                        lines.push(`- ${item.product_name} (${item.sku}) x${item.quantity} @ RM ${parseFloat(item.selling_price).toFixed(2)} = RM ${parseFloat(item.total).toFixed(2)}`);
+                                        lines.push(`- ${item.product_name} (${item.sku}) x${item.quantity}`);
                                     });
-                                    lines.push('');
-                                    lines.push(`Total: ${this.$root.formatMoney(order.total_value)}`);
-                                    const text = lines.join('\\n');
+                                    const text = lines.join('\n');
 
                                     if (navigator.clipboard && navigator.clipboard.writeText) {
                                         await navigator.clipboard.writeText(text);
@@ -360,6 +356,7 @@
                     </tbody>
                 </template>
             </table>
+            </div>
 
             {# ... Pagination ... #}
              <div x-show="!isLoading && items.length > 0" class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
