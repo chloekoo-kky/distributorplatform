@@ -62,9 +62,15 @@
             </a>
             {% endif %}
 
+            {% if order.created_by_id %}
+            <a href="{% url 'user:profile' %}" class="w-full flex items-center justify-center px-4 py-3 border border-gray-300 shadow-sm text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 md:text-lg">
+                Return to Order History
+            </a>
+            {% else %}
             <a href="{% url 'order:place_order' %}" class="w-full flex items-center justify-center px-4 py-3 border border-gray-300 shadow-sm text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 md:text-lg">
                 Return to Shop
             </a>
+            {% endif %}
         </div>
 
     </div>

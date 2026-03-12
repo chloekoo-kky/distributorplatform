@@ -342,6 +342,15 @@ def profile_view(request):
     # 2. Get Order History (For everyone)
     orders = Order.objects.filter(agent=user).prefetch_related('items__product').order_by('-created_at')
 
+    # Optional search for sales team / staff: by customer name, phone, or product name
+    order_search_query = (request.GET.get('order_search') or '').strip()
+    if order_search_query and (user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()):
+        orders = orders.filter(
+            Q(customer_name__icontains=order_search_query) |
+            Q(customer_phone__icontains=order_search_query) |
+            Q(items__product__name__icontains=order_search_query)
+        ).distinct()
+
     # Calculate order totals for display
     for order in orders:
         total = sum(item.selling_price * item.quantity for item in order.items.all())
@@ -360,8 +369,8 @@ def profile_view(request):
     # --- NEW: Get Payment Options for the Modal ---
     payment_options = PaymentOption.objects.filter(is_active=True)
 
-    # --- Manual Order Entry permission for profile (sales team) ---
-    can_manual_order_profile = user.user_groups.filter(name__iexact='salesteam').exists()
+    # --- Manual Order Entry permission for profile (allow sales team and staff/admin) ---
+    can_manual_order_profile = user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()
 
     context = {
         'is_agent': is_agent,
@@ -372,6 +381,7 @@ def profile_view(request):
         'can_manage_subscription': can_manage_subscription,
         'can_manual_order_profile': can_manual_order_profile,
         'sales_channel_choices': Order.SalesChannel.choices,
+        'order_search_query': order_search_query,
     }
 
     # 3. Get Commission Data (Agent Only)

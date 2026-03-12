@@ -202,14 +202,29 @@
                     {% endif %}
                 {% endwith %}
             </h2>
-            {% if can_manual_order_profile %}
-            <button type="button"
-                    @click="showManualOrderModal = true"
-                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
-                <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                Manual order entry
-            </button>
-            {% endif %}
+            <div class="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-end w-full sm:w-auto">
+                {% if can_manual_order_profile %}
+                <form method="get" action="{% url 'user:profile' %}" class="flex items-center w-full sm:w-auto">
+                    <input type="text"
+                           name="order_search"
+                           value="{{ order_search_query|default:'' }}"
+                           placeholder="Search orders by customer, phone, or product..."
+                           class="w-full sm:w-72 px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
+                    {% if order_search_query %}
+                        <a href="{% url 'user:profile' %}"
+                           class="ml-2 text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap">Clear</a>
+                    {% endif %}
+                </form>
+                {% endif %}
+                {% if can_manual_order_profile %}
+                <button type="button"
+                        @click="window.openNewManualOrder && window.openNewManualOrder()"
+                        class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
+                    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    Manual order entry
+                </button>
+                {% endif %}
+            </div>
         </div>
         <div class="bg-white shadow rounded-lg overflow-hidden">
             <div class="overflow-x-auto">
@@ -218,6 +233,11 @@
                         <tr>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            {% if can_manual_order_profile %}
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                            {% endif %}
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
@@ -229,6 +249,17 @@
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ order.id }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.created_at|date:"M d, Y" }}</td>
+                            {% if can_manual_order_profile %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ order.get_sales_channel_display|default:"-" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ order.customer_name|default:"-" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ order.customer_phone|default:"-" }}
+                            </td>
+                            {% endif %}
                             <td class="px-6 py-4 text-sm text-gray-500">
                                 <ul class="list-disc list-inside">
                                     {% for item in order.items.all %}
@@ -278,7 +309,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="px-6 py-4 text-center text-gray-500">You haven't placed any orders yet.</td>
+                            <td colspan="{% if can_manual_order_profile %}9{% else %}6{% endif %}" class="px-6 py-4 text-center text-gray-500">You haven't placed any orders yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -403,9 +434,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async init() {
-            const today = new Date();
-            this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-            await this.loadProducts();
+            // Initialize defaults and start loading products in the background.
+            this.resetForNewOrder();
+            this.loadProducts();
         },
         async loadExistingOrder(orderId) {
             try {
@@ -422,11 +453,13 @@ document.addEventListener('alpine:init', () => {
                 this.customerPhone = o.customer_phone || '';
                 this.shippingAddress = o.shipping_address || '';
 
-                // Ensure products are loaded so lineName works nicely later
-                await this.loadProducts();
+                // Ensure products start loading, but don't block showing existing lines.
+                this.loadProducts();
 
                 this.lines = (o.items || []).map(item => ({
                     productId: item.product_id,
+                    productSku: item.sku || '',
+                    productName: item.name || '',
                     quantity: item.quantity,
                     platformPrice: item.platform_price || '',
                     actualUnitPrice: item.actual_unit_price || '0.00',
@@ -437,8 +470,13 @@ document.addEventListener('alpine:init', () => {
             }
         },
         lineName(line) {
+            const sku = (line.productSku || '').toString();
+            const name = (line.productName || '').toString();
+            if (sku || name) {
+                return (sku ? sku : '') + (sku && name ? ' – ' : '') + (name ? name : '');
+            }
             const p = this.products.find(x => x.id === line.productId);
-            return p ? (p.sku + ' – ' + p.name) : '—';
+            return p ? ((p.sku || '') + ' – ' + (p.name || '')) : '—';
         },
         lineSubtotal(line) {
             const q = parseInt(line.quantity, 10) || 0;
@@ -463,6 +501,18 @@ document.addEventListener('alpine:init', () => {
         },
         removeLine(idx) {
             this.lines.splice(idx, 1);
+        },
+        resetForNewOrder() {
+            const today = new Date();
+            this.currentOrderId = null;
+            this.salesChannel = 'Other';
+            this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+            this.customerName = '';
+            this.customerPhone = '';
+            this.shippingAddress = '';
+            this.productSearchQuery = '';
+            this.productSearchOpen = false;
+            this.lines = [];
         },
         async submitOrder() {
             if (this.lines.length === 0 || this.isSubmitting) return;
@@ -499,11 +549,13 @@ document.addEventListener('alpine:init', () => {
                 if (data.success && data.redirect_url) {
                     window.location.href = data.redirect_url;
                 } else {
-                    throw new Error(data.error || 'Failed to create order');
+                    const baseMsg = this.currentOrderId ? 'Failed to update order' : 'Failed to create order';
+                    throw new Error(data.error || baseMsg);
                 }
             } catch (e) {
                 console.error('Manual order submit failed', e);
-                alert('Failed to create order: ' + (e.message || 'Unknown error'));
+                const baseMsg = this.currentOrderId ? 'Failed to update order' : 'Failed to create order';
+                alert(baseMsg + ': ' + (e.message || 'Unknown error'));
             } finally {
                 this.isSubmitting = false;
             }
@@ -527,6 +579,25 @@ window.editManualOrder = function(orderId) {
         if (!store) return;
         store.currentOrderId = orderId;
         store.loadExistingOrder(orderId);
+    }, 50);
+};
+
+// Helper to open a fresh Manual Order Entry (no previous edit state)
+window.openNewManualOrder = function() {
+    const root = document.querySelector('#profile-root');
+    if (!root || !window.Alpine) return;
+    const comp = Alpine.$data(root);
+    if (!comp || typeof comp.showManualOrderModal === 'undefined') return;
+
+    comp.showManualOrderModal = true;
+    setTimeout(() => {
+        const modalRoot = document.querySelector('[x-data="manualOrderData()"]') || document.querySelector('[x-data^="manualOrderData"]');
+        if (!modalRoot) return;
+        const store = Alpine.$data(modalRoot);
+        if (!store || typeof store.resetForNewOrder !== 'function') return;
+        store.resetForNewOrder();
+        // Ensure products load in the background for the new session.
+        store.loadProducts && store.loadProducts();
     }, 50);
 };
 </script>
