@@ -256,8 +256,56 @@ class Product(models.Model):
             return reverse('product:product_detail', kwargs={'sku': self.sku})
         return reverse('product:product_list') # Fallback
 
+    def get_price_for_quantity(self, quantity):
+        """
+        Returns the selling price per unit for the given quantity.
+        If the product has price tiers, returns the best matching tier price
+        (highest min_quantity that is <= quantity). Otherwise returns selling_price.
+        """
+        if quantity is None or quantity < 1:
+            return self.selling_price
+        tiers = getattr(self, '_price_tiers_cache', None)
+        if tiers is None:
+            tiers = list(self.price_tiers.order_by('-min_quantity'))
+            self._price_tiers_cache = tiers
+        for tier in tiers:
+            if quantity >= tier.min_quantity:
+                return tier.price
+        return self.selling_price
+
     def __str__(self):
         return self.name
+
+
+class ProductPriceTier(models.Model):
+    """
+    Tiered pricing: minimum order quantity triggers a lower selling price.
+    E.g. min_quantity=10, price=9.00 means "order 10+ units at RM 9 each".
+    Tiers are evaluated by highest min_quantity first (order by min_quantity desc).
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='price_tiers'
+    )
+    min_quantity = models.PositiveIntegerField(
+        help_text="Minimum order quantity to get this price (e.g. 10 for '10+ units')."
+    )
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Selling price per unit when order quantity meets min_quantity."
+    )
+
+    class Meta:
+        ordering = ['-min_quantity']
+        unique_together = [('product', 'min_quantity')]
+        verbose_name = "Price tier"
+        verbose_name_plural = "Price tiers"
+
+    def __str__(self):
+        return f"{self.product.name}: {self.min_quantity}+ @ RM {self.price}"
+
 
 class ProductContentSection(models.Model):
     product = models.ForeignKey(Product, related_name='content_sections', on_delete=models.CASCADE)

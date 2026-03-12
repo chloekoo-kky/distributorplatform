@@ -7,7 +7,7 @@
             pricingData: {
                 id: null, name: '', base_cost: null, profit_margin: null,
                 selling_price: null, is_promotion: false, promotion_rate: null, update_url: '',
-                supplier_costs: []
+                supplier_costs: [], price_tiers: []
             },
 
             // Product Edit Modal State
@@ -72,7 +72,8 @@
                     is_promotion: false,
                     promotion_rate: null,
                     update_url: '',
-                    supplier_costs: []
+                    supplier_costs: [],
+                    price_tiers: []
                 };
 
                 this.showPricingModal = true;
@@ -120,6 +121,12 @@
                         }
                     }
 
+                    const priceTiers = (data.price_tiers || []).map(t => ({
+                        min_quantity: parseInt(t.min_quantity, 10) || 1,
+                        profit_margin: t.profit_margin != null ? parseFloat(t.profit_margin) : null,
+                        price: t.price != null ? parseFloat(t.price) : null
+                    }));
+
                     this.pricingData = {
                         id: data.id,
                         name: data.name,
@@ -129,7 +136,8 @@
                         is_promotion: !!data.is_promotion,
                         promotion_rate: data.promotion_rate != null ? parseFloat(data.promotion_rate) : null,
                         update_url: `/api/manage-pricing/${data.id}/`,
-                        supplier_costs: supplierCosts
+                        supplier_costs: supplierCosts,
+                        price_tiers: priceTiers
                     };
 
                     console.log('[PricingModal][state]', this.pricingData);
@@ -174,6 +182,57 @@
                 this.pricingData.profit_margin = Math.round(margin);
             },
 
+            // Price tier: selling price from base cost and profit margin
+            tierSellingPrice(tier) {
+                const base = parseFloat(this.pricingData.base_cost);
+                const margin = tier.profit_margin != null ? parseFloat(tier.profit_margin) : null;
+                if (base == null || isNaN(base) || base <= 0 || margin == null || isNaN(margin) || margin >= 100) return null;
+                const price = base / (1 - margin / 100);
+                return parseFloat(price.toFixed(2));
+            },
+
+            // When user edits tier price: recompute profit margin (like calculateMarginFromPrice for main selling price)
+            updateTierMarginFromPrice(tier) {
+                const base = parseFloat(this.pricingData.base_cost);
+                const price = tier.price != null ? parseFloat(tier.price) : null;
+                if (base == null || isNaN(base) || base <= 0 || price == null || isNaN(price) || price <= 0) return;
+                const margin = ((price - base) / price) * 100;
+                tier.profit_margin = Math.round(margin * 10) / 10;
+            },
+
+            // When user edits tier margin: update tier price so the price input stays in sync
+            updateTierPriceFromMargin(tier) {
+                const computed = this.tierSellingPrice(tier);
+                if (computed != null) tier.price = computed;
+            },
+
+            // Profit per unit for a tier (price - base cost)
+            tierProfitPerUnit(tier) {
+                const base = parseFloat(this.pricingData.base_cost);
+                const price = tier.price != null ? parseFloat(tier.price) : null;
+                if (base == null || isNaN(base) || price == null || isNaN(price)) return null;
+                const profit = price - base;
+                return profit > 0 ? parseFloat(profit.toFixed(2)) : null;
+            },
+
+            addPricingTier() {
+                const defaultMargin = this.pricingData.profit_margin != null ? this.pricingData.profit_margin : 20;
+                const maxMinQty = this.pricingData.price_tiers.length
+                    ? Math.max(...this.pricingData.price_tiers.map(t => t.min_quantity || 0))
+                    : 0;
+                const newTier = {
+                    min_quantity: maxMinQty + 10,
+                    profit_margin: defaultMargin,
+                    price: null
+                };
+                this.pricingData.price_tiers.push(newTier);
+                newTier.price = this.tierSellingPrice(newTier);
+            },
+
+            removePricingTier(index) {
+                this.pricingData.price_tiers.splice(index, 1);
+            },
+
             async submitPricingUpdate() {
                 if (this.pricingIsSubmitting) return;
                 this.pricingIsSubmitting = true;
@@ -183,7 +242,11 @@
                     selling_price: this.pricingData.selling_price,
                     is_promotion: this.pricingData.is_promotion,
                     promotion_rate: this.pricingData.promotion_rate,
-                    base_cost: this.pricingData.base_cost != null ? this.pricingData.base_cost : null
+                    base_cost: this.pricingData.base_cost != null ? this.pricingData.base_cost : null,
+                    price_tiers: this.pricingData.price_tiers.map(t => ({
+                        min_quantity: t.min_quantity,
+                        profit_margin: t.profit_margin
+                    }))
                 };
 
                 try {

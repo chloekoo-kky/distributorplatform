@@ -74,7 +74,8 @@ def place_order_view(request):
                                           .prefetch_related('quotation__items')
                                           .order_by('-quotation__date_quoted'),
             to_attr='latest_quotation_items'
-        )
+        ),
+        'price_tiers',
     ).distinct().order_by('name')
 
     # --- 1. Determine Agent Status ---
@@ -89,32 +90,32 @@ def place_order_view(request):
         base_cost = p.base_cost
 
         if selling_price is not None:
+            # Price tiers for tiered pricing (min_quantity -> price per unit)
+            price_tiers = [{'min_quantity': t.min_quantity, 'price': float(t.price)} for t in p.price_tiers.all()]
+            price_tiers.sort(key=lambda x: -x['min_quantity'])  # highest min_quantity first
+
             item_data = {
                 'id': p.id,
                 'name': p.name,
                 'sku': p.sku or '-',
-                'selling_price': selling_price,
+                'selling_price': float(selling_price),
+                'price_tiers': price_tiers,
                 'img_url': p.featured_image.image.url if p.featured_image else None,
-                'commission': 0.00, # Default for customers
+                'commission': 0.00,  # Default for customers
             }
 
             if is_agent:
-                # --- 2. Calculate Agent's Commission ---
+                # --- 2. Calculate Agent's Commission (per unit at base price) ---
                 commission_value = Decimal('0.00')
-
-                # A. Determine the 'Profit Base'
                 if p.profit_margin is not None:
                     profit_base = selling_price * (p.profit_margin / Decimal('100.00'))
                 elif base_cost is not None:
                     profit_base = selling_price - base_cost
                 else:
                     profit_base = Decimal('0.00')
-
-                # B. Apply Agent's Commission Percentage
                 if profit_base > 0:
                     commission_value = profit_base * (agent_commission_percent / Decimal('100.00'))
-
-                item_data['commission'] = commission_value
+                item_data['commission'] = float(commission_value)
 
             product_list_json.append(item_data)
 
@@ -158,7 +159,8 @@ def api_submit_order(request):
                                               .prefetch_related('quotation__items')
                                               .order_by('-quotation__date_quoted'),
                 to_attr='latest_quotation_items'
-            )
+            ),
+             'price_tiers',
         )
 
         product_map = {p.id: p for p in products_in_cart}
@@ -175,7 +177,8 @@ def api_submit_order(request):
 
             product = product_map[product_id]
 
-            if product.selling_price is None:
+            unit_price = product.get_price_for_quantity(quantity)
+            if unit_price is None:
                 raise IntegrityError(f"Product {product.name} has no selling price.")
 
             landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
@@ -185,7 +188,7 @@ def api_submit_order(request):
                     order=new_order,
                     product=product,
                     quantity=quantity,
-                    selling_price=product.selling_price,
+                    selling_price=unit_price,
                     landed_cost=landed_cost
                 )
             )
@@ -796,7 +799,7 @@ def api_prepare_checkout(request):
             return JsonResponse({'success': False, 'error': 'Cart is empty.'}, status=400)
 
         product_ids = [item.get('id') for item in cart_items]
-        products = Product.objects.filter(id__in=product_ids)
+        products = Product.objects.filter(id__in=product_ids).prefetch_related('price_tiers')
         product_map = {p.id: p for p in products}
 
         checkout_cart = []
@@ -813,7 +816,8 @@ def api_prepare_checkout(request):
             if p_id not in product_map: continue
 
             product = product_map[p_id]
-            selling_price = product.selling_price if product.selling_price is not None else Decimal('0.00')
+            selling_price = product.get_price_for_quantity(quantity)
+            selling_price = selling_price if selling_price is not None else Decimal('0.00')
             base_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
 
             estimated_commission = Decimal('0.00')

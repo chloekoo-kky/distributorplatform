@@ -109,7 +109,7 @@
                                x-model.number="pricingData.selling_price"
                                @input.debounce.300ms="calculateMarginFromPrice()"
                                :disabled="!pricingData.base_cost"
-                               step="0.01" min="0"
+                               step="1" min="0"
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
                     </div>
                 </div>
@@ -126,6 +126,56 @@
                         <span class="font-semibold text-green-600"
                               x-text="`RM ${commissionProfit().toFixed(2)}`"></span>
                     </p>
+                </div>
+
+                <hr class="border-gray-100">
+
+                {# --- Price Tiers (min quantity → lower selling price via profit margin) --- #}
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-700">Price Tiers</span>
+                        <button type="button"
+                                @click="addPricingTier()"
+                                :disabled="!pricingData.base_cost"
+                                class="text-sm text-indigo-600 hover:text-indigo-800 disabled:text-gray-400 disabled:cursor-not-allowed">
+                            + Add tier
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-2">Set min quantity, margin %, or price (RM). Editing price recomputes margin; editing margin recomputes price.</p>
+                    <div class="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                        <template x-for="(tier, idx) in pricingData.price_tiers" :key="idx">
+                            <div class="flex items-center gap-2 flex-wrap bg-white p-2 rounded border border-gray-100">
+                                <label class="text-xs text-gray-500 shrink-0">Min qty:</label>
+                                <input type="number"
+                                       x-model.number="tier.min_quantity"
+                                       min="1"
+                                       class="w-16 p-1.5 text-sm border border-gray-300 rounded focus:ring-indigo-500">
+                                <label class="text-xs text-gray-500 shrink-0">Margin %:</label>
+                                <input type="number"
+                                       x-model.number="tier.profit_margin"
+                                       @input="updateTierPriceFromMargin(tier)"
+                                       min="0" step="0.5"
+                                       class="w-16 p-1.5 text-sm border border-gray-300 rounded focus:ring-indigo-500">
+                                <label class="text-xs text-gray-500 shrink-0">Price (RM):</label>
+                                <input type="number"
+                                       x-model.number="tier.price"
+                                       @input="updateTierMarginFromPrice(tier)"
+                                       step="1" min="0"
+                                       placeholder="—"
+                                       class="w-20 p-1.5 text-sm font-mono border border-gray-300 rounded focus:ring-indigo-500">
+                                <span class="text-xs text-gray-600 shrink-0">Profit/unit:</span>
+                                <span class="text-sm font-mono font-semibold text-green-600"
+                                      x-text="tierProfitPerUnit(tier) != null ? 'RM ' + tierProfitPerUnit(tier).toFixed(2) : '—'"></span>
+                                <button type="button"
+                                        @click="removePricingTier(idx)"
+                                        class="ml-auto text-red-500 hover:text-red-700 text-xs">
+                                    Remove
+                                </button>
+                            </div>
+                        </template>
+                        <p x-show="!pricingData.price_tiers || pricingData.price_tiers.length === 0"
+                           class="text-xs text-gray-400 italic py-1">No tiers. Add a tier to offer a lower price for minimum order quantity.</p>
+                    </div>
                 </div>
 
                 <hr class="border-gray-100">

@@ -22,7 +22,7 @@ from django.core.paginator import Paginator, EmptyPage
 from inventory.models import QuotationItem, InventoryBatch
 from inventory.views import staff_required
 
-from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion
+from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion, ProductPriceTier
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
 
@@ -1011,6 +1011,18 @@ def api_manage_pricing(request, product_id):
                 )
 
         base_cost = product.base_cost
+        # Price tiers: return min_quantity, price, and computed profit_margin for modal editing
+        price_tiers_data = []
+        for tier in product.price_tiers.order_by('-min_quantity'):
+            margin = None
+            if base_cost is not None and tier.price and tier.price > 0:
+                margin = round(float((tier.price - base_cost) / tier.price * 100), 1)
+            price_tiers_data.append({
+                'min_quantity': tier.min_quantity,
+                'price': str(tier.price),
+                'profit_margin': margin if margin is not None else None,
+            })
+
         return JsonResponse({
             'success': True,
             'id': product.pk,
@@ -1023,6 +1035,7 @@ def api_manage_pricing(request, product_id):
             'saved_base_cost': str(product.saved_base_cost) if getattr(product, "saved_base_cost", None) is not None else None,
             'base_cost': str(base_cost) if base_cost is not None else None,
             'supplier_costs': supplier_costs,
+            'price_tiers': price_tiers_data,
         })
 
     # --- POST: existing pricing update flow ---
@@ -1057,6 +1070,29 @@ def api_manage_pricing(request, product_id):
 
         # --- CRITICAL: Ensure 'is_promotion' is in this list ---
         product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate', 'saved_base_cost'])
+
+        # --- Price tiers: replace all tiers with payload (min_quantity + profit_margin → price) ---
+        base_cost = product.saved_base_cost if product.saved_base_cost is not None else product.base_cost
+        tiers_payload = data.get('price_tiers') or []
+        ProductPriceTier.objects.filter(product=product).delete()
+        for row in tiers_payload:
+            try:
+                min_qty = int(row.get('min_quantity', 0))
+                margin_val = row.get('profit_margin')
+                if min_qty < 1:
+                    continue
+                if margin_val is None or margin_val == '':
+                    continue
+                margin = Decimal(str(margin_val))
+                if base_cost is None or base_cost <= 0:
+                    continue
+                if margin >= 100:
+                    continue
+                # selling_price = base_cost / (1 - margin/100)
+                price = base_cost / (1 - margin / Decimal('100'))
+                ProductPriceTier.objects.create(product=product, min_quantity=min_qty, price=price)
+            except (ValueError, TypeError):
+                continue
 
         # [DEBUG] Verify the save by reloading from DB
         product.refresh_from_db()
@@ -1347,10 +1383,10 @@ def export_products_pdf(request):
         messages.error(request, "Invalid selection.")
         return redirect(reverse('core:manage_dashboard') + '#products')
 
-    # Fetch products with related data
+    # Fetch products with related data (including price_tiers for PDF)
     products = Product.objects.filter(id__in=id_list)\
         .select_related('featured_image')\
-        .prefetch_related('categories')\
+        .prefetch_related('categories', 'price_tiers')\
         .order_by('name')
 
     # Group products by their first/primary category

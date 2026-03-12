@@ -153,15 +153,24 @@
                                                 <p class="text-[10px] font-mono text-gray-500">{{ product.sku|default:"-" }}</p>
                                             </div>
 
-                                            <div class="mt-auto pt-2 border-t border-gray-100 flex justify-between items-end">
-                                                <div>
-                                                    {% if product.origin_country %}
-                                                    <span class="text-[9px] text-gray-400 uppercase tracking-wider">{{ product.origin_country }}</span>
-                                                    {% endif %}
+                                            <div class="mt-auto pt-2 border-t border-gray-100">
+                                                <div class="flex justify-between items-end mb-1">
+                                                    <div>
+                                                        {% if product.origin_country %}
+                                                        <span class="text-[9px] text-gray-400 uppercase tracking-wider">{{ product.origin_country }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="text-right">
+                                                        <span class="block text-xs font-bold text-gray-900">RM {{ product.selling_price|default:"-" }}</span>
+                                                    </div>
                                                 </div>
-                                                <div class="text-right">
-                                                    <span class="block text-xs font-bold text-gray-900">RM {{ product.selling_price|default:"-" }}</span>
+                                                {% if product.price_tiers.all %}
+                                                <div class="text-[9px] text-gray-600 mt-1 space-y-0.5 text-right">
+                                                    {% for tier in product.price_tiers.all %}
+                                                    <span class="block">{{ tier.min_quantity }}+ @ RM {{ tier.price }}</span>
+                                                    {% endfor %}
                                                 </div>
+                                                {% endif %}
                                             </div>
                                         </div>
                                     </div>

@@ -49,8 +49,11 @@
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="product.sku"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(product.selling_price)"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.profit)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <span x-text="formatPrice(getPriceForQuantity(product, 1))"></span>
+                                    <span x-show="product.price_tiers && product.price_tiers.length > 0" class="text-xs text-gray-400 block" x-text="'(tiered)'"></span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium" x-text="formatPrice(product.commission)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <button @click="addToCart(product)"
                                             :disabled="isInCart(product.id)"
@@ -179,12 +182,28 @@ function orderForm() {
         },
 
         get cartProfit() {
-            return this.cart.reduce((total, item) => total + (item.profit * item.quantity), 0);
+            return this.cart.reduce((total, item) => {
+                const perUnit = item.profit != null ? item.profit : (item.commission != null ? item.commission : 0);
+                return total + (perUnit * item.quantity);
+            }, 0);
         },
 
         formatPrice(value) {
             if (value === null || value === undefined) return 'N/A';
             return `RM ${Number(value).toFixed(2)}`;
+        },
+
+        // Tiered pricing: return unit price for given quantity (uses price_tiers if present)
+        getPriceForQuantity(productOrItem, qty) {
+            const p = productOrItem;
+            const q = parseInt(qty, 10);
+            if (!p || isNaN(q) || q < 1) return p ? p.selling_price : null;
+            const tiers = p.price_tiers || [];
+            if (tiers.length === 0) return p.selling_price;
+            for (let i = 0; i < tiers.length; i++) {
+                if (q >= tiers[i].min_quantity) return tiers[i].price;
+            }
+            return p.selling_price;
         },
 
         isInCart(productId) {
@@ -193,7 +212,12 @@ function orderForm() {
 
         addToCart(product) {
             if (this.isInCart(product.id)) return;
-            this.cart.push({ ...product, quantity: 1 });
+            const unitPrice = this.getPriceForQuantity(product, 1);
+            this.cart.push({
+                ...product,
+                quantity: 1,
+                selling_price: unitPrice != null ? unitPrice : product.selling_price
+            });
             this.saveCart();
         },
 
@@ -204,7 +228,10 @@ function orderForm() {
 
         increment(productId) {
             const item = this.cart.find(item => item.id === productId);
-            if (item) item.quantity++;
+            if (item) {
+                item.quantity++;
+                item.selling_price = this.getPriceForQuantity(item, item.quantity);
+            }
             this.saveCart();
         },
 
@@ -212,6 +239,7 @@ function orderForm() {
             const item = this.cart.find(item => item.id === productId);
             if (item && item.quantity > 1) {
                 item.quantity--;
+                item.selling_price = this.getPriceForQuantity(item, item.quantity);
             }
             this.saveCart();
         },
@@ -221,10 +249,10 @@ function orderForm() {
             let qty = parseInt(newQuantity, 10);
             if (item && !isNaN(qty) && qty > 0) {
                 item.quantity = qty;
+                item.selling_price = this.getPriceForQuantity(item, item.quantity);
             } else if (item) {
-                // Reset to 1 if input is invalid
                 item.quantity = 1;
-                // We need to force update the input value
+                item.selling_price = this.getPriceForQuantity(item, 1);
                 this.$nextTick(() => {
                     const input = this.$el.querySelector(`input[value='${newQuantity}']`);
                     if (input) input.value = 1;

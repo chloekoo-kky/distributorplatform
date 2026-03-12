@@ -3,7 +3,7 @@ from django.db.models import Count
 
 from import_export.admin import ImportExportMixin
 
-from .models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection
+from .models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection, ProductPriceTier
 from .resources import ProductResource, CategoryGroupResource, CategoryResource
 
 class CategoryGroupAdmin(ImportExportMixin, admin.ModelAdmin):
@@ -46,6 +46,13 @@ class ProductContentSectionInline(admin.TabularInline):
     model = ProductContentSection
     extra = 1
 
+
+class ProductPriceTierInline(admin.TabularInline):
+    model = ProductPriceTier
+    extra = 1
+    ordering = ['-min_quantity']
+
+
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
     list_display = ('sku', 'name', 'display_order', 'featured_image', 'display_categories', 'display_suppliers', 'base_cost', 'members_only')
@@ -55,7 +62,7 @@ class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     search_fields = ('sku', 'name', 'description', 'suppliers__name')
     readonly_fields = ('base_cost',)
     filter_horizontal = ('categories', 'suppliers', 'gallery_images',)
-    inlines = [ProductContentSectionInline]
+    inlines = [ProductContentSectionInline, ProductPriceTierInline]
 
     list_editable = ('display_order',)
 
