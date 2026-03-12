@@ -248,7 +248,13 @@
                         {% for order in orders %}
                         <tr>
                             <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ order.id }}</td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.created_at|date:"d/m/Y" }}</td>
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {% if order.transaction_date %}
+                                    {{ order.transaction_date|date:"d/m/Y" }}
+                                {% else %}
+                                    {{ order.created_at|date:"d/m/Y" }}
+                                {% endif %}
+                            </td>
                             {% if can_manual_order_profile %}
                             <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                 <div>{{ order.get_sales_channel_display|default:"-" }}</div>
@@ -256,7 +262,7 @@
                                     <div class="text-xs text-gray-400 mt-0.5">{{ order.remarks }}</div>
                                 {% endif %}
                             </td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <td class="px-4 py-4 text-sm text-gray-500 break-words">
                                 {{ order.customer_name|default:"-" }}
                             </td>
                             <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
