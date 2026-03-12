@@ -736,9 +736,16 @@ def api_manage_orders(request):
         gross_profit = sum(item.profit for item in order.items.all())
         customer_display = (order.customer_name and order.customer_name.strip()) or order.agent.username
 
+        # Display date: prefer transaction_date (manual orders), else localized created_at date
+        if order.transaction_date:
+            display_date = order.transaction_date.strftime('%d/%m/%Y')
+        else:
+            local_dt = timezone.localtime(order.created_at)
+            display_date = local_dt.strftime('%d/%m/%Y')
+
         data.append({
             'id': order.id,
-            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M'),
+            'created_at': display_date,
             'agent': order.agent.username,
             'customer': customer_display,
             'is_agent': False,
