@@ -231,46 +231,46 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Order ID</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Date</th>
                             {% if can_manual_order_profile %}
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Channel</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Customer</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Phone</th>
                             {% endif %}
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-auto">Items</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Total</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Action</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         {% for order in orders %}
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ order.id }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.created_at|date:"M d, Y" }}</td>
+                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ order.id }}</td>
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.created_at|date:"d/m/Y" }}</td>
                             {% if can_manual_order_profile %}
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                 <div>{{ order.get_sales_channel_display|default:"-" }}</div>
                                 {% if order.remarks %}
                                     <div class="text-xs text-gray-400 mt-0.5">{{ order.remarks }}</div>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {{ order.customer_name|default:"-" }}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {{ order.customer_phone|default:"-" }}
                             </td>
                             {% endif %}
-                            <td class="px-6 py-4 text-sm text-gray-500">
-                                <ul class="list-disc list-inside">
+                            <td class="px-4 py-4 text-sm text-gray-500">
+                                <ul class="list-disc list-inside space-y-0.5">
                                     {% for item in order.items.all %}
                                         <li>{{ item.product.name }} (x{{ item.quantity }})</li>
                                     {% endfor %}
                                 </ul>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm">
                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
                                     {% if order.status == 'COMPLETED' %}bg-green-100 text-green-800
                                     {% elif order.status == 'TO_PAY' %}bg-orange-100 text-orange-800
@@ -283,11 +283,11 @@
                                     <div class="text-xs text-gray-400 mt-1">Via: {{ order.payment_method }}</div>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 RM {{ order.calculated_total|floatformat:2 }}
                             </td>
 
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                                 {% if order.status == 'TO_PAY' %}
                                     <button onclick="openPaymentModal('{{ order.id }}')"
                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
