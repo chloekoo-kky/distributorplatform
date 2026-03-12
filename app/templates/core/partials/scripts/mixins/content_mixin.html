@@ -85,12 +85,26 @@
                         headers: {'X-CSRFToken': Alpine.store('globals').csrfToken},
                         body: formData
                     });
-                    const data = await response.json();
-                    if(data.success) {
+                    const contentType = response.headers.get('Content-Type') || '';
+                    let data = null;
+                    if (contentType.includes('application/json')) {
+                        data = await response.json();
+                    } else {
+                        const text = await response.text();
+                        console.error('Non-JSON response from banner API:', text);
+                        Alpine.store('globals').showToast('Server error while saving banner.', 'error');
+                        return;
+                    }
+                    if (response.ok && data.success) {
                         Alpine.store('globals').showToast('Banner saved! Reloading...');
                         setTimeout(() => window.location.reload(), 1000);
-                    } else { Alpine.store('globals').showToast('Error saving banner', 'error'); }
-                } catch(e) { console.error(e); }
+                    } else {
+                        Alpine.store('globals').showToast('Error saving banner', 'error');
+                    }
+                } catch(e) {
+                    console.error(e);
+                    Alpine.store('globals').showToast('Network error while saving banner.', 'error');
+                }
                 finally { this.bannerIsSubmitting = false; }
             },
 

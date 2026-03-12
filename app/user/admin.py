@@ -31,7 +31,8 @@ class CustomUserAdmin(UserAdmin):
     display_user_groups.short_description = 'User Groups'
 
 class UserGroupAdmin(admin.ModelAdmin):
-    list_display = ('name', 'display_product_categories', 'is_default')
+    list_display = ('name', 'commission_percentage', 'display_product_categories', 'is_default')
+    list_editable = ('commission_percentage',)
     filter_horizontal = ('product_categories',)
 
     def display_product_categories(self, obj):
