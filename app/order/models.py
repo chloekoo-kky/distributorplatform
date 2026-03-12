@@ -66,6 +66,14 @@ class Order(models.Model):
     customer_phone = models.CharField(max_length=50, blank=True, null=True)
     shipping_address = models.TextField(blank=True, null=True)
 
+    # Optional remarks for manual orders (e.g. platform order ID)
+    remarks = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Optional remarks for this order (e.g. external platform order ID).",
+    )
+
     # Transaction date for manual orders (e.g. date of sale on platform)
     transaction_date = models.DateField(blank=True, null=True, help_text='Date of transaction (manual orders).')
 

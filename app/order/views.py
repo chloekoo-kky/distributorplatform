@@ -292,6 +292,7 @@ def api_submit_manual_order(request):
         customer_name=(data.get('customer_name') or '').strip() or None,
         customer_phone=(data.get('customer_phone') or '').strip() or None,
         shipping_address=(data.get('shipping_address') or '').strip() or None,
+        remarks=(data.get('remarks') or '').strip() or None,
         status=Order.OrderStatus.PENDING,
     )
 
@@ -342,7 +343,50 @@ def api_submit_manual_order(request):
         oi.save()
 
     success_url = reverse('order:order_success', kwargs={'order_id': new_order.id})
-    return JsonResponse({'success': True, 'redirect_url': success_url, 'order_id': new_order.id})
+    # Prepare lightweight summary for inline success modal (manual order entry)
+    order_items = new_order.items.select_related('product')
+    subtotal = sum(item.total_price for item in order_items)
+    site_settings = SiteSetting.load()
+    cs_phone = site_settings.customer_service_whatsapp
+
+    msg_lines = [
+        "*New Manual Order Recorded!*",
+        f"Order ID: #{new_order.id}",
+        f"Agent: {request.user.username}",
+        f"Date: {new_order.created_at.strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "*Items:*",
+    ]
+    items_summary = []
+    for item in order_items:
+        msg_lines.append(f"- {item.product.name} (x{item.quantity})")
+        items_summary.append({
+            'product_name': item.product.name,
+            'quantity': item.quantity,
+            'unit_price': str(item.selling_price),
+            'line_total': str(item.total_price),
+        })
+    msg_lines.append("")
+    msg_lines.append(f"*Total Amount: RM {subtotal:.2f}*")
+    msg_lines.append(f"Status: {new_order.get_status_display()}")
+
+    full_message = "\n".join(msg_lines)
+    whatsapp_url = None
+    if cs_phone:
+        encoded_message = urllib.parse.quote(full_message)
+        whatsapp_url = f"https://wa.me/{cs_phone}?text={encoded_message}"
+
+    return JsonResponse({
+        'success': True,
+        'redirect_url': success_url,
+        'order_id': new_order.id,
+        'order': {
+            'id': new_order.id,
+            'items': items_summary,
+            'subtotal': str(subtotal),
+            'whatsapp_url': whatsapp_url,
+        },
+    })
 
 
 @salesperson_required
@@ -381,6 +425,7 @@ def api_manual_order_detail(request, order_id):
         'customer_phone': order.customer_phone or '',
         'shipping_address': order.shipping_address or '',
         'items': items_data,
+        'remarks': order.remarks or '',
     }
     return JsonResponse({'success': True, 'order': data})
 
@@ -436,6 +481,7 @@ def api_update_manual_order(request, order_id):
     order.customer_name = (data.get('customer_name') or '').strip() or None
     order.customer_phone = (data.get('customer_phone') or '').strip() or None
     order.shipping_address = (data.get('shipping_address') or '').strip() or None
+    order.remarks = (data.get('remarks') or '').strip() or None
     order.save()
 
     # Replace items
@@ -487,7 +533,50 @@ def api_update_manual_order(request, order_id):
         oi.save()
 
     success_url = reverse('order:order_success', kwargs={'order_id': order.id})
-    return JsonResponse({'success': True, 'redirect_url': success_url, 'order_id': order.id})
+    # Prepare lightweight summary for inline success modal (manual order entry update)
+    order_items = order.items.select_related('product')
+    subtotal = sum(item.total_price for item in order_items)
+    site_settings = SiteSetting.load()
+    cs_phone = site_settings.customer_service_whatsapp
+
+    msg_lines = [
+        "*Manual Order Updated!*",
+        f"Order ID: #{order.id}",
+        f"Agent: {request.user.username}",
+        f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "*Items:*",
+    ]
+    items_summary = []
+    for item in order_items:
+        msg_lines.append(f"- {item.product.name} (x{item.quantity})")
+        items_summary.append({
+            'product_name': item.product.name,
+            'quantity': item.quantity,
+            'unit_price': str(item.selling_price),
+            'line_total': str(item.total_price),
+        })
+    msg_lines.append("")
+    msg_lines.append(f"*Total Amount: RM {subtotal:.2f}*")
+    msg_lines.append(f"Status: {order.get_status_display()}")
+
+    full_message = "\n".join(msg_lines)
+    whatsapp_url = None
+    if cs_phone:
+        encoded_message = urllib.parse.quote(full_message)
+        whatsapp_url = f"https://wa.me/{cs_phone}?text={encoded_message}"
+
+    return JsonResponse({
+        'success': True,
+        'redirect_url': success_url,
+        'order_id': order.id,
+        'order': {
+            'id': order.id,
+            'items': items_summary,
+            'subtotal': str(subtotal),
+            'whatsapp_url': whatsapp_url,
+        },
+    })
 
 
 @login_required
