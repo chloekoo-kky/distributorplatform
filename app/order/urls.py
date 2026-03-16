@@ -18,6 +18,7 @@ urlpatterns = [
     path('manage/', views.manage_orders_dashboard, name='manage_orders'),
     path('api/manage-orders/', views.api_manage_orders, name='api_manage_orders'),
     path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
+    path('export/orders-range/', views.export_orders_range, name='export_orders_range'),
 
     path('api/order/<str:order_id>/items/', views.api_get_order_items, name='api_get_order_items'),
     path('api/order/<str:order_id>/update-status/', views.api_update_order_status, name='api_update_order_status'),

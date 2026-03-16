@@ -16,6 +16,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q, Prefetch, Max, Sum, F, DecimalField
+from datetime import datetime
 import json
 import hashlib
 import urllib.parse
@@ -659,13 +660,29 @@ def api_manage_orders(request):
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
 
-    # --- Date Filter Params ---
+    # --- Date Filter Params (Period + Range) ---
     try:
         month = int(request.GET.get('month', 0))
         year = int(request.GET.get('year', 0))
     except ValueError:
         month = 0
         year = 0
+
+    # Optional explicit date range (overrides month/year if provided)
+    start_date = None
+    end_date = None
+    start_str = request.GET.get('start_date') or ''
+    end_str = request.GET.get('end_date') or ''
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        except ValueError:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
 
     # --- Sorting ---
     # Map allowed sort keys from the UI to model fields
@@ -688,9 +705,26 @@ def api_manage_orders(request):
         orders = base_qs.order_by('-created_at')
 
     # 1. Apply Date Filter (if provided)
-    # logic: 0 acts as False in Python, so if month=0, this block is skipped (All Time)
-    if month and year:
-        orders = orders.filter(created_at__year=year, created_at__month=month)
+    # Date range takes precedence over month/year when supplied.
+    if start_date:
+        orders = orders.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        orders = orders.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+    if not (start_date or end_date) and month and year:
+        # Filter by logical "order date": prefer transaction_date if set, else created_at
+        orders = orders.filter(
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        )
 
     # 2. Apply Status Filter
     if status_filter:
@@ -711,8 +745,24 @@ def api_manage_orders(request):
     # but IGNORE Pagination and usually ignore status filter (to show full overview of the month).
     stats_qs = Order.objects.all()
 
-    if month and year:
-        stats_qs = stats_qs.filter(created_at__year=year, created_at__month=month)
+    if start_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+    if not (start_date or end_date) and month and year:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        )
 
     if search_query:
         stats_qs = stats_qs.filter(
@@ -907,6 +957,92 @@ def export_selected_orders(request):
 
     response = HttpResponse(buffer.getvalue(), content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="orders_export.csv"'
+    return response
+
+
+@staff_member_required
+def export_orders_range(request):
+    """
+    Export all order items whose logical order date (transaction_date or created_at)
+    falls within the given date range.
+    GET params:
+        start_date, end_date in YYYY-MM-DD format (at least one required).
+    """
+    start_str = request.GET.get('start_date') or ''
+    end_str = request.GET.get('end_date') or ''
+
+    if not start_str and not end_str:
+        return HttpResponse("start_date or end_date is required.", status=400)
+
+    start_date = None
+    end_date = None
+    try:
+        if start_str:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        if end_str:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+    except ValueError:
+        return HttpResponse("Invalid date format. Use YYYY-MM-DD.", status=400)
+
+    orders = Order.objects.select_related('agent').prefetch_related('items__product')
+
+    if start_date:
+        orders = orders.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        orders = orders.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+
+    response = HttpResponse(content_type='text/csv')
+    filename_parts = ["orders_range"]
+    if start_date:
+        filename_parts.append(start_date.strftime('%Y%m%d'))
+    if end_date:
+        filename_parts.append(end_date.strftime('%Y%m%d'))
+    response['Content-Disposition'] = f'attachment; filename="{"_".join(filename_parts)}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'Order ID', 'Order Date', 'Customer Name', 'Product Name',
+        'Product Base Cost', 'Platform Price', 'Actual Received', 'Profit'
+    ])
+
+    for order in orders:
+        customer_name = (
+            (order.customer_name and order.customer_name.strip())
+            or (order.agent.get_full_name() and order.agent.get_full_name().strip())
+            or order.agent.username
+        )
+        order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
+        if hasattr(order_date, 'strftime'):
+            order_date_str = order_date.strftime('%Y-%m-%d')
+        else:
+            order_date_str = ''
+
+        for item in order.items.all():
+            product = item.product
+            base_cost = getattr(product, 'saved_base_cost', None)
+            if base_cost is None:
+                base_cost = item.landed_cost
+            platform_price = item.platform_price if item.platform_price is not None else ''
+            actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+            writer.writerow([
+                order.id,
+                order_date_str,
+                customer_name or '',
+                product.name or '',
+                float(base_cost) if base_cost is not None else '',
+                float(platform_price) if platform_price != '' else '',
+                float(actual_received),
+                float(item.profit),
+            ])
+
     return response
 
 

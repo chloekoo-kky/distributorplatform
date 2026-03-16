@@ -256,7 +256,7 @@
                                 </button>
                             </th>
                             {% if can_manual_order_profile %}
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                                 <button type="button"
                                    @click="changeSort('sales_channel')"
                                    class="flex items-center gap-1 hover:text-gray-700">
@@ -266,7 +266,7 @@
                                     </span>
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                                 <button type="button"
                                    @click="changeSort('customer_name')"
                                    class="flex items-center gap-1 hover:text-gray700">
@@ -276,9 +276,9 @@
                                     </span>
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Phone</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Phone</th>
                             {% endif %}
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-auto">Items</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[22%]">Items</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                                 <button type="button"
                                    @click="changeSort('status')"
@@ -320,8 +320,8 @@
                                 <td class="px-4 py-4 text-sm text-gray-500 break-words" x-text="order.customer_name || '-'"></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.customer_phone || '-'"></td>
                                 {% endif %}
-                                <td class="px-4 py-4 text-sm text-gray-500">
-                                    <ul class="list-disc list-inside space-y-0.5">
+                                <td class="px-4 py-4 text-sm text-gray-500 align-top">
+                                    <ul class="list-disc list-inside space-y-0.5 min-w-[22%]">
                                         <template x-for="(item, idx) in order.items" :key="idx">
                                             <li x-text="`${item.product_name} (x${item.quantity})`"></li>
                                         </template>
