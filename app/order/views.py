@@ -654,6 +654,8 @@ def api_manage_orders(request):
     """JSON API to fetch filtered and paginated orders."""
     page_number = request.GET.get('page', 1)
     limit = request.GET.get('limit', 20)
+    sort_by = request.GET.get('sort_by', 'created_at')
+    sort_dir = request.GET.get('sort_dir', 'desc')
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
 
@@ -665,7 +667,25 @@ def api_manage_orders(request):
         month = 0
         year = 0
 
-    orders = Order.objects.select_related('agent').prefetch_related('items').order_by('-created_at')
+    # --- Sorting ---
+    # Map allowed sort keys from the UI to model fields
+    sort_field_map = {
+        'created_at': 'created_at',
+        'customer': 'customer_name',
+        'status': 'status',
+        'total_value': None,  # handled later via Python sorting
+    }
+
+    sort_field = sort_field_map.get(sort_by, 'created_at')
+
+    base_qs = Order.objects.select_related('agent').prefetch_related('items')
+
+    if sort_field:
+        sort_prefix = '-' if sort_dir == 'desc' else ''
+        orders = base_qs.order_by(f'{sort_prefix}{sort_field}')
+    else:
+        # Fallback to created_at when sorting by computed fields like total_value
+        orders = base_qs.order_by('-created_at')
 
     # 1. Apply Date Filter (if provided)
     # logic: 0 acts as False in Python, so if month=0, this block is skipped (All Time)
@@ -726,6 +746,17 @@ def api_manage_orders(request):
 
     # --- Pagination & Serialization ---
     orders = orders.select_related('created_by')
+
+    # For sorts that depend on computed totals (e.g. total_value), apply Python-side sort
+    if sort_by == 'total_value':
+        orders_with_totals = []
+        for o in orders:
+            total_value = sum(item.selling_price * item.quantity for item in o.items.all())
+            orders_with_totals.append((o, total_value))
+        reverse = (sort_dir == 'desc')
+        orders_with_totals.sort(key=lambda t: t[1], reverse=reverse)
+        orders = [o for o, _ in orders_with_totals]
+
     paginator = Paginator(orders, limit)
     page_obj = paginator.get_page(page_number)
 

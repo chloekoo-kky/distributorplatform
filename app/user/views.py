@@ -339,22 +339,8 @@ def profile_view(request):
 
     can_manage_subscription = user.user_groups.filter(name=ALLOWED_SUBSCRIPTION_GROUP).exists()
 
-    # 2. Get Order History (For everyone)
-    orders = Order.objects.filter(agent=user).prefetch_related('items__product').order_by('-created_at')
-
-    # Optional search for sales team / staff: by customer name, phone, or product name
+    # 2. Get Order History search term (sorting is now handled via AJAX API)
     order_search_query = (request.GET.get('order_search') or '').strip()
-    if order_search_query and (user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()):
-        orders = orders.filter(
-            Q(customer_name__icontains=order_search_query) |
-            Q(customer_phone__icontains=order_search_query) |
-            Q(items__product__name__icontains=order_search_query)
-        ).distinct()
-
-    # Calculate order totals for display
-    for order in orders:
-        total = sum(item.selling_price * item.quantity for item in order.items.all())
-        order.calculated_total = total
 
     # --- NEW: Get Subscription Plans ---
     plans = SubscriptionPlan.objects.filter(is_active=True)
@@ -374,7 +360,8 @@ def profile_view(request):
 
     context = {
         'is_agent': is_agent,
-        'orders': orders,
+        # Orders are now loaded via AJAX; we keep server-side for non-JS users
+        'orders': Order.objects.filter(agent=user).prefetch_related('items__product').order_by('-created_at'),
         'plans': plans,
         'current_plan_id': current_plan_id,
         'payment_options': payment_options,  # Passed to template
@@ -423,6 +410,95 @@ def profile_view(request):
         })
 
     return render(request, 'user/profile.html', context)
+
+
+@login_required
+def api_order_history(request):
+    """
+    JSON API to fetch the current user's order history with sorting/filtering.
+    Used by the profile order history table for AJAX-based sorting.
+    """
+    user = request.user
+
+    sort_by = request.GET.get('sort_by', 'created_at')
+    sort_dir = request.GET.get('sort_dir', 'desc')
+
+    base_orders = Order.objects.filter(agent=user).prefetch_related('items__product')
+
+    # Optional search for sales team / staff: by customer name, phone, or product name
+    order_search_query = (request.GET.get('order_search') or '').strip()
+    if order_search_query and (user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()):
+        base_orders = base_orders.filter(
+            Q(customer_name__icontains=order_search_query) |
+            Q(customer_phone__icontains=order_search_query) |
+            Q(items__product__name__icontains=order_search_query)
+        ).distinct()
+
+    # Apply sorting
+    sort_field_map = {
+        'id': 'id',
+        'created_at': 'created_at',
+        'status': 'status',
+        'sales_channel': 'sales_channel',
+        'customer_name': 'customer_name',
+        'total': None,  # handled after totals are calculated
+    }
+    sort_field = sort_field_map.get(sort_by, 'created_at')
+
+    if sort_field:
+        prefix = '-' if sort_dir == 'desc' else ''
+        orders_qs = base_orders.order_by(f'{prefix}{sort_field}')
+    else:
+        orders_qs = base_orders.order_by('-created_at')
+
+    orders = list(orders_qs)
+
+    # Calculate totals
+    for o in orders:
+        o.calculated_total = sum(item.selling_price * item.quantity for item in o.items.all())
+
+    # Python-side sort for total amount
+    if sort_by == 'total':
+        reverse = (sort_dir == 'desc')
+        orders.sort(key=lambda o: o.calculated_total, reverse=reverse)
+
+    can_manual_order_profile = user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()
+
+    serialized = []
+    for o in orders:
+        if o.transaction_date:
+            date_display = o.transaction_date.strftime('%d/%m/%Y')
+        else:
+            date_display = o.created_at.strftime('%d/%m/%Y')
+
+        items_data = [
+            {
+                'product_name': item.product.name,
+                'quantity': item.quantity,
+            }
+            for item in o.items.all()
+        ]
+
+        serialized.append({
+            'id': o.id,
+            'date_display': date_display,
+            'sales_channel_display': o.get_sales_channel_display() if hasattr(o, 'get_sales_channel_display') else '',
+            'remarks': o.remarks or '',
+            'customer_name': o.customer_name or '',
+            'customer_phone': o.customer_phone or '',
+            'items': items_data,
+            'status_code': o.status,
+            'status_display': o.get_status_display(),
+            'payment_method': o.payment_method or '',
+            'total': float(o.calculated_total),
+            'is_editable_manual': bool(can_manual_order_profile and o.status == Order.OrderStatus.PENDING and o.created_by_id == user.id),
+        })
+
+    return JsonResponse({
+        'items': serialized,
+        'sort_by': sort_by,
+        'sort_dir': sort_dir,
+    })
 
 @login_required
 @ratelimit(key='user', rate='10/h', method='POST')

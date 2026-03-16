@@ -16,6 +16,7 @@ urlpatterns = [
     path('plans/', views.subscription_plans_view, name='subscription_plans'),
     path('checkout/<int:plan_id>/', views.checkout_view, name='checkout'),
     path('api/update-subscription/', views.api_update_subscription, name='api_update_subscription'),
+    path('api/order-history/', views.api_order_history, name='api_order_history'),
 
     path('api/manage-users/', views.api_manage_users, name='api_manage_users'),
     path('api/manage-groups/', views.api_manage_user_groups, name='api_manage_user_groups'),

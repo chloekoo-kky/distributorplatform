@@ -192,7 +192,7 @@
     {% endif %}
 
     {# --- ORDER HISTORY (Visible to Everyone) --- #}
-    <div class="mb-8">
+    <div class="mb-8" x-data="orderHistoryComponent()" x-init="fetchOrders()">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 class="text-2xl font-bold text-gray-800 flex flex-col">
                 {% with lines=site_settings.order_history_title_lines %}
@@ -204,16 +204,20 @@
             </h2>
             <div class="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-end w-full sm:w-auto">
                 {% if can_manual_order_profile %}
-                <form method="get" action="{% url 'user:profile' %}" class="flex items-center w-full sm:w-auto">
+                <form @submit.prevent class="flex items-center w-full sm:w-auto">
                     <input type="text"
                            name="order_search"
+                           x-model.debounce.500ms="searchQuery"
+                           @input="fetchOrders()"
                            value="{{ order_search_query|default:'' }}"
                            placeholder="Search orders by customer, phone, or product..."
                            class="w-full sm:w-72 px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
-                    {% if order_search_query %}
-                        <a href="{% url 'user:profile' %}"
-                           class="ml-2 text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap">Clear</a>
-                    {% endif %}
+                    <button type="button"
+                            @click="searchQuery=''; fetchOrders()"
+                            x-show="searchQuery"
+                            class="ml-2 text-xs text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                        Clear
+                    </button>
                 </form>
                 {% endif %}
                 {% if can_manual_order_profile %}
@@ -231,96 +235,135 @@
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Order ID</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Date</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                                <button type="button"
+                                   @click="changeSort('id')"
+                                   class="flex items-center gap-1 hover:text-gray-700">
+                                    Order ID
+                                    <span x-show="sortBy === 'id'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                                <button type="button"
+                                   @click="changeSort('created_at')"
+                                   class="flex items-center gap-1 hover:text-gray-700">
+                                    Date
+                                    <span x-show="sortBy === 'created_at'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
                             {% if can_manual_order_profile %}
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Channel</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Customer</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                                <button type="button"
+                                   @click="changeSort('sales_channel')"
+                                   class="flex items-center gap-1 hover:text-gray-700">
+                                    Channel
+                                    <span x-show="sortBy === 'sales_channel'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
+                                <button type="button"
+                                   @click="changeSort('customer_name')"
+                                   class="flex items-center gap-1 hover:text-gray700">
+                                    Customer
+                                    <span x-show="sortBy === 'customer_name'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Phone</th>
                             {% endif %}
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-auto">Items</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Status</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Total</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                                <button type="button"
+                                   @click="changeSort('status')"
+                                   class="flex items-center gap-1 hover:text-gray-700">
+                                    Status
+                                    <span x-show="sortBy === 'status'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                                <button type="button"
+                                   @click="changeSort('total')"
+                                   class="flex items-center gap-1 hover:text-gray-700">
+                                    Total
+                                    <span x-show="sortBy === 'total'">
+                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
+                                    </span>
+                                </button>
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Action</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        {% for order in orders %}
-                        <tr>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{{ order.id }}</td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {% if order.transaction_date %}
-                                    {{ order.transaction_date|date:"d/m/Y" }}
-                                {% else %}
-                                    {{ order.created_at|date:"d/m/Y" }}
+                        <tr x-show="isLoading">
+                            <td colspan="{% if can_manual_order_profile %}9{% else %}6{% endif %}" class="px-6 py-4 text-center text-gray-500">
+                                Loading orders...
+                            </td>
+                        </tr>
+                        <template x-for="order in orders" :key="order.id">
+                            <tr>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600" x-text="order.id"></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.date_display"></td>
+                                {% if can_manual_order_profile %}
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <div x-text="order.sales_channel_display || '-'"></div>
+                                    <div class="text-xs text-gray-400 mt-0.5" x-show="order.remarks" x-text="order.remarks"></div>
+                                </td>
+                                <td class="px-4 py-4 text-sm text-gray-500 break-words" x-text="order.customer_name || '-'"></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.customer_phone || '-'"></td>
                                 {% endif %}
-                            </td>
-                            {% if can_manual_order_profile %}
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <div>{{ order.get_sales_channel_display|default:"-" }}</div>
-                                {% if order.remarks %}
-                                    <div class="text-xs text-gray-400 mt-0.5">{{ order.remarks }}</div>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 text-sm text-gray-500 break-words">
-                                {{ order.customer_name|default:"-" }}
-                            </td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {{ order.customer_phone|default:"-" }}
-                            </td>
-                            {% endif %}
-                            <td class="px-4 py-4 text-sm text-gray-500">
-                                <ul class="list-disc list-inside space-y-0.5">
-                                    {% for item in order.items.all %}
-                                        <li>{{ item.product.name }} (x{{ item.quantity }})</li>
-                                    {% endfor %}
-                                </ul>
-                            </td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                    {% if order.status == 'COMPLETED' %}bg-green-100 text-green-800
-                                    {% elif order.status == 'TO_PAY' %}bg-orange-100 text-orange-800
-                                    {% elif order.status == 'PENDING' %}bg-blue-100 text-blue-800
-                                    {% else %}bg-gray-100 text-gray-800{% endif %}">
-                                    {{ order.get_status_display }}
-                                </span>
-                                {# Show Payment Method if available #}
-                                {% if order.payment_method %}
-                                    <div class="text-xs text-gray-400 mt-1">Via: {{ order.payment_method }}</div>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                RM {{ order.calculated_total|floatformat:2 }}
-                            </td>
-
-                            <td class="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                {% if order.status == 'TO_PAY' %}
-                                    <button onclick="openPaymentModal('{{ order.id }}')"
+                                <td class="px-4 py-4 text-sm text-gray-500">
+                                    <ul class="list-disc list-inside space-y-0.5">
+                                        <template x-for="(item, idx) in order.items" :key="idx">
+                                            <li x-text="`${item.product_name} (x${item.quantity})`"></li>
+                                        </template>
+                                    </ul>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                          :class="{
+                                            'bg-green-100 text-green-800': order.status_code === 'COMPLETED',
+                                            'bg-orange-100 text-orange-800': order.status_code === 'TO_PAY',
+                                            'bg-blue-100 text-blue-800': order.status_code === 'PENDING',
+                                            'bg-gray-100 text-gray-800': !['COMPLETED','TO_PAY','PENDING'].includes(order.status_code)
+                                          }"
+                                          x-text="order.status_display"></span>
+                                    <div class="text-xs text-gray-400 mt-1" x-show="order.payment_method" x-text="`Via: ${order.payment_method}`"></div>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="`RM ${order.total.toFixed(2)}`"></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                    <button x-show="order.status_code === 'TO_PAY'"
+                                       @click="openPayment(order.id)"
                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                         Pay Now
                                     </button>
-                                {% endif %}
 
-                                {% if can_manual_order_profile and order.status == 'PENDING' and order.created_by_id == user.id %}
-                                    <button type="button"
+                                    {% if can_manual_order_profile %}
+                                    <button x-show="order.is_editable_manual"
+                                            type="button"
                                             class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                                            onclick="window.editManualOrder('{{ order.id }}')">
+                                            @click="editManual(order.id)">
                                         Edit
                                     </button>
-                                {% endif %}
-
-                                {% if order.status != 'TO_PAY' %}
-                                    {% if not can_manual_order_profile or order.status != 'PENDING' or order.created_by_id != user.id %}
-                                        <span class="text-gray-400">-</span>
                                     {% endif %}
-                                {% endif %}
+
+                                    <span x-show="order.status_code !== 'TO_PAY' && !order.is_editable_manual" class="text-gray-400">-</span>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!isLoading && orders.length === 0">
+                            <td colspan="{% if can_manual_order_profile %}9{% else %}6{% endif %}" class="px-6 py-4 text-center text-gray-500">
+                                You haven't placed any orders yet.
                             </td>
                         </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="{% if can_manual_order_profile %}9{% else %}6{% endif %}" class="px-6 py-4 text-center text-gray-500">You haven't placed any orders yet.</td>
-                        </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -857,6 +900,61 @@ window.handleManualOrderSuccess = function(data) {
 
     function closePaymentModal() {
         document.getElementById('payment-modal').classList.add('hidden');
+    }
+
+    // --- Order History (AJAX sorting) ---
+    function orderHistoryComponent() {
+        return {
+            orders: [],
+            isLoading: false,
+            sortBy: 'created_at',
+            sortDir: 'desc',
+            searchQuery: '{{ order_search_query|default:"" }}',
+            fetchOrders() {
+                this.isLoading = true;
+                const params = new URLSearchParams({
+                    sort_by: this.sortBy,
+                    sort_dir: this.sortDir,
+                });
+                if (this.searchQuery) {
+                    params.append('order_search', this.searchQuery);
+                }
+                fetch('{% url "user:api_order_history" %}?' + params.toString(), {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        this.orders = data.items || [];
+                        this.sortBy = data.sort_by || this.sortBy;
+                        this.sortDir = data.sort_dir || this.sortDir;
+                    })
+                    .catch(() => {
+                        this.orders = [];
+                    })
+                    .finally(() => {
+                        this.isLoading = false;
+                    });
+            },
+            changeSort(field) {
+                if (this.sortBy === field) {
+                    this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.sortBy = field;
+                    this.sortDir = field === 'created_at' ? 'desc' : 'asc';
+                }
+                this.fetchOrders();
+            },
+            openPayment(orderId) {
+                openPaymentModal(orderId);
+            },
+            editManual(orderId) {
+                if (window.editManualOrder) {
+                    window.editManualOrder(orderId);
+                }
+            }
+        }
     }
 </script>
 {% endblock %}
