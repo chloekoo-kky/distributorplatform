@@ -400,11 +400,17 @@ def api_manual_order_detail(request, order_id):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
+    allowed_statuses = [
+        Order.OrderStatus.PENDING,
+        Order.OrderStatus.TO_PAY,
+        Order.OrderStatus.TO_SHIP,
+        Order.OrderStatus.TO_RECEIVE,
+    ]
     order = get_object_or_404(
         Order.objects.prefetch_related('items__product'),
         id=order_id,
         created_by=request.user,
-        status=Order.OrderStatus.PENDING,
+        status__in=allowed_statuses,
     )
 
     items_data = []
@@ -420,6 +426,7 @@ def api_manual_order_detail(request, order_id):
 
     data = {
         'id': order.id,
+        'status': order.status,
         'sales_channel': order.sales_channel or Order.SalesChannel.OTHER,
         'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
         'customer_name': order.customer_name or '',
@@ -441,11 +448,17 @@ def api_update_manual_order(request, order_id):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
+    allowed_statuses = [
+        Order.OrderStatus.PENDING,
+        Order.OrderStatus.TO_PAY,
+        Order.OrderStatus.TO_SHIP,
+        Order.OrderStatus.TO_RECEIVE,
+    ]
     order = get_object_or_404(
         Order,
         id=order_id,
         created_by=request.user,
-        status=Order.OrderStatus.PENDING,
+        status__in=allowed_statuses,
     )
 
     try:
@@ -461,77 +474,104 @@ def api_update_manual_order(request, order_id):
     if not product_ids:
         return JsonResponse({'success': False, 'error': 'Invalid items.'}, status=400)
 
-    products = Product.objects.filter(id__in=product_ids)
-    product_map = {p.id: p for p in products}
-
-    sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
-    if sales_channel not in dict(Order.SalesChannel.choices):
-        sales_channel = Order.SalesChannel.OTHER
-
-    transaction_date = None
-    if data.get('transaction_date'):
-        try:
-            from datetime import datetime
-            transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
-        except (ValueError, TypeError):
-            pass
-
-    # Update order header fields
-    order.sales_channel = sales_channel
-    order.transaction_date = transaction_date
-    order.customer_name = (data.get('customer_name') or '').strip() or None
-    order.customer_phone = (data.get('customer_phone') or '').strip() or None
-    order.shipping_address = (data.get('shipping_address') or '').strip() or None
-    order.remarks = (data.get('remarks') or '').strip() or None
-    order.save()
-
-    # Replace items
-    order.items.all().delete()
-
-    order_items_to_create = []
+    # Map payload by product_id for quick lookup
+    payload_by_product = {}
     for row in items:
-        product_id = row.get('product_id')
+        pid = row.get('product_id')
         try:
-            product_id = int(product_id)
+            pid = int(pid)
         except (TypeError, ValueError):
             continue
-        if product_id not in product_map:
-            continue
-        product = product_map[product_id]
-        quantity = int(row.get('quantity') or 0)
-        if quantity <= 0:
-            continue
-        try:
-            actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
-        except Exception:
-            actual_unit_price = product.selling_price or Decimal('0.00')
-        if actual_unit_price < 0:
-            actual_unit_price = Decimal('0.00')
-        try:
-            platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
-        except Exception:
-            platform_price = None
-        if platform_price is not None and platform_price < 0:
-            platform_price = None
-        landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+        payload_by_product[pid] = row
 
-        order_items_to_create.append(
-            OrderItem(
-                order=order,
-                product=product,
-                quantity=quantity,
-                selling_price=actual_unit_price,
-                landed_cost=landed_cost,
-                platform_price=platform_price,
-                actual_unit_price=actual_unit_price,
+    if order.status == Order.OrderStatus.PENDING:
+        # Full edit allowed (existing behavior)
+        products = Product.objects.filter(id__in=product_ids)
+        product_map = {p.id: p for p in products}
+
+        sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
+        if sales_channel not in dict(Order.SalesChannel.choices):
+            sales_channel = Order.SalesChannel.OTHER
+
+        transaction_date = None
+        if data.get('transaction_date'):
+            try:
+                from datetime import datetime
+                transaction_date = datetime.strptime(data['transaction_date'], '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                pass
+
+        # Update order header fields
+        order.sales_channel = sales_channel
+        order.transaction_date = transaction_date
+        order.customer_name = (data.get('customer_name') or '').strip() or None
+        order.customer_phone = (data.get('customer_phone') or '').strip() or None
+        order.shipping_address = (data.get('shipping_address') or '').strip() or None
+        order.remarks = (data.get('remarks') or '').strip() or None
+        order.save()
+
+        # Replace items
+        order.items.all().delete()
+
+        order_items_to_create = []
+        for row in items:
+            product_id = row.get('product_id')
+            try:
+                product_id = int(product_id)
+            except (TypeError, ValueError):
+                continue
+            if product_id not in product_map:
+                continue
+            product = product_map[product_id]
+            quantity = int(row.get('quantity') or 0)
+            if quantity <= 0:
+                continue
+            try:
+                actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
+            except Exception:
+                actual_unit_price = product.selling_price or Decimal('0.00')
+            if actual_unit_price < 0:
+                actual_unit_price = Decimal('0.00')
+            try:
+                platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
+            except Exception:
+                platform_price = None
+            if platform_price is not None and platform_price < 0:
+                platform_price = None
+            landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+
+            order_items_to_create.append(
+                OrderItem(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    selling_price=actual_unit_price,
+                    landed_cost=landed_cost,
+                    platform_price=platform_price,
+                    actual_unit_price=actual_unit_price,
+                )
             )
-        )
 
-    if not order_items_to_create:
-        return JsonResponse({'success': False, 'error': 'No valid items.'}, status=400)
+        if not order_items_to_create:
+            return JsonResponse({'success': False, 'error': 'No valid items.'}, status=400)
 
-    for oi in order_items_to_create:
-        oi.save()
+        for oi in order_items_to_create:
+            oi.save()
+    else:
+        # Restricted edit: only allow updating actual received amount
+        for item in order.items.select_related('product').all():
+            row = payload_by_product.get(item.product_id)
+            if not row:
+                continue
+            try:
+                new_actual = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
+            except Exception:
+                continue
+            if new_actual < 0:
+                new_actual = Decimal('0.00')
+            item.actual_unit_price = new_actual
+            # selling_price and quantity remain unchanged; profit recalculated in save()
+            item.save()
 
     success_url = reverse('order:order_success', kwargs={'order_id': order.id})
     # Prepare lightweight summary for inline success modal (manual order entry update)
@@ -776,9 +816,10 @@ def api_manage_orders(request):
     total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()
     pending_orders = stats_qs.exclude(status__in=[
         Order.OrderStatus.COMPLETED,
+        Order.OrderStatus.CLOSED,
         Order.OrderStatus.CANCELLED
     ]).count()
-    completed_orders = stats_qs.filter(status=Order.OrderStatus.COMPLETED).count()
+    completed_orders = stats_qs.filter(status__in=[Order.OrderStatus.COMPLETED, Order.OrderStatus.CLOSED]).count()
 
     revenue = 0
     if request.user.is_superuser:
@@ -890,6 +931,32 @@ def api_update_order_status(request, order_id):
         order.save()
 
         return JsonResponse({'success': True, 'message': 'Status updated'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@staff_member_required
+@transaction.atomic
+def api_bulk_update_order_status(request):
+    """
+    POST: bulk update status for multiple orders.
+    Body: { "order_ids": [...], "status": "TO_SHIP" }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid method'}, status=400)
+
+    try:
+        data = json.loads(request.body or '{}')
+        order_ids = data.get('order_ids') or []
+        new_status = data.get('status')
+
+        if not order_ids or not isinstance(order_ids, list):
+            return JsonResponse({'success': False, 'error': 'No order IDs provided'}, status=400)
+        if new_status not in Order.OrderStatus.values:
+            return JsonResponse({'success': False, 'error': 'Invalid status'}, status=400)
+
+        updated = Order.objects.filter(id__in=order_ids).update(status=new_status)
+        return JsonResponse({'success': True, 'message': f'Status updated for {updated} order(s).'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 

@@ -51,9 +51,10 @@
                             <div class="flex flex-wrap gap-2">
                                 {% for value, label in sales_channel_choices %}
                                 <button type="button"
-                                        @click="salesChannel = '{{ value }}'"
+                                        @click="orderStatus === 'PENDING' && (salesChannel = '{{ value }}')"
                                         :class="salesChannel === '{{ value }}' ? 'bg-emerald-600 text-white ring-2 ring-emerald-600 ring-offset-1' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'"
-                                        class="rounded-lg px-3 py-1.5 text-sm font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
+                                        class="rounded-lg px-3 py-1.5 text-sm font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                                        :disabled="orderStatus !== 'PENDING'">
                                     {% if label == 'Offline' %}Website{% else %}{{ label }}{% endif %}
                                 </button>
                                 {% endfor %}
@@ -61,28 +62,29 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Transaction date</label>
-                            <input type="date" x-model="transactionDate" class="w-full max-w-xs rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <input type="date" x-model="transactionDate" :disabled="orderStatus !== 'PENDING'" class="w-full max-w-xs rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-400">
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Customer name</label>
-                                <input type="text" x-model="customerName" placeholder="Optional" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
+                                <input type="text" x-model="customerName" placeholder="Optional" :disabled="orderStatus !== 'PENDING'" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Customer phone</label>
-                                <input type="text" x-model="customerPhone" placeholder="Optional" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
+                                <input type="text" x-model="customerPhone" placeholder="Optional" :disabled="orderStatus !== 'PENDING'" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400">
                             </div>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Shipping address</label>
-                            <textarea x-model="shippingAddress" rows="2" placeholder="Optional" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"></textarea>
+                            <textarea x-model="shippingAddress" rows="2" placeholder="Optional" :disabled="orderStatus !== 'PENDING'" class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400"></textarea>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Remarks (Platform order ID)</label>
                             <input type="text"
                                    x-model="remarks"
                                    placeholder="Optional platform order ID or notes"
-                                   class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
+                                   :disabled="orderStatus !== 'PENDING'"
+                                   class="w-full rounded-lg border border-gray-300 shadow-sm py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400">
                         </div>
                     </div>
                 </div>
@@ -95,11 +97,12 @@
                         <div class="relative" x-ref="searchWrap">
                             <input type="text"
                                    x-model="productSearchQuery"
-                                   @focus="openSearchDropdown()"
-                                   @input.debounce.150ms="productSearchOpen = true"
+                                   @focus="orderStatus === 'PENDING' && openSearchDropdown()"
+                                   @input.debounce.150ms="orderStatus === 'PENDING' && (productSearchOpen = true)"
                                    @keydown.escape="productSearchOpen = false"
                                    placeholder="Type SKU or product name..."
-                                   class="w-full rounded-lg border border-gray-300 shadow-sm py-2 pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
+                                   :disabled="orderStatus !== 'PENDING'"
+                                   class="w-full rounded-lg border border-gray-300 shadow-sm py-2 pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400">
                             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                             {# Dropdown with fixed position so it is not clipped by modal overflow #}
                             <div x-show="productSearchOpen"
@@ -138,12 +141,12 @@
                                     <template x-for="(line, idx) in lines" :key="line.productId + '-' + idx">
                                         <tr class="hover:bg-gray-50/80 transition-colors">
                                             <td class="px-4 py-3 text-gray-900 font-medium" x-text="lineName(line)"></td>
-                                            <td class="px-4 py-3 text-right"><input type="number" min="1" x-model.number="line.quantity" class="w-14 text-right rounded-lg border border-gray-300 py-1.5 px-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></td>
-                                            <td class="px-4 py-3 text-right"><input type="number" step="0.01" min="0" x-model="line.platformPrice" placeholder="0" class="w-24 text-right rounded-lg border border-gray-300 py-1.5 px-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></td>
+                                            <td class="px-4 py-3 text-right"><input type="number" min="1" x-model.number="line.quantity" :disabled="orderStatus !== 'PENDING'" class="w-14 text-right rounded-lg border border-gray-300 py-1.5 px-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-400"></td>
+                                            <td class="px-4 py-3 text-right"><input type="number" step="0.01" min="0" x-model="line.platformPrice" placeholder="0" :disabled="orderStatus !== 'PENDING'" class="w-24 text-right rounded-lg border border-gray-300 py-1.5 px-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:text-gray-400"></td>
                                             <td class="px-4 py-3 text-right"><input type="number" step="0.01" min="0" x-model="line.actualUnitPrice" placeholder="0" class="w-24 text-right rounded-lg border border-gray-300 py-1.5 px-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></td>
                                             <td class="px-4 py-3 text-right text-gray-700 font-medium" x-text="lineSubtotal(line)"></td>
                                             <td class="px-4 py-3">
-                                                <button type="button" @click="removeLine(idx)" class="text-gray-400 hover:text-red-600 p-1 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-red-200" title="Remove line">
+                                                <button type="button" @click="removeLine(idx)" :disabled="orderStatus !== 'PENDING'" class="text-gray-400 hover:text-red-600 p-1 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 disabled:text-gray-300 disabled:hover:text-gray-300" title="Remove line">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                                 </button>
                                             </td>

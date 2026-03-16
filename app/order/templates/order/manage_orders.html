@@ -88,6 +88,13 @@
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             Refresh
                         </button>
+                        <button type="button"
+                                @click="openBulkStatusModal()"
+                                :disabled="selectedOrderIds.length === 0"
+                                class="inline-flex justify-center items-center gap-1.5 px-3 py-2.5 h-10 rounded-lg text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h12M3 17h8"></path></svg>
+                            Bulk Status
+                        </button>
                     </div>
                 </div>
             </div>
@@ -191,7 +198,7 @@
                                    :checked="items.length > 0 && selectedOrderIds.length === items.length"
                                    :indeterminate="selectedOrderIds.length > 0 && selectedOrderIds.length < items.length"
                                    @change="toggleSelectAll()"
-                                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                   class="h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer bg-white">
                         </th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             <button type="button"
@@ -332,7 +339,7 @@
                                 <input type="checkbox"
                                        :checked="selectedOrderIds.includes(order.id)"
                                        @change="toggleOrderSelection(order.id)"
-                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                       class="h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer bg-white">
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                                 <button @click="
@@ -371,6 +378,7 @@
                                         'bg-blue-100 text-blue-800': order.status_code === 'TO_SHIP',
                                         'bg-purple-100 text-purple-800': order.status_code === 'TO_RECEIVE',
                                         'bg-green-100 text-green-800': order.status_code === 'COMPLETED',
+                                        'bg-emerald-100 text-emerald-800': order.status_code === 'CLOSED',
                                         'bg-red-100 text-red-800': order.status_code === 'CANCELLED'
                                       }"
                                       x-text="order.status">
@@ -583,6 +591,7 @@
 
             // --- Modal State ---
             showStatusModal: false,
+            isBulkStatus: false,
             showExportModal: false,
             showManualOrderModal: false,
             editingOrder: null,
@@ -660,6 +669,14 @@
                 } else {
                     this.selectedOrderIds = this.items.map(o => o.id);
                 }
+            },
+
+            openBulkStatusModal() {
+                if (this.selectedOrderIds.length === 0) return;
+                this.isBulkStatus = true;
+                this.editingOrder = null;
+                this.newStatus = '';
+                this.showStatusModal = true;
             },
 
             async exportSelectedOrders() {
@@ -747,6 +764,7 @@
 
             // --- Modal Actions ---
             openStatusModal(order) {
+                this.isBulkStatus = false;
                 this.editingOrder = order;
                 this.newStatus = order.status_code;
                 this.showStatusModal = true;
@@ -759,21 +777,36 @@
             },
 
             async saveStatus() {
-                if (!this.editingOrder) return;
+                if (!this.newStatus) return;
 
                 this.isUpdating = true;
-                const orderId = this.editingOrder.id;
                 const statusToSet = this.newStatus;
 
                 try {
-                    const response = await fetch(`/order/api/order/${orderId}/update-status/`, {
+                    let url, payload;
+                    if (this.isBulkStatus) {
+                        // Use explicit path to avoid template reverse issues
+                        url = '/order/api/bulk-update-status/';
+                        payload = { status: statusToSet, order_ids: this.selectedOrderIds };
+                    } else {
+                        if (!this.editingOrder) return;
+                        const orderId = this.editingOrder.id;
+                        url = `/order/api/order/${orderId}/update-status/`;
+                        payload = { status: statusToSet };
+                    }
+
+                    const response = await fetch(url, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': this.csrfToken
                         },
-                        body: JSON.stringify({ status: statusToSet })
+                        body: JSON.stringify(payload)
                     });
+                    if (!response.ok) {
+                        const text = await response.text();
+                        throw new Error(text || `Request failed with ${response.status}`);
+                    }
                     const data = await response.json();
                     if (data.success) {
                         this.closeStatusModal();

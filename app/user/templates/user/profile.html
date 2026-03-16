@@ -325,9 +325,10 @@
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                           :class="{
                                             'bg-green-100 text-green-800': order.status_code === 'COMPLETED',
+                                            'bg-emerald-100 text-emerald-800': order.status_code === 'CLOSED',
                                             'bg-orange-100 text-orange-800': order.status_code === 'TO_PAY',
                                             'bg-blue-100 text-blue-800': order.status_code === 'PENDING',
-                                            'bg-gray-100 text-gray-800': !['COMPLETED','TO_PAY','PENDING'].includes(order.status_code)
+                                            'bg-gray-100 text-gray-800': !['COMPLETED','CLOSED','TO_PAY','PENDING'].includes(order.status_code)
                                           }"
                                           x-text="order.status_display"></span>
                                     <div class="text-xs text-gray-400 mt-1" x-show="order.payment_method" x-text="`Via: ${order.payment_method}`"></div>
@@ -340,8 +341,8 @@
                                         Pay Now
                                     </button>
 
-                                    {% if can_manual_order_profile %}
-                                    <button x-show="order.is_editable_manual"
+                                {% if can_manual_order_profile %}
+                                    <button x-show="order.is_editable_manual || ['TO_PAY','TO_SHIP','TO_RECEIVE'].includes(order.status_code)"
                                             type="button"
                                             class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                                             @click="editManual(order.id)">
@@ -349,7 +350,7 @@
                                     </button>
                                     {% endif %}
 
-                                    <span x-show="order.status_code !== 'TO_PAY' && !order.is_editable_manual" class="text-gray-400">-</span>
+                                    <span x-show="order.status_code !== 'TO_PAY' && !(order.is_editable_manual || ['TO_PAY','TO_SHIP','TO_RECEIVE'].includes(order.status_code))" class="text-gray-400">-</span>
                                 </td>
                             </tr>
                         </template>
@@ -499,6 +500,7 @@ document.addEventListener('alpine:init', () => {
         remarks: '',
         isSubmitting: false,
         currentOrderId: null,
+        orderStatus: 'PENDING',
         productsUrl: '{% url "order:api_manual_order_products" %}',
         submitUrl: '{% url "order:api_submit_manual_order" %}',
         csrfToken: '{{ csrf_token }}',
@@ -557,6 +559,7 @@ document.addEventListener('alpine:init', () => {
                 if (!d.success || !d.order) throw new Error(d.error || 'Invalid response');
 
                 const o = d.order;
+                this.orderStatus = o.status || 'PENDING';
                 this.salesChannel = o.sales_channel || 'Other';
                 this.transactionDate = o.transaction_date || this.transactionDate;
                 this.customerName = o.customer_name || '';
@@ -602,6 +605,7 @@ document.addEventListener('alpine:init', () => {
             }, 0).toFixed(2);
         },
         addProductLine(p) {
+            if (this.orderStatus !== 'PENDING') return;
             const price = p.selling_price || '0.00';
             this.lines.push({
                 productId: parseInt(p.id, 10),
@@ -611,11 +615,13 @@ document.addEventListener('alpine:init', () => {
             });
         },
         removeLine(idx) {
+            if (this.orderStatus !== 'PENDING') return;
             this.lines.splice(idx, 1);
         },
         resetForNewOrder() {
             const today = new Date();
             this.currentOrderId = null;
+            this.orderStatus = 'PENDING';
             this.salesChannel = 'Other';
             this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
             this.customerName = '';

@@ -19,6 +19,7 @@ class Order(models.Model):
         TO_SHIP = 'TO_SHIP', 'To Ship'
         TO_RECEIVE = 'TO_RECEIVE', 'To Receive'
         COMPLETED = 'COMPLETED', 'Completed'
+        CLOSED = 'CLOSED', 'Closed'
         CANCELLED = 'CANCELLED', 'Cancelled'
 
     class SalesChannel(models.TextChoices):
