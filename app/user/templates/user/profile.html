@@ -256,17 +256,7 @@
                                 </button>
                             </th>
                             {% if can_manual_order_profile %}
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                                <button type="button"
-                                   @click="changeSort('sales_channel')"
-                                   class="flex items-center gap-1 hover:text-gray-700">
-                                    Channel
-                                    <span x-show="sortBy === 'sales_channel'">
-                                        <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
-                                    </span>
-                                </button>
-                            </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">
                                 <button type="button"
                                    @click="changeSort('customer_name')"
                                    class="flex items-center gap-1 hover:text-gray700">
@@ -276,9 +266,9 @@
                                     </span>
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Phone</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Phone</th>
                             {% endif %}
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[22%]">Items</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[24%]">Items</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                                 <button type="button"
                                    @click="changeSort('status')"
@@ -310,18 +300,22 @@
                         </tr>
                         <template x-for="order in orders" :key="order.id">
                             <tr>
-                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600" x-text="order.id"></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                                    <div x-text="order.id"></div>
+                                    {% if can_manual_order_profile %}
+                                    <div class="text-[11px] text-gray-500 mt-0.5" x-text="order.sales_channel_display || '-'"></div>
+                                    {% endif %}
+                                </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.date_display"></td>
                                 {% if can_manual_order_profile %}
-                                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <div x-text="order.sales_channel_display || '-'"></div>
-                                    <div class="text-xs text-gray-400 mt-0.5" x-show="order.remarks" x-text="order.remarks"></div>
+                                <td class="px-4 py-4 text-sm text-gray-500 break-words">
+                                    <div class="font-medium text-gray-900" x-text="order.customer_name || '-'"></div>
+                                    <div class="mt-0.5 text-[11px] text-gray-400" x-show="order.remarks" x-text="order.remarks"></div>
                                 </td>
-                                <td class="px-4 py-4 text-sm text-gray-500 break-words" x-text="order.customer_name || '-'"></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.customer_phone || '-'"></td>
                                 {% endif %}
                                 <td class="px-4 py-4 text-sm text-gray-500 align-top">
-                                    <ul class="list-disc list-inside space-y-0.5 min-w-[22%]">
+                                    <ul class="list-disc list-inside space-y-0.5 min-w-[24%]">
                                         <template x-for="(item, idx) in order.items" :key="idx">
                                             <li x-text="`${item.product_name} (x${item.quantity})`"></li>
                                         </template>
