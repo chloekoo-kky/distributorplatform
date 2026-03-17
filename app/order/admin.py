@@ -1,8 +1,9 @@
 from django.contrib import admin
-from django.db.models import Sum, F
+from django.db.models import Sum, F, Q
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
+from import_export.admin import ImportExportModelAdmin
 from .models import Order, OrderItem, Customer, CustomerAddress
 
 
@@ -14,11 +15,54 @@ class CustomerAddressInline(admin.TabularInline):
 
 
 @admin.register(Customer)
-class CustomerAdmin(admin.ModelAdmin):
+class CustomerAdmin(ImportExportModelAdmin):
     list_display = ('name', 'phone', 'email', 'created_at')
     search_fields = ('name', 'phone', 'email')
     list_per_page = 25
     inlines = [CustomerAddressInline]
+
+    actions = ['backfill_orders_from_customers']
+
+    def backfill_orders_from_customers(self, request, queryset):
+        """
+        For selected customers, link existing orders (without customer FK)
+        based on matching phone and, when present, case-insensitive name.
+        Also create CustomerAddress entries from order shipping addresses.
+        """
+        linked_orders = 0
+        created_addresses = 0
+        for customer in queryset:
+            phone = (customer.phone or '').strip()
+            name = (customer.name or '').strip()
+            if not phone and not name:
+                continue
+            q = Q(customer__isnull=True)
+            if phone:
+                q &= Q(customer_phone__iexact=phone)
+            if name:
+                q &= Q(customer_name__iexact=name)
+            orders = Order.objects.filter(q)
+            for o in orders:
+                o.customer = customer
+                o.save(update_fields=['customer'])
+                linked_orders += 1
+                addr = (o.shipping_address or '').strip()
+                if addr:
+                    if not CustomerAddress.objects.filter(customer=customer, address=addr).exists():
+                        is_default = not CustomerAddress.objects.filter(customer=customer).exists()
+                        CustomerAddress.objects.create(
+                            customer=customer,
+                            label=None,
+                            address=addr,
+                            is_default=is_default,
+                        )
+                        created_addresses += 1
+
+        self.message_user(
+            request,
+            f"Linked {linked_orders} order(s) and created {created_addresses} new address(es)."
+        )
+    backfill_orders_from_customers.short_description = "Backfill orders and addresses from selected customers"
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem

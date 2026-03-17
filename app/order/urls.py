@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/customers/<int:customer_id>/orders/', views.api_customer_orders, name='api_customer_orders'),
     path('api/customers/<int:customer_id>/update/', views.api_customer_update, name='api_customer_update'),
     path('api/customers/<int:customer_id>/delete/', views.api_customer_delete, name='api_customer_delete'),
+    path('export/customers-from-orders/', views.export_customers_from_orders, name='export_customers_from_orders'),
     path('api/manage-orders/', views.api_manage_orders, name='api_manage_orders'),
     path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
     path('api/bulk-update-status/', views.api_bulk_update_order_status, name='api_bulk_update_status'),

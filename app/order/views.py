@@ -56,6 +56,44 @@ def agent_required(view_func):
     return _wrapped_view
 
 
+@staff_member_required
+def export_customers_from_orders(request):
+    """
+    Export implicit customers derived from orders as CSV.
+    Group by (customer_name, customer_phone, customer_email, shipping_address).
+    """
+    # Only staff should hit this view by decorator; keep logic simple.
+    # Collect unique customer signatures
+    seen = {}
+    qs = Order.objects.all().order_by('created_at')
+    for o in qs.iterator():
+        name = (o.customer_name or '').strip()
+        phone = (o.customer_phone or '').strip()
+        # You don't currently store email on Order; keep placeholder for future
+        email = ''
+        address = (o.shipping_address or '').strip()
+        if not (name or phone or address):
+            continue
+        key = (name.lower(), phone, email.lower(), address)
+        if key not in seen:
+            seen[key] = {
+                'name': name,
+                'phone': phone,
+                'email': email,
+                'address': address,
+                'notes': 'Imported from orders',
+            }
+
+    # Stream CSV
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="customers_from_orders.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['name', 'phone', 'email', 'address', 'notes'])
+    for row in seen.values():
+        writer.writerow([row['name'], row['phone'], row['email'], row['address'], row['notes']])
+    return response
+
+
 @agent_required
 def place_order_view(request):
     """
