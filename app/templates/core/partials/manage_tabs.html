@@ -81,6 +81,12 @@
            <span>Orders</span>
         </a>
 
+        <a href="{% url 'order:manage_customers' %}"
+           class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
+           <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.106-1.283-.301-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.106-1.283.301-1.857m0 0a5.002 5.002 0 019.398 0M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+           <span>Customers</span>
+        </a>
+
     {% else %}
         {# --- DASHBOARD MODE: Alpine.js 'tab' variable controls visibility --- #}
 
@@ -170,6 +176,20 @@
            class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200">
            <svg class="w-5 h-5 mr-2 md:mr-3" :class="tab === '#commissions' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
            <span>Commissions</span>
+        </a>
+
+        <a href="#orders"
+           @click.prevent="tab = '#orders'; window.location.hash = '#orders'"
+           :class="tab === '#orders' ? 'border-indigo-500 text-indigo-600 md:bg-indigo-50 md:text-indigo-700 md:border-0' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0'"
+           class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200">
+           <svg class="w-5 h-5 mr-2 md:mr-3" :class="tab === '#orders' ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+           <span>Orders</span>
+        </a>
+
+        <a href="{% url 'order:manage_customers' %}"
+           class="group flex items-center whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm md:py-2 md:px-3 md:rounded-md md:w-full transition-colors duration-200 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 md:hover:bg-gray-50 md:hover:text-gray-900 md:hover:border-0">
+           <svg class="w-5 h-5 mr-2 md:mr-3 text-gray-400 group-hover:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.106-1.283-.301-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.106-1.283.301-1.857m0 0a5.002 5.002 0 019.398 0M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+           <span>Customers</span>
         </a>
 
     {% endif %}

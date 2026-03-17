@@ -47,6 +47,41 @@
                     <h4 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Customer & channel</h4>
                     <div class="space-y-4">
                         <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                            <div class="flex flex-wrap items-center gap-2 mb-2">
+                                <div class="relative flex-1 min-w-[200px]" x-ref="customerSearchWrap">
+                                    <input type="text"
+                                           x-model="customerSearchQuery"
+                                           @focus="orderStatus === 'PENDING' && (customerSearchOpen = true)"
+                                           @input.debounce.200ms="orderStatus === 'PENDING' && fetchCustomerSearch()"
+                                           @keydown.escape="customerSearchOpen = false"
+                                           placeholder="Search existing customer (name, phone)..."
+                                           :disabled="orderStatus !== 'PENDING'"
+                                           class="w-full rounded-lg border border-gray-300 shadow-sm py-2 pl-3 pr-8 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400 disabled:bg-gray-100 disabled:text-gray-400">
+                                    <button type="button" x-show="selectedCustomer" @click="clearCustomer()" :disabled="orderStatus !== 'PENDING'"
+                                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded" title="Clear and enter new customer">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
+                                    <div x-show="customerSearchOpen" x-cloak x-transition
+                                         @click.away="customerSearchOpen = false"
+                                         :style="customerSearchDropdownStyle()"
+                                         class="rounded-lg border border-gray-200 bg-white shadow-xl max-h-48 overflow-y-auto py-1 z-[60]">
+                                        <template x-for="c in customerSearchResults" :key="c.id">
+                                            <button type="button"
+                                                    @mousedown.prevent="selectCustomer(c)"
+                                                    class="w-full text-left px-4 py-2.5 text-sm hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex flex-col gap-0.5">
+                                                <span class="font-medium text-gray-900" x-text="c.name"></span>
+                                                <span class="text-xs text-gray-500" x-text="(c.phone || '') + (c.email ? ' · ' + c.email : '')"></span>
+                                            </button>
+                                        </template>
+                                        <p x-show="customerSearchResults.length === 0 && customerSearchQuery.trim().length > 0" class="px-4 py-3 text-sm text-gray-500">No customers found.</p>
+                                        <p x-show="selectedCustomer" class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100 mt-1">Click ✕ next to search to enter a new customer.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <p x-show="selectedCustomer" class="text-xs text-gray-500 mb-2" x-text="'Using: ' + (selectedCustomer ? selectedCustomer.name : '') + (selectedCustomer && selectedCustomer.phone ? ' · ' + selectedCustomer.phone : '')"></p>
+                        </div>
+                        <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Sales channel</label>
                             <div class="flex flex-wrap gap-2">
                                 {% for value, label in sales_channel_choices %}

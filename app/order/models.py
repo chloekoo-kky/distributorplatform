@@ -7,6 +7,47 @@ from decimal import Decimal
 
 from product.models import Product
 
+
+class Customer(models.Model):
+    """
+    Central customer record for manual orders. Admins manage this list;
+    salesteam can pick an existing customer or create a new one when entering orders.
+    """
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=50, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name or f"Customer #{self.pk}"
+
+
+class CustomerAddress(models.Model):
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='addresses'
+    )
+    label = models.CharField(max_length=100, blank=True, null=True, help_text='Optional label, e.g. Home, Office.')
+    address = models.TextField()
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', 'created_at']
+
+    def __str__(self):
+        label = self.label or 'Address'
+        return f"{label} for {self.customer.name or self.customer_id}"
+
+
 def generate_order_id():
     """Generates a random 8-character alphanumeric ID."""
     characters = string.ascii_uppercase + string.digits
@@ -62,7 +103,17 @@ class Order(models.Model):
         blank=True
     )
 
-    # Guest customer details (for manual orders when customer has no account)
+    # Optional link to central Customer record (manual orders)
+    customer = models.ForeignKey(
+        'Customer',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders',
+        help_text='Linked customer from central list (manual orders).'
+    )
+
+    # Guest customer details (snapshot for display/export; also used when no customer linked)
     customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_phone = models.CharField(max_length=50, blank=True, null=True)
     shipping_address = models.TextField(blank=True, null=True)

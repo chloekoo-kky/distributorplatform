@@ -3,7 +3,22 @@ from django.db.models import Sum, F
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Order, OrderItem
+from .models import Order, OrderItem, Customer, CustomerAddress
+
+
+class CustomerAddressInline(admin.TabularInline):
+    model = CustomerAddress
+    extra = 0
+    fields = ('label', 'address', 'is_default', 'created_at')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ('name', 'phone', 'email', 'created_at')
+    search_fields = ('name', 'phone', 'email')
+    list_per_page = 25
+    inlines = [CustomerAddressInline]
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem

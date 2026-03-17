@@ -23,7 +23,7 @@ import urllib.parse
 
 from inventory.models import QuotationItem
 from product.models import Product, Category
-from .models import Order, OrderItem
+from .models import Order, OrderItem, Customer, CustomerAddress
 from .forms import ManualOrderForm
 from core.models import SiteSetting, PaymentOption
 
@@ -248,6 +248,238 @@ def api_manual_order_products(request):
 
 
 @salesperson_required
+def api_customer_search(request):
+    """GET: search customers by name/phone/email for manual order picker. ?q=..."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    q = (request.GET.get('q') or '').strip()[:100]
+    customers = Customer.objects.all().order_by('name')
+    if q:
+        customers = customers.filter(
+            Q(name__icontains=q) |
+            Q(phone__icontains=q) |
+            Q(email__icontains=q) |
+            Q(address__icontains=q)
+        )[:15]
+    else:
+        customers = customers[:20]
+    items = [
+        {
+            'id': c.id,
+            'name': c.name or '',
+            'phone': c.phone or '',
+            'email': c.email or '',
+            'address': c.address or '',
+        }
+        for c in customers
+    ]
+    return JsonResponse({'success': True, 'customers': items})
+
+
+@staff_member_required
+def manage_customers_dashboard(request):
+    """Manage Customers page: list, add, edit, delete central customer records. Uses manage tools sidebar."""
+    return render(request, 'order/manage_customers.html', {
+        'title': 'Manage Customers',
+        'is_subpage': True,
+    })
+
+
+@staff_member_required
+def api_customers_list(request):
+    """GET: paginated list of customers for manage page. ?page=1&search=..."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    search = (request.GET.get('search') or '').strip()[:100]
+    qs = Customer.objects.all().order_by('name')
+    if search:
+        qs = qs.filter(
+            Q(name__icontains=search) |
+            Q(phone__icontains=search) |
+            Q(email__icontains=search)
+        )
+    paginator = Paginator(qs, 25)
+    page_num = request.GET.get('page', '1')
+    try:
+        page = paginator.page(int(page_num))
+    except (ValueError, TypeError):
+        page = paginator.page(1)
+    items = [
+        {
+            'id': c.id,
+            'name': c.name or '',
+            'phone': c.phone or '',
+            'email': c.email or '',
+            'address': (c.address or '')[:80] + ('...' if c.address and len(c.address) > 80 else ''),
+            'notes': (c.notes or '')[:80] + ('...' if c.notes and len(c.notes) > 80 else ''),
+            'created_at': c.created_at.strftime('%Y-%m-%d %H:%M'),
+            'order_count': c.orders.count(),
+        }
+        for c in page.object_list
+    ]
+    return JsonResponse({
+        'success': True,
+        'items': items,
+        'page': page.number,
+        'total_pages': paginator.num_pages,
+        'total_count': paginator.count,
+    })
+
+
+@staff_member_required
+@transaction.atomic
+def api_customer_create(request):
+    """POST: create a new customer. JSON: name, phone?, email?, address?, notes?"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
+    customer = Customer.objects.create(
+        name=name,
+        phone=(data.get('phone') or '').strip() or None,
+        email=(data.get('email') or '').strip() or None,
+        address=(data.get('address') or '').strip() or None,
+        notes=(data.get('notes') or '').strip() or None,
+    )
+    return JsonResponse({
+        'success': True,
+        'customer': {
+            'id': customer.id,
+            'name': customer.name,
+            'phone': customer.phone or '',
+            'email': customer.email or '',
+            'address': customer.address or '',
+            'notes': customer.notes or '',
+        },
+    })
+
+
+@staff_member_required
+@transaction.atomic
+def api_customer_update(request, customer_id):
+    """POST: update customer. JSON: name?, phone?, email?, address?, notes?"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    customer = get_object_or_404(Customer, id=customer_id)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    if data.get('name') is not None:
+        name = (data.get('name') or '').strip()
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Name cannot be empty.'}, status=400)
+        customer.name = name
+    if 'phone' in data:
+        customer.phone = (data.get('phone') or '').strip() or None
+    if 'email' in data:
+        customer.email = (data.get('email') or '').strip() or None
+    if 'address' in data:
+        customer.address = (data.get('address') or '').strip() or None
+    if 'notes' in data:
+        customer.notes = (data.get('notes') or '').strip() or None
+    customer.save()
+    return JsonResponse({
+        'success': True,
+        'customer': {
+            'id': customer.id,
+            'name': customer.name,
+            'phone': customer.phone or '',
+            'email': customer.email or '',
+            'address': customer.address or '',
+            'notes': customer.notes or '',
+        },
+    })
+
+
+@staff_member_required
+@transaction.atomic
+def api_customer_delete(request, customer_id):
+    """POST: delete a customer (only if no orders linked, or allow and set orders.customer=None)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    customer = get_object_or_404(Customer, id=customer_id)
+    order_count = customer.orders.count()
+    # We allow delete; orders keep their snapshot (customer_name, etc.) via SET_NULL
+    customer.delete()
+    return JsonResponse({
+        'success': True,
+        'message': f'Customer deleted. {order_count} order(s) were unlinked.',
+    })
+
+
+@staff_member_required
+def api_customer_orders(request, customer_id):
+    """
+    GET: list recent orders for a specific customer (for Manage Customers modal).
+    Combines orders linked via FK and, as a fallback, snapshot name/phone.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    customer = get_object_or_404(Customer, id=customer_id)
+
+    # Only use FK-linked orders for now to avoid union quirks
+    qs = (
+        Order.objects
+        .filter(customer_id=customer.id)
+        .select_related('agent')
+        .prefetch_related('items')
+        .order_by('-created_at')[:50]
+    )
+
+    orders_data = []
+    for o in qs:
+        items = list(o.items.all())
+        total = sum((item.total_price for item in items), Decimal('0.00'))
+        orders_data.append({
+            'id': str(o.id),
+            'created_at': o.created_at.strftime('%Y-%m-%d %H:%M'),
+            'transaction_date': o.transaction_date.isoformat() if o.transaction_date else '',
+            'status': o.status,
+            'status_display': o.get_status_display(),
+            'sales_channel': o.sales_channel or '',
+            'customer_name': o.customer_name or '',
+            'customer_phone': o.customer_phone or '',
+            'total': f'{total:.2f}',
+        })
+
+    return JsonResponse({
+        'success': True,
+        'customer': {
+            'id': customer.id,
+            'name': customer.name,
+            'phone': customer.phone or '',
+        },
+        'orders': orders_data,
+    })
+
+
+@staff_member_required
+def api_customer_detail(request, customer_id):
+    """GET: single customer for edit form."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    customer = get_object_or_404(Customer, id=customer_id)
+    return JsonResponse({
+        'success': True,
+        'customer': {
+            'id': customer.id,
+            'name': customer.name,
+            'phone': customer.phone or '',
+            'email': customer.email or '',
+            'address': customer.address or '',
+            'notes': customer.notes or '',
+        },
+    })
+
+
+@salesperson_required
 @transaction.atomic
 def api_submit_manual_order(request):
     """
@@ -285,14 +517,55 @@ def api_submit_manual_order(request):
         except (ValueError, TypeError):
             pass
 
+    customer = None
+    customer_name = (data.get('customer_name') or '').strip() or None
+    customer_phone = (data.get('customer_phone') or '').strip() or None
+    shipping_address = (data.get('shipping_address') or '').strip() or None
+    customer_id = data.get('customer_id')
+    if customer_id:
+        try:
+            customer = Customer.objects.get(id=int(customer_id))
+            customer_name = customer.name
+            customer_phone = customer.phone or customer_phone
+            # Keep order's shipping_address payload as provided; don't force override with customer.address
+        except (ValueError, TypeError, Customer.DoesNotExist):
+            customer = None
+    elif customer_name or customer_phone or shipping_address:
+        customer = Customer.objects.create(
+            name=customer_name or 'Unknown',
+            phone=customer_phone,
+            email=None,
+            address=shipping_address,
+            notes=None,
+        )
+
+    # Snapshot fields on order always use the latest values
+    customer_name = customer_name or (customer.name if customer else None)
+    customer_phone = customer_phone or (customer.phone if customer else None)
+
+    # Persist new shipping address variant in address book (without overwriting customer.address)
+    if customer and shipping_address:
+        addr_text = shipping_address.strip()
+        if addr_text:
+            exists = CustomerAddress.objects.filter(customer=customer, address=addr_text).exists()
+            if not exists:
+                is_default = not CustomerAddress.objects.filter(customer=customer).exists()
+                CustomerAddress.objects.create(
+                    customer=customer,
+                    label=None,
+                    address=addr_text,
+                    is_default=is_default,
+                )
+
     new_order = Order.objects.create(
         agent=request.user,
         created_by=request.user,
         sales_channel=sales_channel,
         transaction_date=transaction_date,
-        customer_name=(data.get('customer_name') or '').strip() or None,
-        customer_phone=(data.get('customer_phone') or '').strip() or None,
-        shipping_address=(data.get('shipping_address') or '').strip() or None,
+        customer=customer,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        shipping_address=shipping_address,
         remarks=(data.get('remarks') or '').strip() or None,
         status=Order.OrderStatus.PENDING,
     )
@@ -429,6 +702,7 @@ def api_manual_order_detail(request, order_id):
         'status': order.status,
         'sales_channel': order.sales_channel or Order.SalesChannel.OTHER,
         'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
+        'customer_id': order.customer_id,
         'customer_name': order.customer_name or '',
         'customer_phone': order.customer_phone or '',
         'shipping_address': order.shipping_address or '',
@@ -501,13 +775,51 @@ def api_update_manual_order(request, order_id):
             except (ValueError, TypeError):
                 pass
 
-        # Update order header fields
+        # Update order header and customer
         order.sales_channel = sales_channel
         order.transaction_date = transaction_date
-        order.customer_name = (data.get('customer_name') or '').strip() or None
-        order.customer_phone = (data.get('customer_phone') or '').strip() or None
-        order.shipping_address = (data.get('shipping_address') or '').strip() or None
         order.remarks = (data.get('remarks') or '').strip() or None
+        customer = None
+        customer_name = (data.get('customer_name') or '').strip() or None
+        customer_phone = (data.get('customer_phone') or '').strip() or None
+        shipping_address = (data.get('shipping_address') or '').strip() or None
+        customer_id = data.get('customer_id')
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=int(customer_id))
+                customer_name = customer_name or customer.name
+                customer_phone = customer_phone or customer.phone
+            except (ValueError, TypeError, Customer.DoesNotExist):
+                pass
+        elif customer_name or customer_phone or shipping_address:
+            customer = Customer.objects.create(
+                name=customer_name or 'Unknown',
+                phone=customer_phone,
+                email=None,
+                address=shipping_address,
+                notes=None,
+            )
+        # snapshot fields from final values / customer
+        customer_name = customer_name or (customer.name if customer else None)
+        customer_phone = customer_phone or (customer.phone if customer else None)
+
+        # maintain address book
+        if customer and shipping_address:
+            addr_text = shipping_address.strip()
+            if addr_text:
+                exists = CustomerAddress.objects.filter(customer=customer, address=addr_text).exists()
+                if not exists:
+                    is_default = not CustomerAddress.objects.filter(customer=customer).exists()
+                    CustomerAddress.objects.create(
+                        customer=customer,
+                        label=None,
+                        address=addr_text,
+                        is_default=is_default,
+                    )
+        order.customer = customer
+        order.customer_name = customer_name
+        order.customer_phone = customer_phone
+        order.shipping_address = shipping_address
         order.save()
 
         # Replace items

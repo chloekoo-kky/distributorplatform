@@ -838,6 +838,10 @@
             lines: [],
             productSearchQuery: '',
             productSearchOpen: false,
+            customerSearchQuery: '',
+            customerSearchOpen: false,
+            customerSearchResults: [],
+            selectedCustomer: null,
             salesChannel: 'Other',
             transactionDate: '',
             customerName: '',
@@ -846,7 +850,44 @@
             isSubmitting: false,
             productsUrl: '{% url "order:api_manual_order_products" %}',
             submitUrl: '{% url "order:api_submit_manual_order" %}',
+            customerSearchUrl: '{% url "order:api_customer_search" %}',
             csrfToken: '{{ csrf_token }}',
+
+            async fetchCustomerSearch() {
+                const q = (this.customerSearchQuery || '').trim();
+                if (!q) { this.customerSearchResults = []; return; }
+                try {
+                    const r = await fetch(this.customerSearchUrl + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+                    if (!r.ok) return;
+                    const d = await r.json();
+                    this.customerSearchResults = (d.success && Array.isArray(d.customers)) ? d.customers : [];
+                } catch (e) { this.customerSearchResults = []; }
+            },
+            customerSearchDropdownStyle() {
+                if (!this.customerSearchOpen) return { visibility: 'hidden', position: 'fixed' };
+                const el = this.$refs && this.$refs.customerSearchWrap;
+                if (!el || typeof el.getBoundingClientRect !== 'function') return { position: 'fixed', top: '10px', left: '10px', width: '320px', zIndex: 9999 };
+                const r = el.getBoundingClientRect();
+                return { position: 'fixed', top: (r.bottom + 4) + 'px', left: r.left + 'px', width: Math.max(r.width, 280) + 'px', zIndex: 9999 };
+            },
+            selectCustomer(c) {
+                this.selectedCustomer = c;
+                this.customerName = c.name || '';
+                this.customerPhone = c.phone || '';
+                this.shippingAddress = c.address || '';
+                this.customerSearchOpen = false;
+                this.customerSearchQuery = '';
+                this.customerSearchResults = [];
+            },
+            clearCustomer() {
+                this.selectedCustomer = null;
+                this.customerName = '';
+                this.customerPhone = '';
+                this.shippingAddress = '';
+                this.customerSearchQuery = '';
+                this.customerSearchResults = [];
+                this.customerSearchOpen = false;
+            },
 
             filteredProducts() {
                 const q = (this.productSearchQuery || '').trim().toLowerCase();
@@ -927,6 +968,7 @@
                 const payload = {
                     sales_channel: this.salesChannel,
                     transaction_date: this.transactionDate || null,
+                    customer_id: this.selectedCustomer ? this.selectedCustomer.id : null,
                     customer_name: this.customerName,
                     customer_phone: this.customerPhone,
                     shipping_address: this.shippingAddress,

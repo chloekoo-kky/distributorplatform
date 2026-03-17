@@ -13,9 +13,18 @@ urlpatterns = [
     path('api/manual-order/<str:order_id>/detail/', views.api_manual_order_detail, name='api_manual_order_detail'),
     path('api/manual-order/<str:order_id>/update/', views.api_update_manual_order, name='api_update_manual_order'),
 
+    path('api/customers/search/', views.api_customer_search, name='api_customer_search'),
+
     path('order-success/<str:order_id>/', views.order_success_view, name='order_success'),
 
     path('manage/', views.manage_orders_dashboard, name='manage_orders'),
+    path('customers/', views.manage_customers_dashboard, name='manage_customers'),
+    path('api/customers/', views.api_customers_list, name='api_customers_list'),
+    path('api/customers/create/', views.api_customer_create, name='api_customer_create'),
+    path('api/customers/<int:customer_id>/', views.api_customer_detail, name='api_customer_detail'),
+    path('api/customers/<int:customer_id>/orders/', views.api_customer_orders, name='api_customer_orders'),
+    path('api/customers/<int:customer_id>/update/', views.api_customer_update, name='api_customer_update'),
+    path('api/customers/<int:customer_id>/delete/', views.api_customer_delete, name='api_customer_delete'),
     path('api/manage-orders/', views.api_manage_orders, name='api_manage_orders'),
     path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
     path('api/bulk-update-status/', views.api_bulk_update_order_status, name='api_bulk_update_status'),

@@ -425,14 +425,18 @@ def api_order_history(request):
 
     base_orders = Order.objects.filter(agent=user).prefetch_related('items__product')
 
-    # Optional search for sales team / staff: by customer name, phone, or product name
+    # Optional search for sales team / staff: by customer name, phone, product name or SKU (word-based)
     order_search_query = (request.GET.get('order_search') or '').strip()
     if order_search_query and (user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()):
-        base_orders = base_orders.filter(
-            Q(customer_name__icontains=order_search_query) |
-            Q(customer_phone__icontains=order_search_query) |
-            Q(items__product__name__icontains=order_search_query)
-        ).distinct()
+        terms = [t for t in order_search_query.split() if t]
+        for term in terms:
+            base_orders = base_orders.filter(
+                Q(customer_name__icontains=term) |
+                Q(customer_phone__icontains=term) |
+                Q(items__product__name__icontains=term) |
+                Q(items__product__sku__icontains=term)
+            )
+        base_orders = base_orders.distinct()
 
     # Apply sorting
     sort_field_map = {

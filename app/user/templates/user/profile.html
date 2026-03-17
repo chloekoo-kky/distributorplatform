@@ -492,6 +492,10 @@ document.addEventListener('alpine:init', () => {
         lines: [],
         productSearchQuery: '',
         productSearchOpen: false,
+        customerSearchQuery: '',
+        customerSearchOpen: false,
+        customerSearchResults: [],
+        selectedCustomer: null,
         salesChannel: 'Other',
         transactionDate: '',
         customerName: '',
@@ -503,7 +507,50 @@ document.addEventListener('alpine:init', () => {
         orderStatus: 'PENDING',
         productsUrl: '{% url "order:api_manual_order_products" %}',
         submitUrl: '{% url "order:api_submit_manual_order" %}',
+        customerSearchUrl: '{% url "order:api_customer_search" %}',
         csrfToken: '{{ csrf_token }}',
+
+        async fetchCustomerSearch() {
+            const q = (this.customerSearchQuery || '').trim();
+            if (!q) {
+                this.customerSearchResults = [];
+                this.customerSearchOpen = false;
+                return;
+            }
+            try {
+                this.customerSearchOpen = true;
+                const r = await fetch(this.customerSearchUrl + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.success && Array.isArray(d.customers)) this.customerSearchResults = d.customers;
+                else this.customerSearchResults = [];
+            } catch (e) { this.customerSearchResults = []; }
+        },
+        customerSearchDropdownStyle() {
+            if (!this.customerSearchOpen) return { visibility: 'hidden', position: 'fixed' };
+            const el = this.$refs && this.$refs.customerSearchWrap;
+            if (!el || typeof el.getBoundingClientRect !== 'function') return { position: 'fixed', top: '10px', left: '10px', width: '320px', zIndex: 9999 };
+            const r = el.getBoundingClientRect();
+            return { position: 'fixed', top: (r.bottom + 4) + 'px', left: r.left + 'px', width: Math.max(r.width, 280) + 'px', zIndex: 9999 };
+        },
+        selectCustomer(c) {
+            this.selectedCustomer = c;
+            this.customerName = c.name || '';
+            this.customerPhone = c.phone || '';
+            this.shippingAddress = c.address || '';
+            this.customerSearchOpen = false;
+            this.customerSearchQuery = '';
+            this.customerSearchResults = [];
+        },
+        clearCustomer() {
+            this.selectedCustomer = null;
+            this.customerName = '';
+            this.customerPhone = '';
+            this.shippingAddress = '';
+            this.customerSearchQuery = '';
+            this.customerSearchResults = [];
+            this.customerSearchOpen = false;
+        },
 
         filteredProducts() {
             const q = (this.productSearchQuery || '').trim().toLowerCase();
@@ -566,6 +613,11 @@ document.addEventListener('alpine:init', () => {
                 this.customerPhone = o.customer_phone || '';
                 this.shippingAddress = o.shipping_address || '';
                 this.remarks = o.remarks || '';
+                if (o.customer_id) {
+                    this.selectedCustomer = { id: o.customer_id, name: o.customer_name || '', phone: o.customer_phone || '', address: o.shipping_address || '' };
+                } else {
+                    this.selectedCustomer = null;
+                }
 
                 // Ensure products start loading, but don't block showing existing lines.
                 this.loadProducts();
@@ -624,9 +676,7 @@ document.addEventListener('alpine:init', () => {
             this.orderStatus = 'PENDING';
             this.salesChannel = 'Other';
             this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-            this.customerName = '';
-            this.customerPhone = '';
-            this.shippingAddress = '';
+            this.clearCustomer();
             this.remarks = '';
             this.productSearchQuery = '';
             this.productSearchOpen = false;
@@ -638,6 +688,7 @@ document.addEventListener('alpine:init', () => {
             const payload = {
                 sales_channel: this.salesChannel,
                 transaction_date: this.transactionDate || null,
+                customer_id: this.selectedCustomer ? this.selectedCustomer.id : null,
                 customer_name: this.customerName,
                 customer_phone: this.customerPhone,
                 shipping_address: this.shippingAddress,
@@ -737,6 +788,19 @@ window.handleManualOrderSuccess = function(data) {
     comp.showManualOrderModal = false;
     comp.manualOrderSuccessData = (data && data.order) ? data.order : null;
     comp.showManualOrderSuccessModal = !!comp.manualOrderSuccessData;
+
+    // Refresh order history table so the new/updated order appears immediately
+    try {
+        const historyRoot = document.querySelector('[x-data="orderHistoryComponent()"]') || document.querySelector('[x-data^="orderHistoryComponent"]');
+        if (historyRoot) {
+            const historyStore = Alpine.$data(historyRoot);
+            if (historyStore && typeof historyStore.fetchOrders === 'function') {
+                historyStore.fetchOrders();
+            }
+        }
+    } catch (e) {
+        console.error('Failed to refresh order history after manual order success', e);
+    }
 };
 </script>
 {% endif %}
