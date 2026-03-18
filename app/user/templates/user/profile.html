@@ -362,6 +362,38 @@
                     </tbody>
                 </table>
             </div>
+            <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600">
+                <div>
+                    <span x-text="'Page ' + currentPage + ' of ' + totalPages"></span>
+                    <span x-show="totalCount" class="ml-2" x-text="'(' + totalCount + ' orders)'"></span>
+                </div>
+                <div class="space-x-1">
+                    <button type="button"
+                            @click="if (currentPage > 1) fetchOrders(1)"
+                            :disabled="currentPage <= 1"
+                            class="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                        « First
+                    </button>
+                    <button type="button"
+                            @click="if (currentPage > 1) fetchOrders(currentPage - 1)"
+                            :disabled="currentPage <= 1"
+                            class="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                        ‹ Prev
+                    </button>
+                    <button type="button"
+                            @click="if (currentPage < totalPages) fetchOrders(currentPage + 1)"
+                            :disabled="currentPage >= totalPages"
+                            class="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                        Next ›
+                    </button>
+                    <button type="button"
+                            @click="if (currentPage < totalPages) fetchOrders(totalPages)"
+                            :disabled="currentPage >= totalPages"
+                            class="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                        Last »
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -971,12 +1003,19 @@ window.handleManualOrderSuccess = function(data) {
         return {
             orders: [],
             isLoading: false,
+            currentPage: 1,
+            totalPages: 1,
+            totalCount: 0,
             sortBy: 'created_at',
             sortDir: 'desc',
             searchQuery: '{{ order_search_query|default:"" }}',
-            fetchOrders() {
+            fetchOrders(page = null) {
+                if (page !== null) {
+                    this.currentPage = page;
+                }
                 this.isLoading = true;
                 const params = new URLSearchParams({
+                    page: this.currentPage,
                     sort_by: this.sortBy,
                     sort_dir: this.sortDir,
                 });
@@ -993,6 +1032,9 @@ window.handleManualOrderSuccess = function(data) {
                         this.orders = data.items || [];
                         this.sortBy = data.sort_by || this.sortBy;
                         this.sortDir = data.sort_dir || this.sortDir;
+                        this.currentPage = data.page || this.currentPage;
+                        this.totalPages = data.total_pages || this.totalPages;
+                        this.totalCount = data.total_count || this.totalCount;
                     })
                     .catch(() => {
                         this.orders = [];
@@ -1008,7 +1050,7 @@ window.handleManualOrderSuccess = function(data) {
                     this.sortBy = field;
                     this.sortDir = field === 'created_at' ? 'desc' : 'asc';
                 }
-                this.fetchOrders();
+                this.fetchOrders(1);
             },
             openPayment(orderId) {
                 openPaymentModal(orderId);

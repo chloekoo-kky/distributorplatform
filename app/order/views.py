@@ -1342,8 +1342,9 @@ def export_selected_orders(request):
 
     # Header row
     writer.writerow([
-        'Order ID', 'Date', 'Customer Name', 'Product Name', 'Product Base Cost',
-        'Platform Price', 'Actual Received', 'Profit'
+        'Order ID', 'Date', 'Customer Name', 'Product Name',
+        'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
+        'Quantity', 'Line Revenue', 'Profit'
     ])
 
     for order in orders:
@@ -1361,6 +1362,7 @@ def export_selected_orders(request):
             base_cost = product.saved_base_cost if (product.saved_base_cost is not None) else item.landed_cost
             platform_price = item.platform_price if item.platform_price is not None else ''
             actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+            line_revenue = actual_received * item.quantity
             writer.writerow([
                 order.id,
                 order_date,
@@ -1369,6 +1371,8 @@ def export_selected_orders(request):
                 float(base_cost) if base_cost is not None else '',
                 float(platform_price) if platform_price != '' else '',
                 float(actual_received),
+                item.quantity,
+                float(line_revenue),
                 float(item.profit),
             ])
 
@@ -1427,7 +1431,8 @@ def export_orders_range(request):
     writer = csv.writer(response)
     writer.writerow([
         'Order ID', 'Order Date', 'Customer Name', 'Product Name',
-        'Product Base Cost', 'Platform Price', 'Actual Received', 'Profit'
+        'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
+        'Quantity', 'Line Revenue', 'Profit'
     ])
 
     for order in orders:
@@ -1449,6 +1454,7 @@ def export_orders_range(request):
                 base_cost = item.landed_cost
             platform_price = item.platform_price if item.platform_price is not None else ''
             actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+            line_revenue = actual_received * item.quantity
             writer.writerow([
                 order.id,
                 order_date_str,
@@ -1457,6 +1463,8 @@ def export_orders_range(request):
                 float(base_cost) if base_cost is not None else '',
                 float(platform_price) if platform_price != '' else '',
                 float(actual_received),
+                item.quantity,
+                float(line_revenue),
                 float(item.profit),
             ])
 

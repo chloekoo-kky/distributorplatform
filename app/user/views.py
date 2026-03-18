@@ -422,6 +422,14 @@ def api_order_history(request):
 
     sort_by = request.GET.get('sort_by', 'created_at')
     sort_dir = request.GET.get('sort_dir', 'desc')
+    try:
+        page = int(request.GET.get('page', 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', 20))
+    except (TypeError, ValueError):
+        page_size = 20
 
     base_orders = Order.objects.filter(agent=user).prefetch_related('items__product')
 
@@ -455,16 +463,31 @@ def api_order_history(request):
     else:
         orders_qs = base_orders.order_by('-created_at')
 
-    orders = list(orders_qs)
+    total_count = orders_qs.count()
 
-    # Calculate totals
-    for o in orders:
-        o.calculated_total = sum(item.selling_price * item.quantity for item in o.items.all())
-
-    # Python-side sort for total amount
-    if sort_by == 'total':
+    # For simple sorts, paginate at the DB level
+    if sort_by != 'total':
+        from django.core.paginator import Paginator
+        paginator = Paginator(orders_qs, page_size)
+        page_obj = paginator.get_page(page)
+        orders = list(page_obj.object_list)
+        total_pages = paginator.num_pages
+        current_page = page_obj.number
+        # Calculate totals per object on this page
+        for o in orders:
+            o.calculated_total = sum(item.selling_price * item.quantity for item in o.items.all())
+    else:
+        # For total sorting, sort in Python then slice
+        orders_all = list(orders_qs)
+        for o in orders_all:
+            o.calculated_total = sum(item.selling_price * item.quantity for item in o.items.all())
         reverse = (sort_dir == 'desc')
-        orders.sort(key=lambda o: o.calculated_total, reverse=reverse)
+        orders_all.sort(key=lambda o: o.calculated_total, reverse=reverse)
+        start = (page - 1) * page_size
+        end = start + page_size
+        orders = orders_all[start:end]
+        total_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
+        current_page = page
 
     can_manual_order_profile = user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()
 
@@ -502,6 +525,9 @@ def api_order_history(request):
         'items': serialized,
         'sort_by': sort_by,
         'sort_dir': sort_dir,
+        'page': current_page,
+        'total_pages': total_pages,
+        'total_count': total_count,
     })
 
 @login_required
