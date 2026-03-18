@@ -433,9 +433,9 @@ def api_order_history(request):
 
     base_orders = Order.objects.filter(agent=user).prefetch_related('items__product')
 
-    # Optional search for sales team / staff: by customer name, phone, product name or SKU (word-based)
+    # Optional search: by customer name, phone, product name or SKU (word-based)
     order_search_query = (request.GET.get('order_search') or '').strip()
-    if order_search_query and (user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()):
+    if order_search_query:
         terms = [t for t in order_search_query.split() if t]
         for term in terms:
             base_orders = base_orders.filter(
@@ -487,7 +487,10 @@ def api_order_history(request):
         end = start + page_size
         orders = orders_all[start:end]
         total_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
-        current_page = page
+        # Clamp current page to valid range so we don't show empty results on out-of-range pages
+        if total_pages < 1:
+            total_pages = 1
+        current_page = min(max(page, 1), total_pages)
 
     can_manual_order_profile = user.is_staff or user.user_groups.filter(name__iexact='salesteam').exists()
 

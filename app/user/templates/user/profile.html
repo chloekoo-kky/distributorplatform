@@ -207,8 +207,8 @@
                 <form @submit.prevent class="flex items-center w-full sm:w-auto">
                     <input type="text"
                            name="order_search"
-                           x-model.debounce.500ms="searchQuery"
-                           @input="fetchOrders()"
+                           x-model="searchQuery"
+                           @input.debounce.400ms="fetchOrders(1)"
                            value="{{ order_search_query|default:'' }}"
                            placeholder="Search orders by customer, phone, or product..."
                            class="w-full sm:w-72 px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400">
