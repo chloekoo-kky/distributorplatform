@@ -314,7 +314,8 @@
                                 try {
                                     await this.ensureDetailsLoaded();
                                     const lines = [];
-                                    lines.push(`Order #${order.id}`);
+                                    const summaryUsername = order.created_by_username || order.agent || '';
+                                    lines.push(`${summaryUsername} ${order.id}`.trim());
                                     lines.push(`Date: ${order.created_at}`);
                                     lines.push(`Customer: ${order.customer}`);
                                     lines.push('');
