@@ -1,6 +1,8 @@
 # distributorplatform/app/order/views.py
 import csv
 import io
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404
 from django.contrib.auth.decorators import login_required
@@ -26,6 +28,67 @@ from product.models import Product, Category
 from .models import Order, OrderItem, Customer, CustomerAddress
 from .forms import ManualOrderForm
 from core.models import SiteSetting, PaymentOption
+
+ORDER_EXPORT_HEADERS = [
+    'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
+    'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
+    'Quantity', 'Line Revenue', 'Profit'
+]
+MONTH_FILL_BLUE = PatternFill(fill_type='solid', fgColor='E6F2FF')
+MONTH_FILL_WHITE = PatternFill(fill_type='solid', fgColor='FFFFFF')
+HEADER_FILL_GRAY = PatternFill(fill_type='solid', fgColor='F2F2F2')
+HEADER_FONT_BOLD = Font(bold=True)
+
+
+def _logical_order_date(order):
+    return order.transaction_date or (order.created_at.date() if order.created_at else None)
+
+
+def _excel_response_for_order_rows(filename, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Orders'
+    ws.append(ORDER_EXPORT_HEADERS)
+    for col in range(1, len(ORDER_EXPORT_HEADERS) + 1):
+        header_cell = ws.cell(row=1, column=col)
+        header_cell.fill = HEADER_FILL_GRAY
+        header_cell.font = HEADER_FONT_BOLD
+
+    prev_month = None
+    use_blue = True
+    for row in rows:
+        month_key = row.get('month_key')
+        if prev_month is not None and month_key != prev_month:
+            use_blue = not use_blue
+        fill = MONTH_FILL_BLUE if use_blue else MONTH_FILL_WHITE
+
+        ws.append(row['values'])
+        current_row = ws.max_row
+        for col in range(1, len(ORDER_EXPORT_HEADERS) + 1):
+            ws.cell(row=current_row, column=col).fill = fill
+
+        prev_month = month_key
+
+    # Auto-fit column widths based on max content length (with a small cap).
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            value = '' if cell.value is None else str(cell.value)
+            if len(value) > max_len:
+                max_len = len(value)
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 48)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 def salesperson_required(view_func):
@@ -1330,23 +1393,14 @@ def export_selected_orders(request):
     # Limit to avoid huge exports
     order_ids = list(set(str(oid).strip() for oid in order_ids if oid))[:500]
 
-    orders = (
+    orders = list(
         Order.objects.filter(id__in=order_ids)
         .select_related('agent', 'created_by')
         .prefetch_related('items__product')
-        .order_by('-created_at')
     )
+    orders.sort(key=lambda o: (_logical_order_date(o) or datetime.min.date(), o.created_at))
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-
-    # Header row
-    writer.writerow([
-        'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
-        'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
-        'Quantity', 'Line Revenue', 'Profit'
-    ])
-
+    rows = []
     for order in orders:
         salesteam_username = order.created_by.username if order.created_by_id else ''
         customer_name = (
@@ -1354,9 +1408,9 @@ def export_selected_orders(request):
             or (order.agent.get_full_name() and order.agent.get_full_name().strip())
             or order.agent.username
         )
-        order_date = (order.transaction_date or order.created_at.date()) if order.created_at else ''
-        if hasattr(order_date, 'strftime'):
-            order_date = order_date.strftime('%Y-%m-%d')
+        order_date_obj = _logical_order_date(order)
+        order_date = order_date_obj.strftime('%Y-%m-%d') if order_date_obj else ''
+        month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
             product = item.product
@@ -1364,23 +1418,24 @@ def export_selected_orders(request):
             platform_price = item.platform_price if item.platform_price is not None else ''
             actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
             line_revenue = actual_received * item.quantity
-            writer.writerow([
-                order.id,
-                order_date,
-                salesteam_username,
-                customer_name or '',
-                product.name or '',
-                float(base_cost) if base_cost is not None else '',
-                float(platform_price) if platform_price != '' else '',
-                float(actual_received),
-                item.quantity,
-                float(line_revenue),
-                float(item.profit),
-            ])
+            rows.append({
+                'month_key': month_key,
+                'values': [
+                    order.id,
+                    order_date,
+                    salesteam_username,
+                    customer_name or '',
+                    product.name or '',
+                    float(base_cost) if base_cost is not None else '',
+                    float(platform_price) if platform_price != '' else '',
+                    float(actual_received),
+                    item.quantity,
+                    float(line_revenue),
+                    float(item.profit),
+                ],
+            })
 
-    response = HttpResponse(buffer.getvalue(), content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="orders_export.csv"'
-    return response
+    return _excel_response_for_order_rows('orders_export.xlsx', rows)
 
 
 @staff_member_required
@@ -1429,21 +1484,14 @@ def export_orders_range(request):
         key=lambda o: (o.transaction_date or (o.created_at.date() if o.created_at else datetime.min.date()), o.created_at)
     )
 
-    response = HttpResponse(content_type='text/csv')
     filename_parts = ["orders_range"]
     if start_date:
         filename_parts.append(start_date.strftime('%Y%m%d'))
     if end_date:
         filename_parts.append(end_date.strftime('%Y%m%d'))
-    response['Content-Disposition'] = f'attachment; filename="{"_".join(filename_parts)}.csv"'
+    filename = f'{"_".join(filename_parts)}.xlsx'
 
-    writer = csv.writer(response)
-    writer.writerow([
-        'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
-        'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
-        'Quantity', 'Line Revenue', 'Profit'
-    ])
-
+    rows = []
     for order in orders:
         salesteam_username = order.created_by.username if order.created_by_id else ''
         customer_name = (
@@ -1451,11 +1499,9 @@ def export_orders_range(request):
             or (order.agent.get_full_name() and order.agent.get_full_name().strip())
             or order.agent.username
         )
-        order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
-        if hasattr(order_date, 'strftime'):
-            order_date_str = order_date.strftime('%Y-%m-%d')
-        else:
-            order_date_str = ''
+        order_date_obj = _logical_order_date(order)
+        order_date_str = order_date_obj.strftime('%Y-%m-%d') if order_date_obj else ''
+        month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
             product = item.product
@@ -1465,21 +1511,24 @@ def export_orders_range(request):
             platform_price = item.platform_price if item.platform_price is not None else ''
             actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
             line_revenue = actual_received * item.quantity
-            writer.writerow([
-                order.id,
-                order_date_str,
-                salesteam_username,
-                customer_name or '',
-                product.name or '',
-                float(base_cost) if base_cost is not None else '',
-                float(platform_price) if platform_price != '' else '',
-                float(actual_received),
-                item.quantity,
-                float(line_revenue),
-                float(item.profit),
-            ])
+            rows.append({
+                'month_key': month_key,
+                'values': [
+                    order.id,
+                    order_date_str,
+                    salesteam_username,
+                    customer_name or '',
+                    product.name or '',
+                    float(base_cost) if base_cost is not None else '',
+                    float(platform_price) if platform_price != '' else '',
+                    float(actual_received),
+                    item.quantity,
+                    float(line_revenue),
+                    float(item.profit),
+                ],
+            })
 
-    return response
+    return _excel_response_for_order_rows(filename, rows)
 
 
 @login_required
@@ -1805,16 +1854,7 @@ def export_order_statement(request):
         if status:
             orders = orders.filter(status=status)
 
-        response = HttpResponse(content_type='text/csv')
-        filename = f"order_statement_{year}_{month:02d}.csv"
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-
-        writer = csv.writer(response)
-        writer.writerow([
-            'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
-            'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
-            'Quantity', 'Line Revenue', 'Profit'
-        ])
+        rows = []
 
         for order in orders:
             items = list(order.items.all())
@@ -1826,6 +1866,7 @@ def export_order_statement(request):
             )
             order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
             order_date_str = order_date.strftime('%Y-%m-%d') if hasattr(order_date, 'strftime') else ''
+            month_key = order_date.strftime('%Y-%m') if hasattr(order_date, 'strftime') else ''
 
             for item in items:
                 product = item.product
@@ -1835,21 +1876,25 @@ def export_order_statement(request):
                 platform_price = item.platform_price if item.platform_price is not None else ''
                 actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
                 line_revenue = actual_received * item.quantity
-                writer.writerow([
-                    order.id,
-                    order_date_str,
-                    salesteam_username,
-                    customer_name or '',
-                    product.name or '',
-                    float(base_cost) if base_cost is not None else '',
-                    float(platform_price) if platform_price != '' else '',
-                    float(actual_received),
-                    item.quantity,
-                    float(line_revenue),
-                    float(item.profit),
-                ])
+                rows.append({
+                    'month_key': month_key,
+                    'values': [
+                        order.id,
+                        order_date_str,
+                        salesteam_username,
+                        customer_name or '',
+                        product.name or '',
+                        float(base_cost) if base_cost is not None else '',
+                        float(platform_price) if platform_price != '' else '',
+                        float(actual_received),
+                        item.quantity,
+                        float(line_revenue),
+                        float(item.profit),
+                    ],
+                })
 
-        return response
+        filename = f"order_statement_{year}_{month:02d}.xlsx"
+        return _excel_response_for_order_rows(filename, rows)
 
     except Exception as e:
-        return HttpResponse(f"Error exporting CSV: {str(e)}", status=500)
+        return HttpResponse(f"Error exporting Excel: {str(e)}", status=500)

@@ -707,7 +707,9 @@
                     const blob = await response.blob();
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
-                    a.download = 'orders_export.csv';
+                    const cd = response.headers.get('Content-Disposition') || '';
+                    const match = cd.match(/filename="?([^"]+)"?/i);
+                    a.download = (match && match[1]) ? match[1] : 'orders_export.xlsx';
                     a.click();
                     URL.revokeObjectURL(a.href);
                 } catch (e) {
