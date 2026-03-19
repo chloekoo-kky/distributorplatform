@@ -1183,14 +1183,22 @@ def api_manage_orders(request):
     if status_filter:
         orders = orders.filter(status=status_filter)
 
-    # 3. Apply Search Filter: customer_name (manual orders) and agent name fields (standard orders)
+    # 3. Apply Search Filter: supports Order ID (including "#123"), customer_name, and agent fields
     if search_query:
-        orders = orders.filter(
+        normalized_id_term = search_query.lstrip('#').strip()
+        search_q = (
             Q(id__icontains=search_query) |
             Q(customer_name__icontains=search_query) |
             Q(agent__username__icontains=search_query) |
             Q(agent__first_name__icontains=search_query) |
             Q(agent__last_name__icontains=search_query)
+        )
+        if normalized_id_term and normalized_id_term != search_query:
+            search_q |= Q(id__icontains=normalized_id_term)
+        if normalized_id_term.isdigit():
+            search_q |= Q(id=int(normalized_id_term))
+        orders = orders.filter(
+            search_q
         )
 
     # --- Statistics Calculation (Scoped to current Month/Search filters) ---
@@ -1218,12 +1226,20 @@ def api_manage_orders(request):
         )
 
     if search_query:
-        stats_qs = stats_qs.filter(
+        normalized_id_term = search_query.lstrip('#').strip()
+        search_q = (
             Q(id__icontains=search_query) |
             Q(customer_name__icontains=search_query) |
             Q(agent__username__icontains=search_query) |
             Q(agent__first_name__icontains=search_query) |
             Q(agent__last_name__icontains=search_query)
+        )
+        if normalized_id_term and normalized_id_term != search_query:
+            search_q |= Q(id__icontains=normalized_id_term)
+        if normalized_id_term.isdigit():
+            search_q |= Q(id=int(normalized_id_term))
+        stats_qs = stats_qs.filter(
+            search_q
         )
 
     total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()

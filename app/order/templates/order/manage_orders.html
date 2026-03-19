@@ -63,7 +63,7 @@
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             </div>
-                            <input type="text" x-model.debounce.500ms="filters.search" @input="fetchOrders(1)"
+                            <input type="text" x-model="filters.search" @input.debounce.400ms="fetchOrders(1)"
                                    class="block w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"
                                    placeholder="Order ID or Customer Name...">
                         </div>
@@ -609,6 +609,7 @@
 
             // --- Export Selected (checkboxes) ---
             selectedOrderIds: [],
+            latestSearchRequestId: 0,
 
             init() {
                 this.fetchOrders(1);
@@ -719,6 +720,7 @@
             },
 
             async fetchOrders(page = 1) {
+                const requestId = ++this.latestSearchRequestId;
                 this.isLoading = true;
                 const params = new URLSearchParams({
                     page: page,
@@ -736,6 +738,8 @@
                     const response = await fetch(`{% url 'order:api_manage_orders' %}?${params.toString()}`);
                     if (!response.ok) throw new Error('Failed to fetch orders');
                     const data = await response.json();
+                    // Ignore stale responses from earlier requests.
+                    if (requestId !== this.latestSearchRequestId) return;
                     this.items = data.items;
                     this.pagination = data.pagination;
 
