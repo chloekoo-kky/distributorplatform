@@ -439,6 +439,7 @@ def api_order_history(request):
         terms = [t for t in order_search_query.split() if t]
         for term in terms:
             base_orders = base_orders.filter(
+                Q(id__icontains=term) |
                 Q(customer_name__icontains=term) |
                 Q(customer_phone__icontains=term) |
                 Q(items__product__name__icontains=term) |

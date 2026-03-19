@@ -1332,7 +1332,7 @@ def export_selected_orders(request):
 
     orders = (
         Order.objects.filter(id__in=order_ids)
-        .select_related('agent')
+        .select_related('agent', 'created_by')
         .prefetch_related('items__product')
         .order_by('-created_at')
     )
@@ -1342,12 +1342,13 @@ def export_selected_orders(request):
 
     # Header row
     writer.writerow([
-        'Order ID', 'Date', 'Customer Name', 'Product Name',
+        'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
         'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
         'Quantity', 'Line Revenue', 'Profit'
     ])
 
     for order in orders:
+        salesteam_username = order.created_by.username if order.created_by_id else ''
         customer_name = (
             (order.customer_name and order.customer_name.strip())
             or (order.agent.get_full_name() and order.agent.get_full_name().strip())
@@ -1366,6 +1367,7 @@ def export_selected_orders(request):
             writer.writerow([
                 order.id,
                 order_date,
+                salesteam_username,
                 customer_name or '',
                 product.name or '',
                 float(base_cost) if base_cost is not None else '',
@@ -1405,7 +1407,7 @@ def export_orders_range(request):
     except ValueError:
         return HttpResponse("Invalid date format. Use YYYY-MM-DD.", status=400)
 
-    orders = Order.objects.select_related('agent').prefetch_related('items__product')
+    orders = Order.objects.select_related('agent', 'created_by').prefetch_related('items__product')
 
     if start_date:
         orders = orders.filter(
@@ -1420,6 +1422,13 @@ def export_orders_range(request):
             Q(transaction_date__isnull=True, created_at__date__lte=end_date)
         )
 
+    # Sort by logical order date oldest -> newest
+    # (transaction_date when present, otherwise created_at)
+    orders = sorted(
+        list(orders),
+        key=lambda o: (o.transaction_date or (o.created_at.date() if o.created_at else datetime.min.date()), o.created_at)
+    )
+
     response = HttpResponse(content_type='text/csv')
     filename_parts = ["orders_range"]
     if start_date:
@@ -1430,12 +1439,13 @@ def export_orders_range(request):
 
     writer = csv.writer(response)
     writer.writerow([
-        'Order ID', 'Order Date', 'Customer Name', 'Product Name',
+        'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
         'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
         'Quantity', 'Line Revenue', 'Profit'
     ])
 
     for order in orders:
+        salesteam_username = order.created_by.username if order.created_by_id else ''
         customer_name = (
             (order.customer_name and order.customer_name.strip())
             or (order.agent.get_full_name() and order.agent.get_full_name().strip())
@@ -1458,6 +1468,7 @@ def export_orders_range(request):
             writer.writerow([
                 order.id,
                 order_date_str,
+                salesteam_username,
                 customer_name or '',
                 product.name or '',
                 float(base_cost) if base_cost is not None else '',
@@ -1789,7 +1800,7 @@ def export_order_statement(request):
         orders = Order.objects.filter(
             created_at__year=year,
             created_at__month=month
-        ).select_related('agent').prefetch_related('items__product').order_by('created_at')
+        ).select_related('agent', 'created_by').prefetch_related('items__product').order_by('created_at')
 
         if status:
             orders = orders.filter(status=status)
@@ -1800,39 +1811,42 @@ def export_order_statement(request):
 
         writer = csv.writer(response)
         writer.writerow([
-            'Date', 'Order ID', 'Customer', 'Type', 'Status', 'Payment Method',
-            'Product Name', 'SKU', 'Quantity', 'Unit Price (RM)', 'Line Total (RM)', 'Order Total (RM)'
+            'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
+            'Product Base Cost', 'Platform Price', 'Actual Received (Unit)',
+            'Quantity', 'Line Revenue', 'Profit'
         ])
 
         for order in orders:
-            is_agent = order.agent.user_groups.filter(commission_percentage__gt=0).exists()
-            user_type = "Agent" if is_agent else "Customer"
-
             items = list(order.items.all())
-            order_total = sum(item.selling_price * item.quantity for item in items)
-            total_items_count = len(items)
+            salesteam_username = order.created_by.username if order.created_by_id else ''
+            customer_name = (
+                (order.customer_name and order.customer_name.strip())
+                or (order.agent.get_full_name() and order.agent.get_full_name().strip())
+                or order.agent.username
+            )
+            order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
+            order_date_str = order_date.strftime('%Y-%m-%d') if hasattr(order_date, 'strftime') else ''
 
-            for index, item in enumerate(items):
-                line_total = item.selling_price * item.quantity
-
-                if index == total_items_count - 1:
-                    row_order_total = f"{order_total:.2f}"
-                else:
-                    row_order_total = ""
-
+            for item in items:
+                product = item.product
+                base_cost = getattr(product, 'saved_base_cost', None)
+                if base_cost is None:
+                    base_cost = item.landed_cost
+                platform_price = item.platform_price if item.platform_price is not None else ''
+                actual_received = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+                line_revenue = actual_received * item.quantity
                 writer.writerow([
-                    order.created_at.strftime('%Y-%m-%d %H:%M'),
                     order.id,
-                    order.agent.username,
-                    user_type,
-                    order.get_status_display(),
-                    order.payment_method or "-",
-                    item.product.name,
-                    item.product.sku or "-",
+                    order_date_str,
+                    salesteam_username,
+                    customer_name or '',
+                    product.name or '',
+                    float(base_cost) if base_cost is not None else '',
+                    float(platform_price) if platform_price != '' else '',
+                    float(actual_received),
                     item.quantity,
-                    f"{item.selling_price:.2f}",
-                    f"{line_total:.2f}",
-                    row_order_total
+                    float(line_revenue),
+                    float(item.profit),
                 ])
 
         return response
