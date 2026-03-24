@@ -7,7 +7,7 @@ services:
     volumes:
       - ./app:/app
       - static-data:/vol/web
-      - ./app/media:/vol/web/media  # <-- Add this specific bind mount for media files
+      - /home/jengtong/distributorplatform/app/media:/vol/web/media
     # Smart command: Checks DJANGO_DEBUG.
     # If True: Runs standard dev server (auto-reload, serves static files).
     # If False: Runs Gunicorn (production optimized).
@@ -44,17 +44,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-
-  nginx:
-    image: nginx:1.27-alpine
-    ports:
-      - "8324:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - static-data:/vol/web
-      - ./app/media:/vol/web/media:ro
-    depends_on:
-      - app
 
   db:
     image: postgres:13-alpine
