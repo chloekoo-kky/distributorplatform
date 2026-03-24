@@ -94,7 +94,8 @@ def ajax_get_images(request):
 def ajax_upload_image(request):
     """
     Handles image uploads from the gallery modal.
-    Resizes and converts images to WebP on-the-fly.
+    Resizes images and stores them using their original format/extension.
+    Emits detailed logs to help diagnose upload issues on live servers.
     """
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
@@ -103,6 +104,11 @@ def ajax_upload_image(request):
 
     if form.is_valid():
         uploaded_files = request.FILES.getlist('images')
+        logger.info(
+            "Image upload started: user=%s, file_count=%s",
+            getattr(request.user, 'username', 'anonymous'),
+            len(uploaded_files),
+        )
         base_title = form.cleaned_data.get('title', '').strip()
         alt_text = form.cleaned_data.get('alt_text', '')
         category = form.cleaned_data.get('category')
@@ -118,72 +124,91 @@ def ajax_upload_image(request):
 
         created_images = []
 
-        for i, uploaded_file in enumerate(uploaded_files, 1):
-            img = Image.open(uploaded_file)
-            original_ext = os.path.splitext(uploaded_file.name)[1] or ''
-            detected_format = (img.format or '').upper()
-            # Fallback to extension-based format when Pillow cannot infer it.
-            if not detected_format:
-                ext_to_format = {
-                    '.jpg': 'JPEG',
-                    '.jpeg': 'JPEG',
-                    '.png': 'PNG',
-                    '.gif': 'GIF',
-                    '.bmp': 'BMP',
-                    '.tif': 'TIFF',
-                    '.tiff': 'TIFF',
-                    '.webp': 'WEBP',
+        try:
+            for i, uploaded_file in enumerate(uploaded_files, 1):
+                img = Image.open(uploaded_file)
+                original_ext = os.path.splitext(uploaded_file.name)[1] or ''
+                detected_format = (img.format or '').upper()
+                # Fallback to extension-based format when Pillow cannot infer it.
+                if not detected_format:
+                    ext_to_format = {
+                        '.jpg': 'JPEG',
+                        '.jpeg': 'JPEG',
+                        '.png': 'PNG',
+                        '.gif': 'GIF',
+                        '.bmp': 'BMP',
+                        '.tif': 'TIFF',
+                        '.tiff': 'TIFF',
+                        '.webp': 'WEBP',
+                    }
+                    detected_format = ext_to_format.get(original_ext.lower(), 'PNG')
+                MAX_SIZE = (1280, 1280)
+                img.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
+                output_buffer = BytesIO()
+                save_kwargs = {'format': detected_format}
+                if detected_format in ('JPEG', 'WEBP'):
+                    save_kwargs['quality'] = 85
+                img.save(output_buffer, **save_kwargs)
+                output_buffer.seek(0)
+                new_file_content = ContentFile(output_buffer.getvalue())
+                base_filename = os.path.splitext(uploaded_file.name)[0]
+                format_to_ext = {
+                    'JPEG': '.jpg',
+                    'PNG': '.png',
+                    'GIF': '.gif',
+                    'BMP': '.bmp',
+                    'TIFF': '.tiff',
+                    'WEBP': '.webp',
                 }
-                detected_format = ext_to_format.get(original_ext.lower(), 'PNG')
-            MAX_SIZE = (1280, 1280)
-            img.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
-            output_buffer = BytesIO()
-            save_kwargs = {'format': detected_format}
-            if detected_format in ('JPEG', 'WEBP'):
-                save_kwargs['quality'] = 85
-            img.save(output_buffer, **save_kwargs)
-            output_buffer.seek(0)
-            new_file_content = ContentFile(output_buffer.getvalue())
-            base_filename = os.path.splitext(uploaded_file.name)[0]
-            format_to_ext = {
-                'JPEG': '.jpg',
-                'PNG': '.png',
-                'GIF': '.gif',
-                'BMP': '.bmp',
-                'TIFF': '.tiff',
-                'WEBP': '.webp',
-            }
-            final_ext = original_ext if original_ext else format_to_ext.get(detected_format, '.png')
-            new_filename = f"{base_filename}{final_ext}"
+                final_ext = original_ext if original_ext else format_to_ext.get(detected_format, '.png')
+                new_filename = f"{base_filename}{final_ext}"
 
-            # Use per-file title from confirmation modal, or formatted filename, or base_title
-            if image_titles and i <= len(image_titles) and image_titles[i - 1]:
-                final_title = (image_titles[i - 1] or '').strip() or format_image_title(base_filename)
-            elif base_title and len(uploaded_files) > 1:
-                final_title = f"{base_title} ({i})"
-            elif base_title:
-                final_title = base_title
-            else:
-                final_title = format_image_title(base_filename)
+                # Use per-file title from confirmation modal, or formatted filename, or base_title
+                if image_titles and i <= len(image_titles) and image_titles[i - 1]:
+                    final_title = (image_titles[i - 1] or '').strip() or format_image_title(base_filename)
+                elif base_title and len(uploaded_files) > 1:
+                    final_title = f"{base_title} ({i})"
+                elif base_title:
+                    final_title = base_title
+                else:
+                    final_title = format_image_title(base_filename)
 
-            image_instance = MediaImage(
-                title=final_title,
-                alt_text=alt_text,
-                category=category
+                image_instance = MediaImage(
+                    title=final_title,
+                    alt_text=alt_text,
+                    category=category
+                )
+
+                image_instance.image.save(new_filename, new_file_content, save=False)
+                image_instance.save()
+                logger.info(
+                    "Image upload saved: user=%s, original_name=%s, detected_format=%s, saved_name=%s, image_id=%s",
+                    getattr(request.user, 'username', 'anonymous'),
+                    uploaded_file.name,
+                    detected_format,
+                    image_instance.image.name,
+                    image_instance.id,
+                )
+
+                created_images.append({
+                    'id': image_instance.id,
+                    'title': image_instance.title,
+                    'url': image_instance.image.url,
+                    'alt_text': image_instance.alt_text,
+                    'category_id': image_instance.category_id,
+                    'category_name': image_instance.category.name if image_instance.category else 'Uncategorized',
+                    'assigned_to': [], # <--- New images have no assignments
+                })
+        except Exception as e:
+            logger.exception(
+                "Image upload failed: user=%s, error=%s",
+                getattr(request.user, 'username', 'anonymous'),
+                str(e),
             )
-
-            image_instance.image.save(new_filename, new_file_content, save=False)
-            image_instance.save()
-
-            created_images.append({
-                'id': image_instance.id,
-                'title': image_instance.title,
-                'url': image_instance.image.url,
-                'alt_text': image_instance.alt_text,
-                'category_id': image_instance.category_id,
-                'category_name': image_instance.category.name if image_instance.category else 'Uncategorized',
-                'assigned_to': [], # <--- New images have no assignments
-            })
+            return JsonResponse(
+                {'success': False, 'error': f'Upload failed: {e}'},
+                status=500
+            )
 
         return JsonResponse({
             'success': True,
@@ -192,6 +217,11 @@ def ajax_upload_image(request):
 
     else:
         error_string = '. '.join([' '.join(errors) for errors in form.errors.values()])
+        logger.warning(
+            "Image upload rejected by form validation: user=%s, errors=%s",
+            getattr(request.user, 'username', 'anonymous'),
+            error_string or 'Invalid data.',
+        )
         return JsonResponse({'success': False, 'errors': error_string or 'Invalid data.'}, status=400)
 
 
