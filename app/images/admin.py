@@ -4,6 +4,7 @@ from django.urls import path
 from django.apps import apps
 from django.conf import settings
 from django.db.models import FileField
+from django.urls import reverse, NoReverseMatch
 from django.shortcuts import render, redirect
 
 import os
@@ -31,8 +32,89 @@ class MediaImageAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.orphan_images_view),
                 name='images_mediaimage_orphans',
             ),
+            path(
+                'missing-media-references/',
+                self.admin_site.admin_view(self.missing_media_references_view),
+                name='images_mediaimage_missing_refs',
+            ),
         ]
         return custom_urls + urls
+
+    def missing_media_references_view(self, request):
+        """
+        Admin health view: list DB file references that no longer exist on disk/storage.
+        """
+        context = self.admin_site.each_context(request)
+        missing_refs = []
+        total_refs = 0
+
+        for model in apps.get_models():
+            file_fields = [f for f in model._meta.get_fields() if isinstance(f, FileField)]
+            if not file_fields:
+                continue
+
+            for field in file_fields:
+                field_name = field.name
+                try:
+                    qs = (
+                        model._default_manager
+                        .exclude(**{f"{field_name}__exact": ''})
+                        .exclude(**{f"{field_name}__isnull": True})
+                    )
+                except Exception:
+                    continue
+
+                try:
+                    for obj in qs.only('pk', field_name):
+                        file_attr = getattr(obj, field_name, None)
+                        if not file_attr:
+                            continue
+                        file_name = getattr(file_attr, 'name', '') or ''
+                        if not file_name:
+                            continue
+
+                        total_refs += 1
+                        exists = False
+                        try:
+                            exists = bool(file_attr.storage.exists(file_name))
+                        except Exception:
+                            exists = False
+
+                        if exists:
+                            continue
+
+                        app_label = model._meta.app_label
+                        model_name = model._meta.model_name
+                        model_label = f"{app_label}.{model.__name__}"
+                        change_url = ''
+                        try:
+                            change_url = reverse(
+                                f"admin:{app_label}_{model_name}_change",
+                                args=[obj.pk],
+                            )
+                        except NoReverseMatch:
+                            change_url = ''
+
+                        missing_refs.append({
+                            'model_label': model_label,
+                            'object_id': obj.pk,
+                            'field_name': field_name,
+                            'file_name': os.path.normpath(file_name),
+                            'change_url': change_url,
+                        })
+                except Exception:
+                    continue
+
+        missing_refs.sort(key=lambda x: (x['model_label'], str(x['object_id']), x['field_name']))
+
+        context.update({
+            'title': 'Missing Media References',
+            'missing_refs': missing_refs,
+            'total_refs': total_refs,
+            'missing_count': len(missing_refs),
+            'media_url': getattr(settings, 'MEDIA_URL', '/media/'),
+        })
+        return render(request, 'admin/images/mediaimage/missing_media_references.html', context)
 
     def orphan_images_view(self, request):
         """

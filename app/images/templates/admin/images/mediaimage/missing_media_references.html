@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Missing Media References{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label='images' %}">Images</a>
+  &rsaquo; <a href="{% url 'admin:images_mediaimage_changelist' %}">Media images</a>
+  &rsaquo; Missing Media References
+</div>
+{% endblock %}
+
+{% block content %}
+  <h1>Missing Media References</h1>
+
+  <p style="margin-top: 1em;">
+    Scanned <strong>{{ total_refs }}</strong> database file reference(s).
+    Missing on disk/storage: <strong>{{ missing_count }}</strong>.
+  </p>
+
+  {% if not missing_refs %}
+    <div class="success" style="margin-top: 1em; padding: 1em;">
+      <strong>Great!</strong> No missing media file references found.
+    </div>
+  {% else %}
+    <p style="margin-top: 1em;">
+      These rows have a non-empty file path in the database, but the actual file cannot be found.
+    </p>
+    <table class="listing">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Object ID</th>
+          <th>Field</th>
+          <th>DB file path</th>
+          <th>Preview URL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in missing_refs %}
+          <tr>
+            <td><code>{{ row.model_label }}</code></td>
+            <td>
+              {% if row.change_url %}
+                <a href="{{ row.change_url }}">{{ row.object_id }}</a>
+              {% else %}
+                {{ row.object_id }}
+              {% endif %}
+            </td>
+            <td><code>{{ row.field_name }}</code></td>
+            <td><code>{{ row.file_name }}</code></td>
+            <td><code>{{ media_url }}{{ row.file_name }}</code></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}
