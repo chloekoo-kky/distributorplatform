@@ -4,8 +4,6 @@ services:
       context: .
       args:
         - DEV=true
-    ports:
-      - "8324:8324"
     volumes:
       - ./app:/app
       - static-data:/vol/web
@@ -46,6 +44,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8324:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static-data:/vol/web
+      - ./app/media:/vol/web/media:ro
+    depends_on:
+      - app
 
   db:
     image: postgres:13-alpine
