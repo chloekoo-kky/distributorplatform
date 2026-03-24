@@ -120,14 +120,41 @@ def ajax_upload_image(request):
 
         for i, uploaded_file in enumerate(uploaded_files, 1):
             img = Image.open(uploaded_file)
+            original_ext = os.path.splitext(uploaded_file.name)[1] or ''
+            detected_format = (img.format or '').upper()
+            # Fallback to extension-based format when Pillow cannot infer it.
+            if not detected_format:
+                ext_to_format = {
+                    '.jpg': 'JPEG',
+                    '.jpeg': 'JPEG',
+                    '.png': 'PNG',
+                    '.gif': 'GIF',
+                    '.bmp': 'BMP',
+                    '.tif': 'TIFF',
+                    '.tiff': 'TIFF',
+                    '.webp': 'WEBP',
+                }
+                detected_format = ext_to_format.get(original_ext.lower(), 'PNG')
             MAX_SIZE = (1280, 1280)
             img.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
             output_buffer = BytesIO()
-            img.save(output_buffer, format='WEBP', quality=85)
+            save_kwargs = {'format': detected_format}
+            if detected_format in ('JPEG', 'WEBP'):
+                save_kwargs['quality'] = 85
+            img.save(output_buffer, **save_kwargs)
             output_buffer.seek(0)
             new_file_content = ContentFile(output_buffer.getvalue())
             base_filename = os.path.splitext(uploaded_file.name)[0]
-            new_filename = f"{base_filename}.webp"
+            format_to_ext = {
+                'JPEG': '.jpg',
+                'PNG': '.png',
+                'GIF': '.gif',
+                'BMP': '.bmp',
+                'TIFF': '.tiff',
+                'WEBP': '.webp',
+            }
+            final_ext = original_ext if original_ext else format_to_ext.get(detected_format, '.png')
+            new_filename = f"{base_filename}{final_ext}"
 
             # Use per-file title from confirmation modal, or formatted filename, or base_title
             if image_titles and i <= len(image_titles) and image_titles[i - 1]:

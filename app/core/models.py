@@ -1009,7 +1009,23 @@ class Banner(models.Model):
         if self.background_image and isinstance(self.background_image.file, (InMemoryUploadedFile, TemporaryUploadedFile)):
             try:
                 img = Image.open(self.background_image)
-                if img.mode != 'RGB':
+                original_ext = os.path.splitext(self.background_image.name)[1] or ''
+                detected_format = (img.format or '').upper()
+                if not detected_format:
+                    ext_to_format = {
+                        '.jpg': 'JPEG',
+                        '.jpeg': 'JPEG',
+                        '.png': 'PNG',
+                        '.gif': 'GIF',
+                        '.bmp': 'BMP',
+                        '.tif': 'TIFF',
+                        '.tiff': 'TIFF',
+                        '.webp': 'WEBP',
+                    }
+                    detected_format = ext_to_format.get(original_ext.lower(), 'PNG')
+
+                # JPEG doesn't support alpha channels/palette modes.
+                if detected_format == 'JPEG' and img.mode not in ('RGB', 'L'):
                     img = img.convert('RGB')
 
                 max_width = 1920
@@ -1019,10 +1035,23 @@ class Banner(models.Model):
                     img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
 
                 output = BytesIO()
-                img.save(output, format='JPEG', quality=85, optimize=True)
+                save_kwargs = {'format': detected_format}
+                if detected_format in ('JPEG', 'WEBP'):
+                    save_kwargs['quality'] = 85
+                    save_kwargs['optimize'] = True
+                img.save(output, **save_kwargs)
                 output.seek(0)
 
-                new_name = os.path.splitext(self.background_image.name)[0] + '.jpg'
+                format_to_ext = {
+                    'JPEG': '.jpg',
+                    'PNG': '.png',
+                    'GIF': '.gif',
+                    'BMP': '.bmp',
+                    'TIFF': '.tiff',
+                    'WEBP': '.webp',
+                }
+                final_ext = original_ext if original_ext else format_to_ext.get(detected_format, '.png')
+                new_name = os.path.splitext(self.background_image.name)[0] + final_ext
                 self.background_image = ContentFile(output.read(), name=new_name)
             except Exception as e:
                 print(f"Error optimizing banner image: {e}")
