@@ -39,6 +39,8 @@ services:
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
       - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+    # Do not publish app port directly; Nginx will be the only entrypoint.
+
     depends_on:
       db:
         condition: service_healthy
@@ -48,7 +50,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "8324:8324"
+      - "8324:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - static-data:/vol/web
