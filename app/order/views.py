@@ -18,6 +18,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q, Prefetch, Max, Sum, F, DecimalField
+from django.db.models.functions import Coalesce, TruncDate
 from datetime import datetime
 import json
 import hashlib
@@ -1108,7 +1109,7 @@ def api_manage_orders(request):
     """JSON API to fetch filtered and paginated orders."""
     page_number = request.GET.get('page', 1)
     limit = request.GET.get('limit', 20)
-    sort_by = request.GET.get('sort_by', 'created_at')
+    sort_by = request.GET.get('sort_by', 'order_date')
     sort_dir = request.GET.get('sort_dir', 'desc')
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
@@ -1138,24 +1139,31 @@ def api_manage_orders(request):
             end_date = None
 
     # --- Sorting ---
-    # Map allowed sort keys from the UI to model fields
+    # Order date (sort_by order_date or created_at): sort by transaction_date when set, else the local
+    # calendar date of created_at — same rule as the Order date column.
     sort_field_map = {
-        'created_at': 'created_at',
+        'id': 'id',
         'customer': 'customer_name',
         'status': 'status',
-        'total_value': None,  # handled later via Python sorting
     }
-
-    sort_field = sort_field_map.get(sort_by, 'created_at')
+    sort_prefix = '-' if sort_dir == 'desc' else ''
 
     base_qs = Order.objects.select_related('agent').prefetch_related('items')
 
-    if sort_field:
-        sort_prefix = '-' if sort_dir == 'desc' else ''
-        orders = base_qs.order_by(f'{sort_prefix}{sort_field}')
-    else:
-        # Fallback to created_at when sorting by computed fields like total_value
+    if sort_by == 'total_value':
+        # Placeholder ordering; refined after filters via Python sort by line totals
         orders = base_qs.order_by('-created_at')
+    elif sort_by in sort_field_map:
+        orders = base_qs.order_by(f'{sort_prefix}{sort_field_map[sort_by]}')
+    else:
+        # order_date (default), created_at (legacy), or unknown key
+        tz = timezone.get_current_timezone()
+        orders = base_qs.annotate(
+            _order_sort_date=Coalesce(
+                'transaction_date',
+                TruncDate('created_at', tzinfo=tz),
+            )
+        ).order_by(f'{sort_prefix}_order_sort_date', 'id')
 
     # 1. Apply Date Filter (if provided)
     # Date range takes precedence over month/year when supplied.

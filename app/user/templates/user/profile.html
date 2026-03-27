@@ -247,10 +247,10 @@
                             </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
                                 <button type="button"
-                                   @click="changeSort('created_at')"
+                                   @click="changeSort('order_date')"
                                    class="flex items-center gap-1 hover:text-gray-700">
                                     Date
-                                    <span x-show="sortBy === 'created_at'">
+                                    <span x-show="sortBy === 'order_date'">
                                         <span x-text="sortDir === 'asc' ? '▲' : '▼'"></span>
                                     </span>
                                 </button>
@@ -1006,7 +1006,7 @@ window.handleManualOrderSuccess = function(data) {
             currentPage: 1,
             totalPages: 1,
             totalCount: 0,
-            sortBy: 'created_at',
+            sortBy: 'order_date',
             sortDir: 'desc',
             searchQuery: '{{ order_search_query|default:"" }}',
             fetchOrders(page = null) {
@@ -1048,7 +1048,7 @@ window.handleManualOrderSuccess = function(data) {
                     this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
                 } else {
                     this.sortBy = field;
-                    this.sortDir = field === 'created_at' ? 'desc' : 'asc';
+                    this.sortDir = field === 'order_date' ? 'desc' : 'asc';
                 }
                 this.fetchOrders(1);
             },

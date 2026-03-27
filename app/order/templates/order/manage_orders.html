@@ -227,9 +227,9 @@
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             <button type="button"
                                     class="inline-flex items-center gap-1 hover:text-gray-700"
-                                    @click="changeSort('created_at')">
-                                Date
-                                <span x-show="sort.field === 'created_at'">
+                                    @click="changeSort('order_date')">
+                                Order date
+                                <span x-show="sort.field === 'order_date'">
                                     <svg x-show="sort.direction === 'asc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
                                     </svg>
@@ -586,7 +586,7 @@
             pagination: {},
             isLoading: true,
             sort: {
-                field: 'created_at',
+                field: 'order_date',
                 direction: 'desc'
             },
             filters: {
@@ -799,7 +799,7 @@
                     this.sort.direction = this.sort.direction === 'asc' ? 'desc' : 'asc';
                 } else {
                     this.sort.field = field;
-                    this.sort.direction = field === 'created_at' ? 'desc' : 'asc';
+                    this.sort.direction = field === 'order_date' ? 'desc' : 'asc';
                 }
                 this.fetchOrders(1);
             },
@@ -918,11 +918,20 @@
                         },
                         body: JSON.stringify(payload)
                     });
-                    if (!response.ok) {
-                        const text = await response.text();
-                        throw new Error(text || `Request failed with ${response.status}`);
+                    const text = await response.text();
+                    let data;
+                    try {
+                        data = text ? JSON.parse(text) : {};
+                    } catch (parseErr) {
+                        throw new Error(
+                            response.ok
+                                ? 'Server returned non-JSON (unexpected).'
+                                : (text.slice(0, 120) || `Request failed (${response.status})`)
+                        );
                     }
-                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || text.slice(0, 200) || `Request failed with ${response.status}`);
+                    }
                     if (data.success) {
                         this.closeStatusModal();
                         this.fetchOrders(this.pagination.current_page); // Refresh data
@@ -962,7 +971,10 @@
             customerName: '',
             customerPhone: '',
             shippingAddress: '',
+            remarks: '',
             isSubmitting: false,
+            currentOrderId: null,
+            orderStatus: 'PENDING',
             productsUrl: '{% url "order:api_manual_order_products" %}',
             submitUrl: '{% url "order:api_submit_manual_order" %}',
             customerSearchUrl: '{% url "order:api_customer_search" %}',
@@ -970,12 +982,18 @@
 
             async fetchCustomerSearch() {
                 const q = (this.customerSearchQuery || '').trim();
-                if (!q) { this.customerSearchResults = []; return; }
+                if (!q) {
+                    this.customerSearchResults = [];
+                    this.customerSearchOpen = false;
+                    return;
+                }
                 try {
+                    this.customerSearchOpen = true;
                     const r = await fetch(this.customerSearchUrl + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
                     if (!r.ok) return;
                     const d = await r.json();
-                    this.customerSearchResults = (d.success && Array.isArray(d.customers)) ? d.customers : [];
+                    if (d.success && Array.isArray(d.customers)) this.customerSearchResults = d.customers;
+                    else this.customerSearchResults = [];
                 } catch (e) { this.customerSearchResults = []; }
             },
             customerSearchDropdownStyle() {
@@ -1045,13 +1063,55 @@
             },
 
             async init() {
-                const today = new Date();
-                this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-                await this.loadProducts();
+                this.resetForNewOrder();
+                this.loadProducts();
+            },
+            async loadExistingOrder(orderId) {
+                try {
+                    const url = `{% url "order:api_manual_order_detail" "ORDER_ID_PLACEHOLDER" %}`.replace('ORDER_ID_PLACEHOLDER', orderId);
+                    const r = await fetch(url, { credentials: 'same-origin' });
+                    if (!r.ok) throw new Error('Failed to load order');
+                    const d = await r.json();
+                    if (!d.success || !d.order) throw new Error(d.error || 'Invalid response');
+
+                    const o = d.order;
+                    this.currentOrderId = orderId;
+                    this.orderStatus = o.status || 'PENDING';
+                    this.salesChannel = o.sales_channel || 'Other';
+                    this.transactionDate = o.transaction_date || this.transactionDate;
+                    this.customerName = o.customer_name || '';
+                    this.customerPhone = o.customer_phone || '';
+                    this.shippingAddress = o.shipping_address || '';
+                    this.remarks = o.remarks || '';
+                    if (o.customer_id) {
+                        this.selectedCustomer = { id: o.customer_id, name: o.customer_name || '', phone: o.customer_phone || '', address: o.shipping_address || '' };
+                    } else {
+                        this.selectedCustomer = null;
+                    }
+
+                    this.loadProducts();
+
+                    this.lines = (o.items || []).map(item => ({
+                        productId: item.product_id,
+                        productSku: item.sku || '',
+                        productName: item.name || '',
+                        quantity: item.quantity,
+                        platformPrice: item.platform_price || '',
+                        actualUnitPrice: item.actual_unit_price || '0.00',
+                    }));
+                } catch (e) {
+                    console.error('Failed to load manual order', e);
+                    alert('Failed to load order for editing.');
+                }
             },
             lineName(line) {
+                const sku = (line.productSku || '').toString();
+                const name = (line.productName || '').toString();
+                if (sku || name) {
+                    return (sku ? sku : '') + (sku && name ? ' – ' : '') + (name ? name : '');
+                }
                 const p = this.products.find(x => x.id === line.productId);
-                return p ? (p.sku + ' – ' + p.name) : '—';
+                return p ? ((p.sku || '') + ' – ' + (p.name || '')) : '—';
             },
             lineSubtotal(line) {
                 const q = parseInt(line.quantity, 10) || 0;
@@ -1066,6 +1126,7 @@
                 }, 0).toFixed(2);
             },
             addProductLine(p) {
+                if (this.orderStatus !== 'PENDING') return;
                 const price = p.selling_price || '0.00';
                 this.lines.push({
                     productId: parseInt(p.id, 10),
@@ -1075,7 +1136,20 @@
                 });
             },
             removeLine(idx) {
+                if (this.orderStatus !== 'PENDING') return;
                 this.lines.splice(idx, 1);
+            },
+            resetForNewOrder() {
+                const today = new Date();
+                this.currentOrderId = null;
+                this.orderStatus = 'PENDING';
+                this.salesChannel = 'Other';
+                this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+                this.clearCustomer();
+                this.remarks = '';
+                this.productSearchQuery = '';
+                this.productSearchOpen = false;
+                this.lines = [];
             },
             async submitOrder() {
                 if (this.lines.length === 0 || this.isSubmitting) return;
@@ -1087,15 +1161,21 @@
                     customer_name: this.customerName,
                     customer_phone: this.customerPhone,
                     shipping_address: this.shippingAddress,
-                    items: this.lines.map(l => ({
-                        product_id: l.productId,
-                        quantity: l.quantity,
-                        platform_price: l.platformPrice || null,
-                        actual_unit_price: l.actualUnitPrice
+                    remarks: this.remarks,
+                    items: this.lines.map(line => ({
+                        product_id: line.productId,
+                        quantity: line.quantity,
+                        platform_price: line.platformPrice,
+                        actual_unit_price: line.actualUnitPrice,
                     }))
                 };
+
                 try {
-                    const r = await fetch(this.submitUrl, {
+                    const targetUrl = this.currentOrderId
+                        ? `{% url "order:api_update_manual_order" "ORDER_ID_PLACEHOLDER" %}`.replace('ORDER_ID_PLACEHOLDER', this.currentOrderId)
+                        : this.submitUrl;
+
+                    const response = await fetch(targetUrl, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1104,14 +1184,28 @@
                         },
                         body: JSON.stringify(payload)
                     });
-                    const d = await r.json();
-                    if (d.success && d.redirect_url) {
-                        window.location.href = d.redirect_url;
+                    const text = await response.text();
+                    let data;
+                    try {
+                        data = text ? JSON.parse(text) : {};
+                    } catch (parseErr) {
+                        throw new Error('Server returned a non-JSON response. Check your session or network tab for details.');
+                    }
+                    if (data.success) {
+                        if (data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else {
+                            const baseMsg = this.currentOrderId ? 'Order updated' : 'Order created';
+                            alert(baseMsg + ' successfully.');
+                        }
                     } else {
-                        alert(d.error || 'Failed to create order');
+                        const baseMsg = this.currentOrderId ? 'Failed to update order' : 'Failed to create order';
+                        throw new Error(data.error || baseMsg);
                     }
                 } catch (e) {
-                    alert('Request failed');
+                    console.error('Manual order submit failed', e);
+                    const baseMsg = this.currentOrderId ? 'Failed to update order' : 'Failed to create order';
+                    alert(baseMsg + ': ' + (e.message || 'Unknown error'));
                 } finally {
                     this.isSubmitting = false;
                 }

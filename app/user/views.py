@@ -9,6 +9,7 @@ import urllib.parse
 from django.shortcuts import render, redirect, get_object_or_404 # Add get_object_or_404
 from django.contrib.auth import login
 from django.db.models import Sum
+from django.db.models.functions import Coalesce, TruncDate
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, Http404 # Add Http404
@@ -461,7 +462,7 @@ def api_order_history(request):
     """
     user = request.user
 
-    sort_by = request.GET.get('sort_by', 'created_at')
+    sort_by = request.GET.get('sort_by', 'order_date')
     sort_dir = request.GET.get('sort_dir', 'desc')
     try:
         page = int(request.GET.get('page', 1))
@@ -488,22 +489,29 @@ def api_order_history(request):
             )
         base_orders = base_orders.distinct()
 
-    # Apply sorting
+    # Apply sorting — Date column uses transaction_date when set, else local calendar date of created_at
     sort_field_map = {
         'id': 'id',
-        'created_at': 'created_at',
         'status': 'status',
         'sales_channel': 'sales_channel',
         'customer_name': 'customer_name',
         'total': None,  # handled after totals are calculated
     }
-    sort_field = sort_field_map.get(sort_by, 'created_at')
+    prefix = '-' if sort_dir == 'desc' else ''
 
-    if sort_field:
-        prefix = '-' if sort_dir == 'desc' else ''
-        orders_qs = base_orders.order_by(f'{prefix}{sort_field}')
-    else:
+    if sort_by == 'total':
         orders_qs = base_orders.order_by('-created_at')
+    elif sort_by in sort_field_map and sort_field_map[sort_by] is not None:
+        orders_qs = base_orders.order_by(f'{prefix}{sort_field_map[sort_by]}')
+    else:
+        # order_date (default), created_at (legacy), or unknown key
+        tz = timezone.get_current_timezone()
+        orders_qs = base_orders.annotate(
+            _order_sort_date=Coalesce(
+                'transaction_date',
+                TruncDate('created_at', tzinfo=tz),
+            )
+        ).order_by(f'{prefix}_order_sort_date', 'id')
 
     total_count = orders_qs.count()
 
@@ -540,8 +548,10 @@ def api_order_history(request):
     for o in orders:
         if o.transaction_date:
             date_display = o.transaction_date.strftime('%d/%m/%Y')
+        elif o.created_at:
+            date_display = timezone.localtime(o.created_at).strftime('%d/%m/%Y')
         else:
-            date_display = o.created_at.strftime('%d/%m/%Y')
+            date_display = ''
 
         items_data = [
             {
