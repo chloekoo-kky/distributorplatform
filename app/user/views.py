@@ -27,6 +27,9 @@ from .models import UserGroup, CustomUser, SubscriptionPlan, SubscriptionPayment
 from .utils import generate_verification_code, send_verification_code
 from django.core.paginator import Paginator, EmptyPage
 from django.db.models import Q
+from django.views.decorators.http import require_POST
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from inventory.views import staff_required
 from decimal import Decimal
 from order.models import Order
@@ -215,6 +218,7 @@ def api_manage_users(request):
             'email': u.email,
             'phone_number': str(u.phone_number),
             'is_staff': u.is_staff,
+            'is_superuser': u.is_superuser,
             'groups': list(u.user_groups.values_list('id', flat=True)),
             'group_names': ", ".join(list(u.user_groups.values_list('name', flat=True))),
             # --- NEW FIELDS ---
@@ -249,6 +253,43 @@ def api_update_user_groups(request, user_id):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@require_POST
+def api_superuser_reset_user_password(request, user_id):
+    """Set a new password for the given user. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON.'}, status=400)
+
+    password = data.get('password') or ''
+    password_confirm = data.get('password_confirm') or ''
+    if not password:
+        return JsonResponse({'success': False, 'error': 'Password is required.'}, status=400)
+    if password != password_confirm:
+        return JsonResponse({'success': False, 'error': 'Passwords do not match.'}, status=400)
+
+    target = get_object_or_404(CustomUser, pk=user_id)
+    try:
+        validate_password(password, user=target)
+    except ValidationError as e:
+        return JsonResponse({'success': False, 'error': '; '.join(e.messages)}, status=400)
+
+    target.set_password(password)
+    target.save(update_fields=['password'])
+    logger.info(
+        'Superuser %s (%s) reset password for user id=%s username=%s',
+        request.user.pk,
+        request.user.username,
+        target.pk,
+        target.username,
+    )
+    return JsonResponse({'success': True, 'message': 'Password has been reset. The user must sign in with the new password.'})
 
 
 @login_required

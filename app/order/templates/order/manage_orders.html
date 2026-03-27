@@ -20,12 +20,59 @@
         </div>
 
 
-        {# --- Filters --- #}
+        {# --- Statistics Cards (dashboard) --- #}
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-yellow-400">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Pending Action</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-yellow-600" x-text="stats.pending_orders">{{ stats.pending_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-green-500">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Completed</dt>
+                    <dd class="mt-1 text-3xl font-semibold text-green-600" x-text="stats.completed_orders">{{ stats.completed_orders|default:"0" }}</dd>
+                </div>
+            </div>
+
+           {% if request.user.is_superuser %}
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <dt class="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
+                    <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+
+        {# --- Filters: search + period + status + actions (one row on md+) --- #}
         <div class="bg-white rounded-xl shadow-sm border border-gray-200/80 mb-6 overflow-hidden">
             <div class="px-5 py-4 sm:px-6">
                 <div class="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">
 
-                    {# 1. Period #}
+                    {# Search #}
+                    <div class="md:col-span-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Search</label>
+                        <div class="relative w-full">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input type="text" x-model="filters.search" @input.debounce.400ms="fetchOrders(1)"
+                                   class="block w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"
+                                   placeholder="Order ID or Customer Name...">
+                        </div>
+                    </div>
+
+                    {# Period #}
                     <div class="md:col-span-3">
                         <div class="flex items-center justify-between gap-2 mb-1.5">
                             <label class="text-sm font-medium text-gray-700">Period</label>
@@ -56,20 +103,7 @@
                         </div>
                     </div>
 
-                    {# 2. Search #}
-                    <div class="md:col-span-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Search</label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                            </div>
-                            <input type="text" x-model="filters.search" @input.debounce.400ms="fetchOrders(1)"
-                                   class="block w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"
-                                   placeholder="Order ID or Customer Name...">
-                        </div>
-                    </div>
-
-                    {# 3. Status #}
+                    {# Status #}
                     <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
                         <select x-model="filters.status" @change="fetchOrders(1)" class="block w-full pl-3 pr-9 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
@@ -80,7 +114,7 @@
                         </select>
                     </div>
 
-                    {# 4. Actions #}
+                    {# Actions #}
                     <div class="md:col-span-3 flex flex-wrap justify-start md:justify-end gap-2">
                         <button type="button"
                                 @click="
@@ -107,40 +141,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-
-
-        {# --- Statistics Cards --- #}
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</dd>
-                </div>
-            </div>
-
-            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-yellow-400">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Pending Action</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-yellow-600" x-text="stats.pending_orders">{{ stats.pending_orders|default:"0" }}</dd>
-                </div>
-            </div>
-
-            <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-green-500">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Completed</dt>
-                    <dd class="mt-1 text-3xl font-semibold text-green-600" x-text="stats.completed_orders">{{ stats.completed_orders|default:"0" }}</dd>
-                </div>
-            </div>
-
-           {% if request.user.is_superuser %}
-            <div class="bg-white overflow-hidden shadow rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
-                    <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
-                </div>
-            </div>
-            {% endif %}
         </div>
 
 
@@ -418,6 +418,17 @@
                                     </button>
                                     {% endif %}
                                     <button
+                                        type="button"
+                                        @click="openEditDetailsModal(order)"
+                                        class="inline-flex items-center justify-center w-8 h-8 border border-transparent rounded-full text-gray-700 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                                        title="Edit order details"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                    </button>
+                                    <button
                                         @click="openStatusModal(order)"
                                         :disabled="order.status_code === 'COMPLETED' || order.status_code === 'CANCELLED'"
                                         class="inline-flex items-center justify-center w-8 h-8 border border-transparent rounded-full text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -498,6 +509,7 @@
 
     {# --- MODALS INCLUDED HERE --- #}
     {% include 'order/partials/update_status_modal.html' %}
+    {% include 'order/partials/edit_order_details_modal.html' %}
     {% if show_manual_order_link %}
     {% include 'order/partials/manual_order_modal.html' %}
     {% endif %}
@@ -604,6 +616,20 @@
             isBulkStatus: false,
             showExportModal: false,
             showManualOrderModal: false,
+            showEditDetailsModal: false,
+            editDetailsRowOrder: null,
+            editDetailsLoading: false,
+            editDetailsSaving: false,
+            editDetailsForm: {
+                customer_name: '',
+                customer_phone: '',
+                shipping_address: '',
+                sales_channel: 'Other',
+                transaction_date: '',
+                remarks: '',
+                payment_method: ''
+            },
+            editDetailsMeta: { status_display: '', is_manual_order: false },
             editingOrder: null,
             newStatus: '',
             isUpdating: false,
@@ -790,6 +816,79 @@
                 this.showStatusModal = false;
                 this.editingOrder = null;
                 this.newStatus = '';
+            },
+
+            orderEditDetailsApiUrl(orderId) {
+                return `{% url 'order:api_manage_order_edit_details' '________' %}`.replace('________', orderId);
+            },
+
+            async openEditDetailsModal(order) {
+                this.editDetailsRowOrder = order;
+                this.showEditDetailsModal = true;
+                this.editDetailsLoading = true;
+                this.editDetailsMeta = { status_display: '', is_manual_order: false };
+                try {
+                    const r = await fetch(this.orderEditDetailsApiUrl(order.id), {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const d = await r.json();
+                    if (!r.ok || !d.success) {
+                        throw new Error(d.error || 'Could not load order');
+                    }
+                    const o = d.order;
+                    this.editDetailsMeta = {
+                        status_display: o.status_display || '',
+                        is_manual_order: !!o.is_manual_order
+                    };
+                    this.editDetailsForm = {
+                        customer_name: o.customer_name || '',
+                        customer_phone: o.customer_phone || '',
+                        shipping_address: o.shipping_address || '',
+                        sales_channel: o.sales_channel || 'Other',
+                        transaction_date: o.transaction_date || '',
+                        remarks: o.remarks || '',
+                        payment_method: o.payment_method || ''
+                    };
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Failed to load order details');
+                    this.closeEditDetailsModal();
+                } finally {
+                    this.editDetailsLoading = false;
+                }
+            },
+
+            closeEditDetailsModal() {
+                this.showEditDetailsModal = false;
+                this.editDetailsRowOrder = null;
+                this.editDetailsLoading = false;
+                this.editDetailsSaving = false;
+            },
+
+            async saveEditDetails() {
+                if (!this.editDetailsRowOrder) return;
+                this.editDetailsSaving = true;
+                try {
+                    const r = await fetch(this.orderEditDetailsApiUrl(this.editDetailsRowOrder.id), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.csrfToken
+                        },
+                        body: JSON.stringify(this.editDetailsForm)
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || !d.success) {
+                        throw new Error(d.error || 'Save failed');
+                    }
+                    this.closeEditDetailsModal();
+                    await this.fetchOrders(this.pagination.current_page);
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Failed to save');
+                } finally {
+                    this.editDetailsSaving = false;
+                }
             },
 
             async saveStatus() {

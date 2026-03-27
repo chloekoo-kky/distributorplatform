@@ -1,8 +1,20 @@
 <script>
     function manageCoreMixin() {
+        const ordersManageUrl = '{% url "order:manage_orders" %}';
+
+        const redirectIfOrdersHash = () => {
+            if (window.location.hash === '#orders') {
+                window.location.replace(ordersManageUrl);
+            }
+        };
+
         return {
             // --- State ---
-            tab: window.location.hash || '#quotations',
+            tab: (() => {
+                const h = window.location.hash;
+                if (h === '#orders') return '#quotations';
+                return h || '#quotations';
+            })(),
 
             // Simple Modal Flags
             uploadQuotationModalOpen: false,
@@ -11,6 +23,7 @@
             uploadProductModalOpen: false,
 
             initCore() {
+                redirectIfOrdersHash();
                 const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
                 if (tokenInput) {
                     Alpine.store('globals').csrfToken = tokenInput.value;
@@ -24,6 +37,7 @@
                 });
 
                 window.addEventListener('hashchange', () => {
+                    redirectIfOrdersHash();
                     this.tab = window.location.hash || '#quotations';
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 });

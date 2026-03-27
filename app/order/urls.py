@@ -32,6 +32,7 @@ urlpatterns = [
     path('export/orders-range/', views.export_orders_range, name='export_orders_range'),
 
     path('api/order/<str:order_id>/items/', views.api_get_order_items, name='api_get_order_items'),
+    path('api/order/<str:order_id>/edit-details/', views.api_manage_order_edit_details, name='api_manage_order_edit_details'),
     path('api/order/<str:order_id>/update-status/', views.api_update_order_status, name='api_update_order_status'),
 
     path('api/prepare-checkout/', views.api_prepare_checkout, name='api_prepare_checkout'),

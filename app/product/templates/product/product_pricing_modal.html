@@ -7,7 +7,7 @@
      @mousedown.self="showPricingModal = false">
 
     {# MODAL CARD #}
-    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
 
         {# HEADER #}
         <div class="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
@@ -154,11 +154,12 @@
                     </div>
                     <p class="text-xs text-gray-500 mb-2">Set min quantity, margin %, or price (RM). Editing price recomputes margin; editing margin recomputes price.</p>
                     <div class="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
-                        <template x-for="(tier, idx) in pricingData.price_tiers" :key="idx">
-                            <div class="flex items-center gap-2 flex-wrap bg-white p-2 rounded border border-gray-100">
+                        <template x-for="(tier, idx) in pricingData.price_tiers" :key="tier._tid">
+                            <div class="flex items-center gap-2 flex-nowrap overflow-x-auto bg-white p-2 rounded border border-gray-100">
                                 <label class="text-xs text-gray-500 shrink-0">Min qty:</label>
                                 <input type="number"
                                        x-model.number="tier.min_quantity"
+                                       @blur="sortPriceTiers()"
                                        min="1"
                                        :disabled="pricingReadOnly"
                                        class="w-16 p-1.5 text-sm border border-gray-300 rounded focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">

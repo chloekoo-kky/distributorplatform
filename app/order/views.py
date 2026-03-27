@@ -1342,6 +1342,64 @@ def api_get_order_items(request, order_id):
 
     return JsonResponse({'items': data})
 
+
+@staff_member_required
+def api_manage_order_edit_details(request, order_id):
+    """
+    GET: order header fields for the manage-orders edit modal.
+    POST: update customer snapshot, channel, transaction date, payment, remarks (staff).
+    """
+    order = get_object_or_404(Order, pk=order_id)
+
+    if request.method == 'GET':
+        data = {
+            'id': order.id,
+            'status': order.status,
+            'status_display': order.get_status_display(),
+            'is_manual_order': bool(order.created_by_id),
+            'sales_channel': order.sales_channel or '',
+            'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
+            'customer_name': order.customer_name or '',
+            'customer_phone': order.customer_phone or '',
+            'shipping_address': order.shipping_address or '',
+            'remarks': order.remarks or '',
+            'payment_method': order.payment_method or '',
+        }
+        return JsonResponse({'success': True, 'order': data})
+
+    if request.method == 'POST':
+        try:
+            payload = json.loads(request.body or '{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+        sc = payload.get('sales_channel', order.sales_channel)
+        if sc not in dict(Order.SalesChannel.choices):
+            sc = Order.SalesChannel.OTHER
+
+        td_raw = payload.get('transaction_date')
+        if td_raw in (None, '', False):
+            new_td = None
+        else:
+            try:
+                new_td = datetime.strptime(str(td_raw)[:10], '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                new_td = order.transaction_date
+
+        order.sales_channel = sc
+        order.transaction_date = new_td
+        order.customer_name = (payload.get('customer_name') or '').strip() or None
+        order.customer_phone = (payload.get('customer_phone') or '').strip() or None
+        order.shipping_address = (payload.get('shipping_address') or '').strip() or None
+        order.remarks = (payload.get('remarks') or '').strip() or None
+        order.payment_method = (payload.get('payment_method') or '').strip() or None
+        order.save()
+
+        return JsonResponse({'success': True, 'message': 'Order updated'})
+
+    return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+
 @staff_member_required
 @transaction.atomic
 def api_update_order_status(request, order_id):

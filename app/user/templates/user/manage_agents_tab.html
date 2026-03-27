@@ -69,6 +69,11 @@
                                     <td class="px-6 py-4 text-sm font-medium space-x-2">
                                         <button @click="openUserModal(user)" class="text-indigo-600 hover:text-indigo-900">Assign Groups</button>
                                         {% if request.user.is_superuser %}
+                                            <button type="button"
+                                                    @click="openPasswordResetModal(user)"
+                                                    class="text-xs text-amber-700 hover:text-amber-900 underline">
+                                                Reset password
+                                            </button>
                                             <form method="post"
                                                   :action="`{% url 'user:start_impersonation' 0 %}`.replace('0', user.id)"
                                                   class="inline">
@@ -160,6 +165,47 @@
             </form>
         </div>
     </div>
+
+    {% if request.user.is_superuser %}
+    <div x-show="showPasswordResetModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75" style="display: none;" x-cloak>
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md m-4 flex flex-col" @click.away="closePasswordResetModal()">
+            <button type="button" @click="closePasswordResetModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-xl font-bold text-gray-800 p-6 border-b">Reset password</h3>
+            <form @submit.prevent="submitPasswordReset()">
+                <div class="p-6 space-y-4">
+                    <p class="text-sm text-gray-600">
+                        Set a new password for
+                        <strong x-text="passwordResetUser ? passwordResetUser.username : ''"></strong>.
+                        They will need to sign in with this password.
+                    </p>
+                    <p x-show="passwordResetUser && passwordResetUser.is_superuser" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                        This account is a superuser. Only share the new password through a secure channel.
+                    </p>
+                    <div>
+                        <label for="reset_pw_new" class="font-semibold text-gray-700 block mb-1 text-sm">New password</label>
+                        <input type="password" id="reset_pw_new" x-model="resetPassword" autocomplete="new-password" required
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label for="reset_pw_confirm" class="font-semibold text-gray-700 block mb-1 text-sm">Confirm password</label>
+                        <input type="password" id="reset_pw_confirm" x-model="resetPasswordConfirm" autocomplete="new-password" required
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <p class="text-xs text-gray-500">Password must meet your site’s security rules (length, complexity, etc.).</p>
+                </div>
+                <div class="p-6 bg-gray-50 border-t flex justify-end gap-3">
+                    <button type="button" @click="closePasswordResetModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                    <button type="submit" :disabled="isResettingPassword" class="px-4 py-2 text-sm font-medium text-white bg-amber-700 rounded-md hover:bg-amber-800 disabled:opacity-50">
+                        <span x-show="!isResettingPassword">Save new password</span>
+                        <span x-show="isResettingPassword">Saving…</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <script>
@@ -172,6 +218,11 @@ function agentManagerData() {
         isLoadingGroups: true,
         isLoadingUsers: true,
         isSubmitting: false,
+        showPasswordResetModal: false,
+        passwordResetUser: null,
+        resetPassword: '',
+        resetPasswordConfirm: '',
+        isResettingPassword: false,
 
         showGroupModal: false,
         currentGroup: { id: null, name: '', commission_percentage: 0 },
@@ -259,6 +310,52 @@ function agentManagerData() {
         openUserModal(user) {
             this.currentUser = { ...user }; // Clone the user object
             this.showUserModal = true;
+        },
+
+        openPasswordResetModal(user) {
+            this.passwordResetUser = { ...user };
+            this.resetPassword = '';
+            this.resetPasswordConfirm = '';
+            this.showPasswordResetModal = true;
+        },
+
+        closePasswordResetModal() {
+            this.showPasswordResetModal = false;
+            this.passwordResetUser = null;
+            this.resetPassword = '';
+            this.resetPasswordConfirm = '';
+            this.isResettingPassword = false;
+        },
+
+        async submitPasswordReset() {
+            if (!this.passwordResetUser) return;
+            this.isResettingPassword = true;
+            try {
+                const url = "{% url 'user:api_superuser_reset_user_password' 0 %}".replace('0', this.passwordResetUser.id);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: this.resetPassword,
+                        password_confirm: this.resetPasswordConfirm,
+                    }),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || `Request failed (${response.status})`);
+                }
+                alert(data.message || 'Password has been reset.');
+                this.closePasswordResetModal();
+            } catch (error) {
+                console.error(error);
+                alert('Error: ' + error.message);
+            } finally {
+                this.isResettingPassword = false;
+            }
         },
 
         async submitUserGroups() {

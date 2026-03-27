@@ -1013,7 +1013,7 @@ def api_manage_pricing(request, product_id):
         base_cost = product.base_cost
         # Price tiers: return min_quantity, price, and computed profit_margin for modal editing
         price_tiers_data = []
-        for tier in product.price_tiers.order_by('-min_quantity'):
+        for tier in product.price_tiers.order_by('min_quantity'):
             margin = None
             if base_cost is not None and tier.price and tier.price > 0:
                 margin = round(float((tier.price - base_cost) / tier.price * 100), 1)

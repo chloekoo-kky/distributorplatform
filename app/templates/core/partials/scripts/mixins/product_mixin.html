@@ -124,10 +124,12 @@
                     }
 
                     const priceTiers = (data.price_tiers || []).map(t => ({
+                        _tid: crypto.randomUUID(),
                         min_quantity: parseInt(t.min_quantity, 10) || 1,
                         profit_margin: t.profit_margin != null ? parseFloat(t.profit_margin) : null,
                         price: t.price != null ? parseFloat(t.price) : null
                     }));
+                    priceTiers.sort((a, b) => (a.min_quantity || 0) - (b.min_quantity || 0));
 
                     this.pricingData = {
                         id: data.id,
@@ -191,6 +193,12 @@
                 this.pricingData.profit_margin = Math.round(margin);
             },
 
+            sortPriceTiers() {
+                const tiers = this.pricingData.price_tiers;
+                if (!tiers || tiers.length < 2) return;
+                tiers.sort((a, b) => (a.min_quantity || 0) - (b.min_quantity || 0));
+            },
+
             // Price tier: selling price from base cost and profit margin
             tierSellingPrice(tier) {
                 const base = parseFloat(this.pricingData.base_cost);
@@ -230,12 +238,14 @@
                     ? Math.max(...this.pricingData.price_tiers.map(t => t.min_quantity || 0))
                     : 0;
                 const newTier = {
+                    _tid: crypto.randomUUID(),
                     min_quantity: maxMinQty + 10,
                     profit_margin: defaultMargin,
                     price: null
                 };
                 this.pricingData.price_tiers.push(newTier);
                 newTier.price = this.tierSellingPrice(newTier);
+                this.sortPriceTiers();
             },
 
             removePricingTier(index) {
