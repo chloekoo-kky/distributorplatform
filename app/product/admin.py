@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.db.models import Count
+from django.db.models import Count, Min
 
 from import_export.admin import ImportExportMixin
 
@@ -55,20 +55,31 @@ class ProductPriceTierInline(admin.TabularInline):
 
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
-    list_display = ('sku', 'name', 'display_order', 'featured_image', 'display_categories', 'display_suppliers', 'base_cost', 'members_only')
+    list_display = ('sku', 'name', 'display_order', 'featured_image', 'display_categories', 'display_suppliers', 'formatted_base_cost', 'members_only')
     # Add this line to make both SKU and Name clickable
     list_display_links = ('sku', 'name')
     list_filter = ('members_only', 'categories', 'suppliers', 'created_at')
     search_fields = ('sku', 'name', 'description', 'suppliers__name')
-    readonly_fields = ('base_cost',)
+    readonly_fields = ('formatted_base_cost',)
     filter_horizontal = ('categories', 'suppliers', 'gallery_images',)
     inlines = [ProductContentSectionInline, ProductPriceTierInline]
 
     list_editable = ('display_order',)
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('categories').annotate(_categories_sort=Min('categories__name'))
+
+    @admin.display(ordering='_categories_sort', description='Categories')
     def display_categories(self, obj):
         return ", ".join([category.name for category in obj.categories.all()])
-    display_categories.short_description = 'Categories'
+
+    @admin.display(description='Base cost')
+    def formatted_base_cost(self, obj):
+        cost = obj.base_cost
+        if cost is None:
+            return '—'
+        return f'{cost:.2f}'
 
     def display_suppliers(self, obj):
         """
