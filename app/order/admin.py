@@ -2,7 +2,6 @@ from django.contrib import admin
 from django.db.models import Sum, F, Q
 from django.utils.html import format_html
 from django.urls import reverse
-from django.utils.safestring import mark_safe
 from import_export.admin import ImportExportModelAdmin
 from .models import Order, OrderItem, Customer, CustomerAddress
 
@@ -91,18 +90,36 @@ class OrderItemInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
         'order_id_display',
-        'customer_link',
+        'customer',
+        'customer_name',
+        'customer_phone',
+        'agent_link',
         'customer_type_badge',
         'status_badge',
         'created_at',
         'get_total_value',
         'get_total_commission',
-        'get_net_profit'
+        'get_net_profit',
     )
+    list_display_links = ('order_id_display',)
+    list_editable = ('customer', 'customer_name', 'customer_phone')
+    autocomplete_fields = ('customer',)
     list_filter = ('status', 'created_at', 'agent__user_groups')
-    search_fields = ('id', 'agent__username', 'agent__email')
+    search_fields = (
+        'id',
+        'agent__username',
+        'agent__email',
+        'customer_name',
+        'customer_phone',
+        'customer__name',
+        'customer__phone',
+        'customer__email',
+    )
     date_hierarchy = 'created_at'
     list_per_page = 25
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('agent', 'customer')
 
     # --- Actions ---
     actions = ['mark_as_completed', 'mark_as_processing', 'mark_as_cancelled']
@@ -114,6 +131,13 @@ class OrderAdmin(admin.ModelAdmin):
                 ('agent', 'status'),
                 ('created_at', 'updated_at'),
             )
+        }),
+        ('Customer', {
+            'fields': (
+                'customer',
+                ('customer_name', 'customer_phone'),
+                'shipping_address',
+            ),
         }),
         ('Financial Summary', {
             'fields': (
@@ -142,12 +166,13 @@ class OrderAdmin(admin.ModelAdmin):
     order_id_display.short_description = "ID"
     order_id_display.admin_order_field = 'id'
 
-    def customer_link(self, obj):
-        """Clickable link to the User edit page."""
-        url = reverse("admin:user_customuser_change", args=[obj.agent.id])
+    def agent_link(self, obj):
+        """Distributor / agent User who owns the order."""
+        url = reverse('admin:user_customuser_change', args=[obj.agent_id])
         return format_html('<a href="{}">{}</a>', url, obj.agent.username)
-    customer_link.short_description = 'Customer'
-    customer_link.admin_order_field = 'agent__username'
+
+    agent_link.short_description = 'Agent'
+    agent_link.admin_order_field = 'agent__username'
 
     def customer_type_badge(self, obj):
         commission = obj.total_commission
