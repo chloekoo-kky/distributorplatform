@@ -17,6 +17,7 @@ import tempfile
 from django.core.serializers.json import DjangoJSONEncoder
 
 from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch
+from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator, EmptyPage
 from inventory.models import QuotationItem, InventoryBatch
@@ -909,6 +910,68 @@ def api_merge_products(request):
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
     return JsonResponse({"success": True, "merged_count": len(secondaries)})
+
+
+@staff_required
+def api_delete_selected_products(request):
+    """
+    Permanently delete selected products (staff only).
+    POST JSON: { "ids": [int, ...] }
+
+    Fails with 400 if any product is referenced by order lines or supplier invoice
+    items (PROTECT); cascading removes tiers, content sections, quotations, etc.
+    """
+    if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
+        return JsonResponse({"success": False, "error": "Invalid request method."}, status=400)
+
+    try:
+        payload = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"success": False, "error": "Invalid JSON payload."}, status=400)
+
+    raw_ids = payload.get("ids") or []
+    if not raw_ids:
+        return JsonResponse({"success": False, "error": "No products selected."}, status=400)
+    try:
+        ids = [int(i) for i in raw_ids]
+    except (TypeError, ValueError):
+        return JsonResponse({"success": False, "error": "ids must be a list of integers."}, status=400)
+
+    ids = list(dict.fromkeys(ids))
+    if len(ids) > 500:
+        return JsonResponse({"success": False, "error": "Too many products selected (max 500)."}, status=400)
+
+    qs = Product.objects.filter(pk__in=ids)
+    if not qs.exists():
+        return JsonResponse({"success": False, "error": "No matching products found."}, status=404)
+
+    try:
+        with transaction.atomic():
+            _, details = qs.delete()
+    except ProtectedError:
+        logger.warning("Blocked product delete due to protected relations", exc_info=True)
+        return JsonResponse(
+            {
+                "success": False,
+                "error": (
+                    "Cannot delete: one or more products are linked to customer orders or "
+                    "supplier invoices. Update or remove those lines first."
+                ),
+            },
+            status=400,
+        )
+    except Exception as e:
+        logger.exception("Error deleting products")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    deleted_count = details.get(Product._meta.label, 0)
+    return JsonResponse(
+        {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": f"Deleted {deleted_count} product(s).",
+        }
+    )
 
 
 @staff_required

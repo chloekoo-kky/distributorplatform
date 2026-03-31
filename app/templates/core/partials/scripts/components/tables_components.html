@@ -171,6 +171,43 @@
                 const url = `{% url 'product:export_products_pdf' %}?ids=${ids}`;
                 window.open(url, '_blank');
             },
+            async deleteSelectedProducts() {
+                if (this.selectedIds.length === 0) {
+                    Alpine.store('globals').showToast('No products selected', 'error');
+                    return;
+                }
+                const n = this.selectedIds.length;
+                if (!window.confirm(`Delete ${n} product(s)? This cannot be undone.`)) {
+                    return;
+                }
+                try {
+                    const response = await fetch(`{% url 'product:api_delete_selected_products' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ ids: this.selectedIds })
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        Alpine.store('globals').showToast(data.message || `Deleted ${data.deleted_count} product(s).`);
+                        this.selectedIds = [];
+                        const page = this.pagination.current_page || 1;
+                        await this.fetchProducts(page);
+                        if (this.items.length === 0 && page > 1) {
+                            await this.fetchProducts(page - 1);
+                        }
+                    } else {
+                        Alpine.store('globals').showToast(data.error || 'Delete failed.', 'error');
+                    }
+                } catch (err) {
+                    console.error('Delete products failed:', err);
+                    Alpine.store('globals').showToast('Network error while deleting products.', 'error');
+                }
+            },
 
             // --- Product Cleaning / Merge Tools ---
             openMergeTools() {

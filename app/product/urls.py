@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/manage-products/', views.api_manage_products, name='api_manage_products'),
     path('api/product-merge-suggestions/', views.api_product_merge_suggestions, name='api_product_merge_suggestions'),
     path('api/merge-products/', views.api_merge_products, name='api_merge_products'),
+    path('api/delete-selected-products/', views.api_delete_selected_products, name='api_delete_selected_products'),
     path('api/ignore-merge-suggestion/', views.api_ignore_merge_suggestion, name='api_ignore_merge_suggestion'),
     path('api/product-search/', views.api_product_search, name='api_product_search'),
 
