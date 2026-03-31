@@ -517,23 +517,26 @@ def scrape_website_products(request):
     )
 
 @staff_required
-def export_products_csv(request):
+def export_products_xlsx(request):
     """
-    Handles the export of all products to a CSV file.
+    Export all products to an Excel (.xlsx) workbook (native Unicode; symbols like ® display correctly).
     """
-    logger.info("[export_products_csv] View called. Starting export.")
+    logger.info("[export_products_xlsx] View called. Starting export.")
     try:
         product_resource = ProductResource()
         queryset = Product.objects.all()
         dataset = product_resource.export(queryset)
-
-        response = HttpResponse(dataset.csv, content_type='text/csv')
-        filename = f"products-{datetime.date.today()}.csv"
-        response['Content-Disposition'] = f'attachment; filename={filename}'
-        logger.info(f"[export_products_csv] Successfully created CSV file: {filename}")
+        xlsx_bytes = dataset.export('xlsx')
+        response = HttpResponse(
+            xlsx_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        filename = f"products-{datetime.date.today()}.xlsx"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        logger.info(f"[export_products_xlsx] Successfully created XLSX: {filename}")
         return response
     except Exception as e:
-        logger.error(f"[export_products_csv] Error during export: {e}", exc_info=True)
+        logger.error(f"[export_products_xlsx] Error during export: {e}", exc_info=True)
         messages.error(request, f"An error occurred during export: {e}")
         return redirect(reverse('core:manage_dashboard') + '#products')
 

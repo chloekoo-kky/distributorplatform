@@ -55,6 +55,8 @@ class ProductPriceTierInline(admin.TabularInline):
 
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
+    # Excel on Windows treats CSV as ANSI unless UTF-8 BOM is present; needed for symbols like ®.
+    to_encoding = 'utf-8-sig'
     list_display = ('sku', 'name', 'display_order', 'featured_image', 'display_categories', 'display_suppliers', 'formatted_base_cost', 'members_only')
     # Add this line to make both SKU and Name clickable
     list_display_links = ('sku', 'name')
