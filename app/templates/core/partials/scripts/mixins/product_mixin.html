@@ -6,7 +6,7 @@
             pricingIsSubmitting: false,
             pricingReadOnly: false,
             pricingData: {
-                id: null, name: '', base_cost: null, profit_margin: null,
+                id: null, name: '', base_cost: null, base_cost_supplier_id: null, profit_margin: null,
                 selling_price: null, is_promotion: false, promotion_rate: null, update_url: '',
                 supplier_costs: [], price_tiers: []
             },
@@ -68,6 +68,7 @@
                     id: null,
                     name: '',
                     base_cost: null,
+                    base_cost_supplier_id: null,
                     profit_margin: null,
                     selling_price: null,
                     is_promotion: false,
@@ -98,6 +99,12 @@
                     console.log('[PricingModal][open]', data);
 
                     const supplierCosts = (data.supplier_costs || []).map(sc => ({ ...sc }));
+                    let baseCostSupplierId = data.saved_base_cost_supplier_id != null
+                        ? Number(data.saved_base_cost_supplier_id)
+                        : null;
+                    if (baseCostSupplierId == null && supplierCosts.length === 1 && supplierCosts[0].supplier_id != null) {
+                        baseCostSupplierId = Number(supplierCosts[0].supplier_id);
+                    }
                     let baseCost = null;
                     // Use saved_base_cost when set (user has chosen a source); otherwise use computed base_cost
                     // (e.g. latest quoted cost) so products created from quotation import show their cost.
@@ -135,6 +142,7 @@
                         id: data.id,
                         name: data.name,
                         base_cost: baseCost,
+                        base_cost_supplier_id: baseCostSupplierId,
                         profit_margin: profitMargin !== null ? Math.round(profitMargin) : null,
                         selling_price: sellingPrice != null ? parseFloat(sellingPrice.toFixed(2)) : null,
                         is_promotion: !!data.is_promotion,
@@ -262,6 +270,7 @@
                     is_promotion: this.pricingData.is_promotion,
                     promotion_rate: this.pricingData.promotion_rate,
                     base_cost: this.pricingData.base_cost != null ? this.pricingData.base_cost : null,
+                    base_cost_supplier_id: this.pricingData.base_cost != null ? this.pricingData.base_cost_supplier_id : null,
                     price_tiers: this.pricingData.price_tiers.map(t => ({
                         min_quantity: t.min_quantity,
                         // Send price as the source of truth; margin is informational

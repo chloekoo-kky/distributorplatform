@@ -160,6 +160,14 @@ class Product(models.Model):
         blank=True,
         help_text="User-selected base cost (from a specific supplier quote). Used for pricing; shown in Set Product Pricing modal."
     )
+    saved_base_cost_supplier = models.ForeignKey(
+        'inventory.Supplier',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        help_text="Supplier tied to saved_base_cost so cost stays in sync when that supplier's quotation changes.",
+    )
     members_only = models.BooleanField(default=False)
     is_featured = models.BooleanField(
         default=False,

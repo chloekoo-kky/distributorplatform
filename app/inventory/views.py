@@ -28,8 +28,8 @@ from .forms import (
     QuotationCreateForm, InventoryBatchUploadForm
 )
 from .resources import QuotationResource, InventoryBatchResource
-from product.models import Product
 from product.models import Product, Category, CategoryGroup
+from product.pricing_sync import sync_saved_base_costs_for_quotation
 from .models import Quotation, InventoryBatch, QuotationItem, Supplier
 from sales.models import Invoice, InvoiceItem
 from blog.models import Post
@@ -631,6 +631,8 @@ def quotation_detail(request, quotation_id):
                     QuotationItem.objects.bulk_create(items_to_create)
                     logger.info(f"[quotation_detail POST] Bulk created {len(items_to_create)} items for quotation {quotation_id}")
 
+                sync_saved_base_costs_for_quotation(quotation)
+
             logger.info(f"[quotation_detail POST] Successfully updated items for quotation {quotation_id}")
             return JsonResponse({'success': True})
 
@@ -1062,7 +1064,8 @@ def import_quotation_items_confirm(request, quotation_id):
                         landed = item.landed_cost_per_unit
                         if landed is not None:
                             product.saved_base_cost = landed
-                            product.save(update_fields=['saved_base_cost'])
+                            product.saved_base_cost_supplier = supplier
+                            product.save(update_fields=['saved_base_cost', 'saved_base_cost_supplier'])
     except Exception as e:
         logger.exception("import_quotation_items_confirm failed")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

@@ -20,10 +20,11 @@ from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator, EmptyPage
-from inventory.models import QuotationItem, InventoryBatch
+from inventory.models import QuotationItem, InventoryBatch, Supplier
 from inventory.views import staff_required
 
 from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion, ProductPriceTier
+from .pricing_sync import reconcile_saved_base_cost_with_quotations
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
 
@@ -680,11 +681,17 @@ def api_manage_products(request):
             if cost is not None:
                 supplier_costs.append(
                     {
+                        "supplier_id": sup_id,
                         "supplier_name": item.quotation.supplier.name or "Unknown",
                         "cost": cost,
                         "date": item.quotation.date_quoted,
                     }
                 )
+
+        reconcile_saved_base_cost_with_quotations(product, supplier_costs)
+        product.refresh_from_db(
+            fields=["saved_base_cost", "saved_base_cost_supplier_id"]
+        )
 
         # For the "Suppliers" column in Manage Products, we want to reflect all
         # suppliers that currently have pricing for this product, not just those
@@ -1075,11 +1082,17 @@ def api_manage_pricing(request, product_id):
             if cost is not None:
                 supplier_costs.append(
                     {
+                        "supplier_id": sup_id,
                         "supplier_name": item.quotation.supplier.name or "Unknown",
                         "cost": cost,
                         "date": item.quotation.date_quoted,
                     }
                 )
+
+        reconcile_saved_base_cost_with_quotations(product, supplier_costs)
+        product.refresh_from_db(
+            fields=["saved_base_cost", "saved_base_cost_supplier_id"]
+        )
 
         base_cost = product.base_cost
         # Price tiers: return min_quantity, price, and computed profit_margin for modal editing
@@ -1104,6 +1117,7 @@ def api_manage_pricing(request, product_id):
             'is_promotion': product.is_promotion,
             'promotion_rate': str(product.promotion_rate) if product.promotion_rate is not None else None,
             'saved_base_cost': str(product.saved_base_cost) if getattr(product, "saved_base_cost", None) is not None else None,
+            'saved_base_cost_supplier_id': product.saved_base_cost_supplier_id,
             'base_cost': str(base_cost) if base_cost is not None else None,
             'supplier_costs': supplier_costs,
             'price_tiers': price_tiers_data,
@@ -1133,14 +1147,26 @@ def api_manage_pricing(request, product_id):
         product.profit_margin = Decimal(profit_margin_str) if profit_margin_str is not None else None
         product.promotion_rate = Decimal(promotion_rate_str) if promotion_rate_str is not None else None
         base_cost_str = data.get('base_cost')
-        product.saved_base_cost = Decimal(base_cost_str) if base_cost_str is not None and base_cost_str != '' else None
+        if base_cost_str is None or base_cost_str == '':
+            product.saved_base_cost = None
+            product.saved_base_cost_supplier = None
+        else:
+            product.saved_base_cost = Decimal(base_cost_str)
+            raw_sid = data.get('base_cost_supplier_id')
+            if raw_sid not in (None, ''):
+                try:
+                    sid = int(raw_sid)
+                    if Supplier.objects.filter(pk=sid).exists():
+                        product.saved_base_cost_supplier_id = sid
+                except (ValueError, TypeError):
+                    pass
 
         # [DEBUG] Log the fields intended for update
-        update_fields_list = ['selling_price', 'profit_margin', 'is_promotion', 'saved_base_cost']
+        update_fields_list = ['selling_price', 'profit_margin', 'is_promotion', 'saved_base_cost', 'saved_base_cost_supplier']
         logger.info(f"[DEBUG][Pricing] Attempting to save with update_fields: {update_fields_list}")
 
         # --- CRITICAL: Ensure 'is_promotion' is in this list ---
-        product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate', 'saved_base_cost'])
+        product.save(update_fields=['selling_price', 'profit_margin', 'is_promotion', 'promotion_rate', 'saved_base_cost', 'saved_base_cost_supplier'])
 
         # --- Price tiers: replace all tiers with payload ---
         # Price is the source of truth; profit_margin (if provided) is for backward compatibility.

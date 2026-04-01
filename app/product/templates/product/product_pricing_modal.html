@@ -60,7 +60,7 @@
                                                name="base_cost_source"
                                                :value="costInfo.cost"
                                                x-model="pricingData.base_cost"
-                                               @change="!pricingReadOnly && calculatePriceFromMargin()"
+                                               @change="if (!pricingReadOnly) { pricingData.base_cost_supplier_id = costInfo.supplier_id != null ? Number(costInfo.supplier_id) : null; calculatePriceFromMargin(); }"
                                                :disabled="pricingReadOnly"
                                                class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                                     </div>
