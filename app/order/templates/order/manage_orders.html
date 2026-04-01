@@ -326,35 +326,62 @@
                                 } finally {
                                     document.body.removeChild(ta);
                                 }
-                                if (!ok) {
-                                    throw new Error('execCommand copy failed');
-                                }
+                                return ok;
+                            },
+                            promptManualCopy(text) {
+                                window.prompt('Copy blocked by this browser. Select all in the box, press Ctrl+C (Cmd+C), then OK.', text);
                             },
                             async copySummary() {
                                 this.copying = true;
                                 try {
-                                    await this.ensureDetailsLoaded();
-                                    const lines = [];
-                                    const summaryUsername = order.created_by_username || order.agent || '';
-                                    lines.push(`${summaryUsername} ${order.id}`.trim());
-                                    lines.push(`Date: ${order.created_at}`);
-                                    lines.push(`Customer: ${order.customer}`);
-                                    lines.push('');
-                                    lines.push('Items:');
-                                    this.details.forEach(item => {
-                                        const label = item.summary_name || item.product_name;
-                                        lines.push(`- ${label} (${item.sku}) x${item.quantity}`);
-                                    });
-                                    const text = lines.join('\n');
-                                    try {
-                                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                                            await navigator.clipboard.writeText(text);
-                                        } else {
-                                            this.copyTextFallback(text);
+                                    const blobPromise = (async () => {
+                                        await this.ensureDetailsLoaded();
+                                        const lines = [];
+                                        const summaryUsername = order.created_by_username || order.agent || '';
+                                        lines.push(`${summaryUsername} ${order.id}`.trim());
+                                        lines.push(`Date: ${order.created_at}`);
+                                        lines.push(`Customer: ${order.customer}`);
+                                        lines.push('');
+                                        lines.push('Items:');
+                                        this.details.forEach(item => {
+                                            const label = item.summary_name || item.product_name;
+                                            lines.push(`- ${label} (${item.sku}) x${item.quantity}`);
+                                        });
+                                        return new Blob([lines.join('\n')], { type: 'text/plain' });
+                                    })();
+
+                                    let copied = false;
+                                    if (navigator.clipboard && typeof navigator.clipboard.write === 'function' && typeof ClipboardItem !== 'undefined') {
+                                        try {
+                                            await navigator.clipboard.write([
+                                                new ClipboardItem({ 'text/plain': blobPromise })
+                                            ]);
+                                            copied = true;
+                                        } catch (e) {
+                                            console.warn('clipboard.write(ClipboardItem) failed', e);
                                         }
-                                    } catch (clipErr) {
-                                        console.warn('clipboard API failed, using fallback', clipErr);
-                                        this.copyTextFallback(text);
+                                    }
+
+                                    if (!copied) {
+                                        let text;
+                                        try {
+                                            text = await (await blobPromise).text();
+                                        } catch (e) {
+                                            console.error(e);
+                                            alert('Failed to load order items for copy.');
+                                            return;
+                                        }
+                                        try {
+                                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                                await navigator.clipboard.writeText(text);
+                                            } else if (!this.copyTextFallback(text)) {
+                                                this.promptManualCopy(text);
+                                            }
+                                        } catch (e) {
+                                            if (!this.copyTextFallback(text)) {
+                                                this.promptManualCopy(text);
+                                            }
+                                        }
                                     }
                                 } catch (e) {
                                     console.error(e);
