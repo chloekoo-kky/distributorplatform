@@ -25,7 +25,7 @@
                 {% for item in order_items %}
                 <div class="flex justify-between items-start text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                     <div class="flex flex-col text-left">
-                        <span class="font-medium text-gray-800">{{ item.product.name }}</span>
+                        <span class="font-medium text-gray-800">{{ item.product.order_display_name }}</span>
                         <span class="text-xs text-gray-500 mt-0.5">
                             {{ item.quantity }} x RM {{ item.selling_price|floatformat:2 }}
                         </span>

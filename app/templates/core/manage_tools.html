@@ -14,6 +14,8 @@
 
     {# --- 2. Main App Root --- #}
     <div id="manage-tools-root" class="flex flex-col md:flex-row min-h-screen" x-data="manageTools"
+         @keydown.escape.window="mobileNavOpen = false"
+         @resize.window="if (window.innerWidth >= 768) mobileNavOpen = false"
          {# Event Listeners attached to window/root #}
          @open-product-edit-modal.window="openProductEditModal($event.detail)"
          @open-upload-quotation-modal.window="uploadQuotationModalOpen = true"
@@ -37,9 +39,69 @@
          @images-update-post-selections.window="Alpine.store('images').updatePostModalSelections()"
     >
 
-        {# --- Sidebar --- #}
-        <aside class="w-full md:w-64 bg-white border-r border-gray-200 flex-shrink-0 z-30">
-            <div class="sticky top-16 md:h-[calc(100vh-4rem)] overflow-y-auto py-4">
+        {# --- Mobile: menu trigger --- #}
+        <div class="md:hidden sticky top-16 z-40 flex items-center gap-3 border-b border-gray-200 bg-white px-3 py-2.5">
+            <button type="button"
+                    id="manage-mobile-menu-open"
+                    @click="mobileNavOpen = true"
+                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    :aria-expanded="mobileNavOpen"
+                    aria-controls="manage-mobile-drawer"
+                    aria-label="Open dashboard menu">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <span class="text-sm font-medium text-gray-800">Menu</span>
+        </div>
+
+        {# --- Mobile: drawer --- #}
+        <div class="md:hidden">
+            <div class="fixed inset-x-0 top-16 bottom-0 z-50 bg-gray-900/50 transition-opacity duration-200 ease-out"
+                 x-show="mobileNavOpen"
+                 x-cloak
+                 x-transition:enter="ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 @click="mobileNavOpen = false"
+                 aria-hidden="true"></div>
+            <aside id="manage-mobile-drawer"
+                   class="fixed left-0 top-16 bottom-0 z-[60] flex w-72 max-w-[min(20rem,85vw)] flex-col border-r border-gray-200 bg-white shadow-xl"
+                   x-show="mobileNavOpen"
+                   x-cloak
+                   x-transition:enter="transform transition ease-out duration-200"
+                   x-transition:enter-start="-translate-x-full"
+                   x-transition:enter-end="translate-x-0"
+                   x-transition:leave="transform transition ease-in duration-150"
+                   x-transition:leave-start="translate-x-0"
+                   x-transition:leave-end="-translate-x-full"
+                   role="dialog"
+                   aria-modal="true"
+                   aria-labelledby="manage-mobile-drawer-title"
+                   @click.capture="if ($event.target.closest('a')) mobileNavOpen = false">
+                <div class="flex items-center justify-between border-b border-gray-200 px-3 py-3">
+                    <span id="manage-mobile-drawer-title" class="text-sm font-semibold text-gray-900">Dashboard</span>
+                    <button type="button"
+                            @click="mobileNavOpen = false"
+                            class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            aria-label="Close menu">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="min-h-0 flex-1 overflow-y-auto py-3">
+                    {% include 'core/partials/manage_tabs.html' %}
+                </div>
+            </aside>
+        </div>
+
+        {# --- Desktop sidebar --- #}
+        <aside class="hidden md:flex w-64 flex-shrink-0 flex-col border-r border-gray-200 bg-white z-30">
+            <div class="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto py-4">
                  {% include 'core/partials/manage_tabs.html' %}
             </div>
         </aside>

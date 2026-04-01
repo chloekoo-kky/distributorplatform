@@ -585,6 +585,7 @@ def manage_product_edit(request, product_id):
         data = {
             'id': product.id,
             'name': product.name,
+            'alias_name': product.alias_name or '',
             'sku': product.sku,
             'description_title': product.description_title,
             'description': product.description,
@@ -630,7 +631,11 @@ def api_manage_products(request):
     ).order_by('name')
 
     if search_query:
-        queryset = queryset.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+        queryset = queryset.filter(
+            Q(name__icontains=search_query)
+            | Q(sku__icontains=search_query)
+            | Q(alias_name__icontains=search_query)
+        )
     if group_filter:
         queryset = queryset.filter(categories__group__name=group_filter)
     if category_filter:
@@ -1462,10 +1467,17 @@ def export_products_pdf(request):
         messages.error(request, "Invalid selection.")
         return redirect(reverse('core:manage_dashboard') + '#products')
 
-    # Fetch products with related data (including price_tiers for PDF)
+    # Fetch products with related data (price_tiers: ascending min_quantity for readable export;
+    # model default ordering stays -min_quantity for tier matching logic elsewhere)
     products = Product.objects.filter(id__in=id_list)\
         .select_related('featured_image')\
-        .prefetch_related('categories', 'price_tiers')\
+        .prefetch_related(
+            'categories',
+            Prefetch(
+                'price_tiers',
+                queryset=ProductPriceTier.objects.order_by('min_quantity'),
+            ),
+        )\
         .order_by('name')
 
     # Group products by their first/primary category

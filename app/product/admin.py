@@ -61,7 +61,7 @@ class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     # Add this line to make both SKU and Name clickable
     list_display_links = ('sku', 'name')
     list_filter = ('members_only', 'categories', 'suppliers', 'created_at')
-    search_fields = ('sku', 'name', 'description', 'suppliers__name')
+    search_fields = ('sku', 'name', 'alias_name', 'description', 'suppliers__name')
     readonly_fields = ('formatted_base_cost',)
     filter_horizontal = ('categories', 'suppliers', 'gallery_images',)
     inlines = [ProductContentSectionInline, ProductPriceTierInline]

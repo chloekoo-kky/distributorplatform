@@ -16,11 +16,17 @@
             ...manageContentMixin(),
             ...manageImageMixin(),
 
+            mobileNavOpen: false,
+
             init() {
                 // Call init methods from mixins if they exist
                 this.initCore();
                 if (this.initProducts) this.initProducts();
                 if (this.initContent) this.initContent();
+
+                this.$watch('mobileNavOpen', (open) => {
+                    document.body.style.overflow = open ? 'hidden' : '';
+                });
             }
         }));
     });

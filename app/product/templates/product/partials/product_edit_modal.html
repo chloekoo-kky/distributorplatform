@@ -47,6 +47,14 @@
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <template x-if="productEditErrors.name"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.name.join(', ')"></p></template>
                     </div>
+                    <div class="md:col-span-2">
+                        <label for="id_edit_product_alias" class="font-semibold text-gray-700 block mb-1">Product alias name</label>
+                        <input type="text" name="alias_name" id="id_edit_product_alias" x-model="productEditData.alias_name"
+                               placeholder="Optional — used in manual order search & copy summary"
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <p class="text-xs text-gray-500 mt-1">If set, this label is used when copying order summaries and in manual order entry. Searched together with the full product name.</p>
+                        <template x-if="productEditErrors.alias_name"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.alias_name.join(', ')"></p></template>
+                    </div>
                     <div>
                         <label for="id_edit_product_sku" class="font-semibold text-gray-700 block mb-1">SKU</label>
                         <input type="text" name="sku" id="id_edit_product_sku" x-model="productEditData.sku"

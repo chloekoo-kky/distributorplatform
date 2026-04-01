@@ -36,10 +36,11 @@ def manage_dashboard(request):
 
     # --- 1. Filter & Dropdown Data (Needed for Modals/Sidebar) ---
     group_to_categories_map = {}
-    all_categories_set = set()
 
-    # Pre-fetch categories
-    all_categories_list_from_db = list(Category.objects.select_related('group').all())
+    # Categories: group name, then category display_order, then name (matches Category.Meta.ordering scope per group)
+    all_categories_list_from_db = list(
+        Category.objects.select_related('group').order_by('group__name', 'display_order', 'name')
+    )
 
     for cat in all_categories_list_from_db:
         if cat.group and cat.group.name and cat.name:
@@ -49,15 +50,22 @@ def manage_dashboard(request):
                 if group_name not in group_to_categories_map:
                     group_to_categories_map[group_name] = []
                 group_to_categories_map[group_name].append(cat_name)
-                all_categories_set.add(cat_name)
 
     all_category_groups = sorted(list(group_to_categories_map.keys()))
-    all_categories_flat_list = sorted(list(all_categories_set))
+    # Flat list: unique category names in display order (first occurrence wins if the same name exists in multiple groups)
+    all_categories_flat_list = []
+    seen_category_names = set()
+    for cat in all_categories_list_from_db:
+        if cat.group and cat.group.name and cat.name:
+            cat_name = cat.name.strip()
+            if cat_name and cat_name not in seen_category_names:
+                seen_category_names.add(cat_name)
+                all_categories_flat_list.append(cat_name)
 
-    # Formatted list for modals
+    # Formatted list for modals (same order as filters: group, display_order, name)
     all_categories_list = [
         {'id': cat.id, 'name': str(cat)}
-        for cat in sorted(all_categories_list_from_db, key=lambda c: (c.group.name if c.group else '', c.name))
+        for cat in sorted(all_categories_list_from_db, key=lambda c: (c.group.name if c.group else '', c.display_order, c.name))
     ]
 
     all_suppliers_list = [

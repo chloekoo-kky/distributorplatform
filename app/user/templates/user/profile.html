@@ -590,7 +590,9 @@ document.addEventListener('alpine:init', () => {
             return this.products.filter(p => {
                 const sku = (p.sku || '').toString().toLowerCase();
                 const name = (p.name || '').toString().toLowerCase();
-                return sku.includes(q) || name.includes(q);
+                const alias = (p.alias_name || '').toString().toLowerCase();
+                const display = (p.display_name || '').toString().toLowerCase();
+                return sku.includes(q) || name.includes(q) || alias.includes(q) || display.includes(q);
             }).slice(0, 15);
         },
 
@@ -658,6 +660,7 @@ document.addEventListener('alpine:init', () => {
                     productId: item.product_id,
                     productSku: item.sku || '',
                     productName: item.name || '',
+                    productDisplayName: item.display_name || item.name || '',
                     quantity: item.quantity,
                     platformPrice: item.platform_price || '',
                     actualUnitPrice: item.actual_unit_price || '0.00',
@@ -693,6 +696,9 @@ document.addEventListener('alpine:init', () => {
             const price = p.selling_price || '0.00';
             this.lines.push({
                 productId: parseInt(p.id, 10),
+                productSku: p.sku || '',
+                productName: p.name || '',
+                productDisplayName: p.display_name || p.name || '',
                 quantity: 1,
                 platformPrice: price,
                 actualUnitPrice: price

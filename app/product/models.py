@@ -100,6 +100,11 @@ class CategoryContentSection(models.Model):
 
 class Product(models.Model):
     name = models.CharField(max_length=200)
+    alias_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Optional short or alternate name for manual orders and internal copy (e.g. platform listing title). Searched alongside product name.",
+    )
     sku = models.CharField(
         max_length=100,
         unique=True,
@@ -198,6 +203,14 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def order_display_name(self) -> str:
+        """Label for orders, WhatsApp summaries, and copy: alias if set, otherwise full product name."""
+        alias = (self.alias_name or '').strip()
+        if alias:
+            return alias
+        return (self.name or '').strip()
 
     @property
     def name_lines(self):

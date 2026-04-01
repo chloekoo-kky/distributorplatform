@@ -342,6 +342,8 @@ def api_manual_order_products(request):
         product_list.append({
             'id': p.id,
             'name': p.name,
+            'alias_name': p.alias_name or '',
+            'display_name': p.order_display_name,
             'sku': p.sku or '-',
             'selling_price': str(p.selling_price) if p.selling_price is not None else None,
             'base_cost': str(p.base_cost) if p.base_cost is not None else '0.00',
@@ -735,9 +737,10 @@ def api_submit_manual_order(request):
     ]
     items_summary = []
     for item in order_items:
-        msg_lines.append(f"- {item.product.name} (x{item.quantity})")
+        disp = item.product.order_display_name
+        msg_lines.append(f"- {disp} (x{item.quantity})")
         items_summary.append({
-            'product_name': item.product.name,
+            'product_name': disp,
             'quantity': item.quantity,
             'unit_price': str(item.selling_price),
             'line_total': str(item.total_price),
@@ -794,6 +797,7 @@ def api_manual_order_detail(request, order_id):
             'product_id': item.product_id,
             'sku': item.product.sku or '',
             'name': item.product.name,
+            'display_name': item.product.order_display_name,
             'quantity': item.quantity,
             'platform_price': str(item.platform_price) if item.platform_price is not None else '',
             'actual_unit_price': str(item.actual_unit_price or item.selling_price),
@@ -1004,9 +1008,10 @@ def api_update_manual_order(request, order_id):
     ]
     items_summary = []
     for item in order_items:
-        msg_lines.append(f"- {item.product.name} (x{item.quantity})")
+        disp = item.product.order_display_name
+        msg_lines.append(f"- {disp} (x{item.quantity})")
         items_summary.append({
-            'product_name': item.product.name,
+            'product_name': disp,
             'quantity': item.quantity,
             'unit_price': str(item.selling_price),
             'line_total': str(item.total_price),
@@ -1059,7 +1064,7 @@ def order_success_view(request, order_id):
     ]
 
     for item in order_items:
-        msg_lines.append(f"- {item.product.name} (x{item.quantity})")
+        msg_lines.append(f"- {item.product.order_display_name} (x{item.quantity})")
 
     msg_lines.append("")
     msg_lines.append(f"*Total Amount: RM {subtotal:.2f}*")
@@ -1341,6 +1346,7 @@ def api_get_order_items(request, order_id):
     for item in items:
         data.append({
             'product_name': item.product.name,
+            'summary_name': item.product.order_display_name,
             'sku': item.product.sku or '-',
             'quantity': item.quantity,
             'selling_price': float(item.selling_price),

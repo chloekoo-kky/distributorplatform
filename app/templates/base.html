@@ -141,6 +141,15 @@
                     return `RM ${Number(value).toFixed(2)}`;
                 }
             });
+
+            Alpine.data('categoryStickyNav', () => ({
+                categoryNavOpen: false,
+                init() {
+                    this.$watch('categoryNavOpen', (open) => {
+                        document.body.style.overflow = open ? 'hidden' : '';
+                    });
+                },
+            }));
         });
     </script>
 
@@ -396,9 +405,88 @@
 
     {% block full_width_sticky_nav %}
     {% if allowed_categories_list %}
-    <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav class="-mb-px flex space-x-8 overflow-x-auto pb-2 pt-2" aria-label="Tabs">
+    <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200"
+         x-data="categoryStickyNav()"
+         @keydown.escape.window="categoryNavOpen = false"
+         @resize.window="if (window.innerWidth >= 768) categoryNavOpen = false">
+
+        {# --- Mobile: open categories --- #}
+        <div class="md:hidden flex items-center gap-3 px-4 sm:px-6 py-2.5">
+            <button type="button"
+                    @click="categoryNavOpen = true"
+                    class="inline-flex items-center justify-center rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    :aria-expanded="categoryNavOpen"
+                    aria-controls="category-nav-drawer"
+                    aria-label="Open category menu">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
+            <span class="text-sm font-medium text-gray-800">Categories</span>
+        </div>
+
+        {# --- Mobile: drawer --- #}
+        <div class="md:hidden">
+            <div class="fixed inset-x-0 top-16 bottom-0 z-[55] bg-gray-900/50"
+                 x-show="categoryNavOpen"
+                 x-cloak
+                 x-transition:enter="ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 @click="categoryNavOpen = false"
+                 aria-hidden="true"></div>
+            <aside id="category-nav-drawer"
+                   class="fixed left-0 top-16 bottom-0 z-[60] flex w-72 max-w-[min(20rem,85vw)] flex-col border-r border-gray-200 bg-white shadow-xl"
+                   x-show="categoryNavOpen"
+                   x-cloak
+                   x-transition:enter="transform transition ease-out duration-200"
+                   x-transition:enter-start="-translate-x-full"
+                   x-transition:enter-end="translate-x-0"
+                   x-transition:leave="transform transition ease-in duration-150"
+                   x-transition:leave-start="translate-x-0"
+                   x-transition:leave-end="-translate-x-full"
+                   role="dialog"
+                   aria-modal="true"
+                   aria-labelledby="category-nav-drawer-title"
+                   @click.capture="if ($event.target.closest('a')) categoryNavOpen = false">
+                <div class="flex items-center justify-between border-b border-gray-200 px-3 py-3">
+                    <span id="category-nav-drawer-title" class="text-sm font-semibold text-gray-900">Categories</span>
+                    <button type="button"
+                            @click="categoryNavOpen = false"
+                            class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            aria-label="Close category menu">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <nav class="min-h-0 flex-1 overflow-y-auto px-2 py-3 flex flex-col space-y-1" aria-label="Product categories">
+                    {% for category in allowed_categories_list %}
+                    <a href="{% url 'product:product_list' %}?category={{ category.code }}"
+                       class="flex flex-col items-start w-full py-2 px-3 rounded-md font-medium text-sm transition-colors duration-200
+                            {% if selected_category_code == category.code %}
+                                bg-indigo-50 text-indigo-700
+                            {% else %}
+                                text-gray-500 hover:bg-gray-50 hover:text-gray-900
+                            {% endif %}">
+                        {% with lines=category.display_name_lines %}
+                            <span class="text-base leading-tight">{{ lines.0 }}</span>
+                            {% if lines|length > 1 %}
+                                <span class="text-xs leading-tight opacity-80">{{ lines.1 }}</span>
+                            {% endif %}
+                        {% endwith %}
+                    </a>
+                    {% endfor %}
+                </nav>
+            </aside>
+        </div>
+
+        {# --- Desktop: horizontal tabs --- #}
+        <div class="hidden md:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav class="-mb-px flex space-x-8 pb-2 pt-2" aria-label="Tabs">
                 {% for category in allowed_categories_list %}
                 <a href="{% url 'product:product_list' %}?category={{ category.code }}"
                 class="flex flex-col justify-center items-center py-2 px-2 border-b-2 font-medium transition-colors duration-200 min-w-max

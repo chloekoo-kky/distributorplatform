@@ -16,7 +16,7 @@
             productEditIsLoading: false,
             productEditIsSubmitting: false,
             productEditData: {
-                id: null, name: '', sku: '', description: '', origin_country: '',
+                id: null, name: '', alias_name: '', sku: '', description: '', origin_country: '',
                 members_only: false, is_featured: false, is_best_seller: false, // <--- ADDED
                 categories: [], suppliers: [], featured_image: null,
                 gallery_images: [], update_url: '', selectedImageUrl: ''
@@ -322,6 +322,7 @@
                 this.productEditErrors = {};
                 const formData = new FormData();
                 formData.append('name', this.productEditData.name);
+                formData.append('alias_name', this.productEditData.alias_name || '');
                 formData.append('sku', this.productEditData.sku || '');
                 formData.append('description_title', this.productEditData.description_title || '');
                 formData.append('description', this.productEditData.description || '');

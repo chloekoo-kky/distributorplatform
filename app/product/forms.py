@@ -44,12 +44,13 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = [
-            'name', 'sku', 'description_title', 'description', 'origin_country',
+            'name', 'alias_name', 'sku', 'description_title', 'description', 'origin_country',
             'members_only', 'is_featured', 'is_best_seller',  # <--- Added is_best_seller
             'categories', 'suppliers', 'featured_image', 'gallery_images'
         ]
         widgets = {
             'name': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
+            'alias_name': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500', 'placeholder': 'Optional (manual orders & copy)'}),
             'sku': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'}),
             'description_title': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold', 'placeholder': 'Section Title (e.g. Description)'}),
             'origin_country': forms.TextInput(attrs={'class': 'w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500', 'placeholder': 'e.g. Korea'}),

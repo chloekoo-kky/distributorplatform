@@ -148,9 +148,31 @@
                 this.filterCategory = categoryName;
                 this.fetchProducts(1);
             },
+            /** First segment before "|" for dual-language category names; filter value stays full string. */
+            categoryFilterLabel(category) {
+                if (category === null || category === undefined || typeof category !== 'string') return '';
+                const i = category.indexOf('|');
+                return (i >= 0 ? category.slice(0, i) : category).trim();
+            },
             formatPrice(value) {
                 if (value === null || value === undefined) return 'N/A';
                 return `RM ${Number(value).toFixed(2)}`;
+            },
+            /** Grid card: "RM x.xx N%" = unit profit + margin (matches list view profit + margin columns). */
+            gridProfitCardLabel(product) {
+                if (!product || product.base_cost == null || product.selling_price == null) return '';
+                const sell = parseFloat(product.selling_price);
+                const base = parseFloat(product.base_cost);
+                if (isNaN(sell) || isNaN(base)) return '';
+                const profit = sell - base;
+                let pct = null;
+                if (product.profit_margin != null && product.profit_margin !== '' && !isNaN(parseFloat(product.profit_margin))) {
+                    pct = Number(product.profit_margin);
+                } else if (sell > 0) {
+                    pct = ((sell - base) / sell) * 100;
+                }
+                const marginPart = pct != null && !isNaN(pct) ? ` (${pct.toFixed(0)}%)` : '';
+                return `${this.formatPrice(profit)}${marginPart}`;
             },
 
             // --- Selection Methods ---
@@ -159,6 +181,19 @@
                     this.selectedIds = [];
                 } else {
                     this.selectedIds = this.items.map(item => item.id);
+                }
+            },
+            /** Toggle selection when clicking row/card blank area (not buttons, links, or form controls). */
+            toggleProductRowSelect(productId, event) {
+                if (!event || event.target.closest('button, a, input, label, select, textarea, [data-no-row-select]')) {
+                    return;
+                }
+                const id = Number(productId);
+                if (Number.isNaN(id)) return;
+                if (this.selectedIds.includes(id)) {
+                    this.selectedIds = this.selectedIds.filter((i) => i !== id);
+                } else {
+                    this.selectedIds = [...this.selectedIds, id];
                 }
             },
             exportSelectedPdf() {
