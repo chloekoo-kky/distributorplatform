@@ -521,19 +521,33 @@ def scrape_website_products(request):
 @staff_required
 def export_products_xlsx(request):
     """
-    Export all products to an Excel (.xlsx) workbook (native Unicode; symbols like ® display correctly).
+    Export products to an Excel (.xlsx) workbook (native Unicode; symbols like ® display correctly).
+
+    Query parameter `ids`: comma-separated product PKs. When present and valid, only those rows
+    are exported; otherwise all products are exported.
     """
     logger.info("[export_products_xlsx] View called. Starting export.")
     try:
         product_resource = ProductResource()
-        queryset = Product.objects.all()
+        queryset = Product.objects.all().order_by('name')
+        ids_param = (request.GET.get('ids') or '').strip()
+        id_list = []
+        if ids_param:
+            id_list = [int(p) for p in ids_param.split(',') if p.strip().isdigit()]
+            if id_list:
+                queryset = Product.objects.filter(id__in=id_list).order_by('name')
+
         dataset = product_resource.export(queryset)
         xlsx_bytes = dataset.export('xlsx')
         response = HttpResponse(
             xlsx_bytes,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        filename = f"products-{datetime.date.today()}.xlsx"
+        today = datetime.date.today()
+        if id_list:
+            filename = f"products-selected-{today}.xlsx"
+        else:
+            filename = f"products-{today}.xlsx"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         logger.info(f"[export_products_xlsx] Successfully created XLSX: {filename}")
         return response

@@ -206,6 +206,15 @@
                 const url = `{% url 'product:export_products_pdf' %}?ids=${ids}`;
                 window.open(url, '_blank');
             },
+            exportProductsXlsx() {
+                const base = '{% url 'product:export_products_xlsx' %}';
+                if (this.selectedIds.length > 0) {
+                    const ids = this.selectedIds.join(',');
+                    window.location.href = `${base}?ids=${encodeURIComponent(ids)}`;
+                } else {
+                    window.location.href = base;
+                }
+            },
             async deleteSelectedProducts() {
                 if (this.selectedIds.length === 0) {
                     Alpine.store('globals').showToast('No products selected', 'error');

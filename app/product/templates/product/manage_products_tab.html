@@ -87,14 +87,15 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                             </svg>
                         </button>
-                        <a href="{% url 'product:export_products_xlsx' %}"
-                           class="inline-flex items-center justify-center h-10 w-10 rounded-md text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 sm:focus:ring-offset-2"
-                           title="Export all products to Excel"
-                           aria-label="Export all products to Excel">
+                        <button type="button"
+                                @click="exportProductsXlsx()"
+                                class="inline-flex items-center justify-center h-10 w-10 rounded-md text-white bg-green-600 hover:bg-green-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 sm:focus:ring-offset-2"
+                                :title="selectedIds.length > 0 ? ('Export ' + selectedIds.length + ' selected product(s) to Excel') : 'Export all products to Excel'"
+                                :aria-label="selectedIds.length > 0 ? ('Export ' + selectedIds.length + ' selected products to Excel') : 'Export all products to Excel'">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
-                        </a>
+                        </button>
                         <div x-show="selectedIds.length > 0" class="flex items-center gap-1.5">
                             <button type="button"
                                     @click="exportSelectedPdf()"
