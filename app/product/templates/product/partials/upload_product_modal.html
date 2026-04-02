@@ -22,20 +22,33 @@
         </p>
 
         <p class="text-sm text-gray-600 mb-4">
-            Select a .csv or .xlsx file to import. The file should match the export format.
-            If a product has a blank <code class="text-xs bg-gray-100 p-1 rounded">sku</code>, the system will auto-generate one from the English name.
+            Select a .csv or .xlsx file to import. Use the same columns as <strong>Export products to Excel</strong>.
+            Rows are matched by <code class="text-xs bg-gray-100 p-1 rounded">sku</code> for updates. The exported
+            <code class="text-xs bg-gray-100 p-1 rounded">id</code> column is ignored on import.
         </p>
         <p class="text-sm text-gray-600 mb-4">
-            Columns:
-            <code class="text-xs bg-gray-100 p-1 rounded">id</code>,
+            <strong>Updating:</strong> only <code class="text-xs bg-gray-100 p-1 rounded">sku</code> is required to find the product.
+            If <code class="text-xs bg-gray-100 p-1 rounded">name</code>, <code class="text-xs bg-gray-100 p-1 rounded">categories</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">suppliers</code>, or other optional columns are left blank, existing values for that product are kept.
+        </p>
+        <p class="text-sm text-gray-600 mb-4">
+            <strong>New products:</strong> if <code class="text-xs bg-gray-100 p-1 rounded">sku</code> is blank, one is generated from the English
+            <code class="text-xs bg-gray-100 p-1 rounded">name</code>. If <code class="text-xs bg-gray-100 p-1 rounded">name</code> is blank but
+            <code class="text-xs bg-gray-100 p-1 rounded">sku</code> is set, the name defaults to that SKU.
+        </p>
+        <p class="text-sm text-gray-600 mb-4">
+            Columns include
             <code class="text-xs bg-gray-100 p-1 rounded">sku</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">name</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">display_order</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">description</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">origin_country</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">members_only</code> (1/0),
-            <code class="text-xs bg-gray-100 p-1 rounded">categories</code> (Comma-separated names),
-            <code class="text-xs bg-gray-100 p-1 rounded">suppliers</code> (Comma-separated names),
+            <code class="text-xs bg-gray-100 p-1 rounded">categories</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">suppliers</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">selling_price</code>,
-            <code class="text-xs bg-gray-100 p-1 rounded">profit_margin</code>
+            <code class="text-xs bg-gray-100 p-1 rounded">profit_margin</code>,
+            and read-only <code class="text-xs bg-gray-100 p-1 rounded">base_cost</code> (export only).
         </p>
 
         <!-- Error Banner -->

@@ -157,7 +157,44 @@ class ProductResource(resources.ModelResource):
         cost = product.base_cost
         return cost if cost is not None else None
 
+    def _assign_sku_from_name(self, row):
+        """Set row['sku'] from English portion of row['name'] when sku is missing (collision-aware)."""
+        if row.get('sku') or not row.get('name'):
+            return
+        original_name = str(row['name'])
+        english_part = original_name.split('|')[0].strip() if '|' in original_name else original_name
+        clean_string = re.sub(r'[^a-zA-Z0-9\s]', ' ', english_part).strip()
+        words = clean_string.split()
+        if not words:
+            random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            final_sku = f"PRD-{random_suffix}"
+        else:
+            part1 = words[0][:3].upper().ljust(3, 'X')
+            if len(words) > 1:
+                part2 = words[1][:3].upper().ljust(3, 'X')
+            else:
+                part2 = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            base_sku = f"{part1}-{part2}"
+            final_sku = base_sku
+
+            def is_sku_taken(check_sku):
+                return check_sku in self._generated_skus or Product.objects.filter(sku=check_sku).exists()
+
+            if is_sku_taken(final_sku):
+                if len(words) > 2:
+                    part3 = words[2][:3].upper().ljust(3, 'X')
+                    final_sku = f"{base_sku}-{part3}"
+                while is_sku_taken(final_sku):
+                    random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=3))
+                    final_sku = f"{base_sku}-{random_suffix}"
+
+        self._generated_skus.add(final_sku)
+        row['sku'] = final_sku
+
     def before_import_row(self, row, **kwargs):
+        # Do not apply exported database PK — updates are keyed by SKU only.
+        row.pop('id', None)
+
         # 0. Normalize product name: replace underscores with spaces, then PascalCase to Title Case
         if row.get('name') and isinstance(row['name'], str):
             name = row['name'].replace('_', ' ').strip()
@@ -171,54 +208,41 @@ class ProductResource(resources.ModelResource):
             row['sku'] = None
 
         # 2. Auto-generate SKU from name if SKU is missing
-        if not row.get('sku') and row.get('name'):
-            original_name = str(row['name'])
+        self._assign_sku_from_name(row)
 
-            # Step A: Split by '|' to get the English part (assuming "English Name | 中文名")
-            english_part = original_name.split('|')[0].strip() if '|' in original_name else original_name
+        def _is_blank(val):
+            if val is None:
+                return True
+            if isinstance(val, str) and not val.strip():
+                return True
+            return False
 
-            # Step B: Remove special characters (keep only letters, numbers, and spaces)
-            clean_string = re.sub(r'[^a-zA-Z0-9\s]', ' ', english_part).strip()
+        sku_key = row.get('sku')
+        if isinstance(sku_key, str):
+            sku_key = sku_key.strip()
+            row['sku'] = sku_key or None
+            sku_key = row['sku']
 
-            # Step C: Extract Words
-            words = clean_string.split()
-            if not words:
-                # Fallback if name has no valid characters
-                random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-                final_sku = f"PRD-{random_suffix}"
-            else:
-                # First word, first 3 chars, uppercase, padded with 'X' if less than 3 chars
-                part1 = words[0][:3].upper().ljust(3, 'X')
-
-                if len(words) > 1:
-                    # Second word, first 3 chars, uppercase
-                    part2 = words[1][:3].upper().ljust(3, 'X')
-                else:
-                    # Auto-generate easily distinguishable chars if no second word
-                    part2 = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-
-                base_sku = f"{part1}-{part2}"
-                final_sku = base_sku
-
-                # Helper function to check collisions (Database + Current File session)
-                def is_sku_taken(check_sku):
-                    return check_sku in self._generated_skus or Product.objects.filter(sku=check_sku).exists()
-
-                # Step D: Collision Resolution
-                if is_sku_taken(final_sku):
-                    # Try to extend using the 3rd word
-                    if len(words) > 2:
-                        part3 = words[2][:3].upper().ljust(3, 'X')
-                        final_sku = f"{base_sku}-{part3}"
-
-                    # If it STILL collides (or no 3rd word was available), append random 3-char string
-                    while is_sku_taken(final_sku):
-                        random_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=3))
-                        final_sku = f"{base_sku}-{random_suffix}"
-
-            # Record it in our session set and assign to row
-            self._generated_skus.add(final_sku)
-            row['sku'] = final_sku
+        # Updates (existing SKU): omit blank optional cells so we do not clear categories, suppliers, etc.
+        if sku_key and Product.objects.filter(sku=sku_key).exists():
+            for key in (
+                'categories',
+                'suppliers',
+                'name',
+                'description',
+                'origin_country',
+                'display_order',
+                'members_only',
+                'selling_price',
+                'profit_margin',
+            ):
+                if _is_blank(row.get(key)):
+                    row.pop(key, None)
+        else:
+            # New row: DB requires a non-empty name; default from SKU when the file leaves name blank.
+            if _is_blank(row.get('name')):
+                row['name'] = str(sku_key) if sku_key else 'Imported product'
+            self._assign_sku_from_name(row)
 
     @staticmethod
     def get_effective_sku_for_row(row_dict):
@@ -248,7 +272,8 @@ class ProductResource(resources.ModelResource):
 
     class Meta:
         model = Product
-        import_id_fields = ['id']
+        # Use SKU as the natural key so uploads can update by SKU without an id column.
+        import_id_fields = ['sku']
 
         fields = (
             'id', 'sku', 'name', 'display_order', 'description', 'origin_country',
