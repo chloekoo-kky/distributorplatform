@@ -198,8 +198,9 @@ class ProductResource(resources.ModelResource):
         # 0. Normalize product name: replace underscores with spaces, then PascalCase to Title Case
         if row.get('name') and isinstance(row['name'], str):
             name = row['name'].replace('_', ' ').strip()
-            # Split PascalCase/camelCase (insert space before capitals that follow lowercase or digit)
-            name = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', name)
+            # Split camelCase only after lowercase (not digits): "100U" and "3M" stay intact;
+            # "iPhone"/"camelCase" still break before capitals that follow a letter.
+            name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name)
             row['name'] = name.title().strip()
 
         # 1. Handle missing or blank SKU
