@@ -142,6 +142,23 @@
                 }
             });
 
+            // Dismiss overlay only when press+release both happen on the backdrop (not drag-out from modal content).
+            Alpine.store('modalBackdrop', {
+                dismissArmed: false,
+                armDismiss() {
+                    this.dismissArmed = true;
+                },
+                endDismissOnBackdrop(closeFn) {
+                    if (this.dismissArmed) {
+                        closeFn();
+                    }
+                    this.dismissArmed = false;
+                },
+                cancelDismissArm() {
+                    this.dismissArmed = false;
+                },
+            });
+
             Alpine.data('categoryStickyNav', () => ({
                 categoryNavOpen: false,
                 init() {

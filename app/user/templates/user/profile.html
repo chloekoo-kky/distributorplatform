@@ -407,8 +407,12 @@
          x-show="showManualOrderSuccessModal"
          class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-60 backdrop-blur-sm p-4"
          style="display: none;">
-        <div class="fixed inset-0" @mousedown.self="showManualOrderSuccessModal = false"></div>
-        <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 text-center">
+        <div class="fixed inset-0"
+             @mousedown.self="$store.modalBackdrop.armDismiss()"
+             @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => showManualOrderSuccessModal = false)"
+             @mouseup.window="$store.modalBackdrop.cancelDismissArm()"></div>
+        <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 text-center"
+             @mousedown="$store.modalBackdrop.cancelDismissArm()">
             <div class="w-16 h-16 bg-green-100 rounded-full p-3 flex items-center justify-center mx-auto">
                 <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
             </div>

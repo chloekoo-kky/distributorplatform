@@ -11,9 +11,13 @@
      x-transition:leave-end="opacity-0"
      @keydown.escape.window="showManualOrderModal = false">
 
-    <div class="fixed inset-0" @mousedown.self="showManualOrderModal = false"></div>
+    <div class="fixed inset-0"
+         @mousedown.self="$store.modalBackdrop.armDismiss()"
+         @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => showManualOrderModal = false)"
+         @mouseup.window="$store.modalBackdrop.cancelDismissArm()"></div>
 
     <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+         @mousedown="$store.modalBackdrop.cancelDismissArm()"
          x-data="manualOrderData()"
          x-init="init()"
          x-transition:enter="transition ease-out duration-300"

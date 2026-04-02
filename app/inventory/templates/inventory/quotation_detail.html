@@ -404,8 +404,12 @@
                  x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
                  x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
                  x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-                <div class="fixed inset-0" @mousedown.self="closeEditItemModal()"></div>
+                <div class="fixed inset-0"
+                     @mousedown.self="$store.modalBackdrop.armDismiss()"
+                     @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => closeEditItemModal())"
+                     @mouseup.window="$store.modalBackdrop.cancelDismissArm()"></div>
                 <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 m-4"
+                     @mousedown="$store.modalBackdrop.cancelDismissArm()"
                      x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
                      x-transition:enter-end="opacity-100 transform scale-100"
                      x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
@@ -449,8 +453,12 @@
                  aria-modal="true">
                 <div class="flex min-h-screen items-center justify-center p-4">
                     <div x-show="showImportModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @mousedown.self="closeImportModal()"></div>
-                    <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                         @mousedown.self="$store.modalBackdrop.armDismiss()"
+                         @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => closeImportModal())"
+                         @mouseup.window="$store.modalBackdrop.cancelDismissArm()"></div>
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+                         @mousedown="$store.modalBackdrop.cancelDismissArm()">
                         <h3 id="import-modal-title" class="text-lg font-semibold text-gray-900 mb-4">Import items from file</h3>
                         <p class="text-sm text-gray-500 mb-4">Upload a CSV or Excel file with columns: <strong>Product</strong> (or Product Name), <strong>Product SKU</strong> (optional), <strong>Category</strong> (optional; used when creating new products), <strong>Quantity</strong>, <strong>Quoted Price (Unit)</strong>.</p>
                         <form @submit.prevent="submitImportFile()" class="space-y-4">
@@ -490,8 +498,12 @@
                  aria-modal="true">
                 <div class="flex min-h-screen items-center justify-center p-4">
                     <div x-show="showImportMappingModal" x-transition:enter="ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @mousedown.self="closeImportMappingModal()"></div>
-                    <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                         class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                         @mousedown.self="$store.modalBackdrop.armDismiss()"
+                         @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => closeImportMappingModal())"
+                         @mouseup.window="$store.modalBackdrop.cancelDismissArm()"></div>
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+                         @mousedown="$store.modalBackdrop.cancelDismissArm()">
                         <div class="p-6 border-b">
                             <h3 id="import-mapping-title" class="text-lg font-semibold text-gray-900">Review and map products</h3>
                             <p class="text-sm text-gray-500 mt-1">Match rows to existing products or create new ones. Then confirm to add items to this quotation.</p>

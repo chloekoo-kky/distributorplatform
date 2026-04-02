@@ -4,10 +4,13 @@
      style="display: none;"
      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4 sm:p-6"
      @keydown.escape.window="showPricingModal = false"
-     @mousedown.self="showPricingModal = false">
+     @mousedown.self="$store.modalBackdrop.armDismiss()"
+     @mouseup.self="$store.modalBackdrop.endDismissOnBackdrop(() => showPricingModal = false)"
+     @mouseup.window="$store.modalBackdrop.cancelDismissArm()">
 
     {# MODAL CARD #}
-    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+    <div class="relative bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]"
+         @mousedown="$store.modalBackdrop.cancelDismissArm()">
 
         {# HEADER #}
         <div class="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
