@@ -72,6 +72,7 @@
             mergeSearchResults: [],
             mergeSearchSelectedIds: [],
             mergeSearchLoading: false,
+            savingDisplayOrder: false,
 
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
@@ -113,7 +114,12 @@
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
                     });
                     const data = await response.json();
-                    this.items = data.items; this.pagination = data.pagination;
+                    const rows = data.items || [];
+                    this.items = rows.map((p) => {
+                        const ord = this.normDisplayOrder(p.display_order);
+                        return { ...p, display_order: ord, _serverDisplayOrder: ord };
+                    });
+                    this.pagination = data.pagination || {};
                 } catch (error) { console.error('Failed to fetch products:', error); }
                 finally {
                     this.isLoading = false;
@@ -157,6 +163,76 @@
             formatPrice(value) {
                 if (value === null || value === undefined) return 'N/A';
                 return `RM ${Number(value).toFixed(2)}`;
+            },
+            normDisplayOrder(v) {
+                const n = parseInt(v, 10);
+                return Number.isNaN(n) ? 0 : n;
+            },
+            get displayOrderDirty() {
+                if (!this.items || !this.items.length) return false;
+                return this.items.some(
+                    (p) => this.normDisplayOrder(p.display_order) !== this.normDisplayOrder(p._serverDisplayOrder)
+                );
+            },
+            async saveAllDirtyDisplayOrders() {
+                if (!this.displayOrderDirty) return;
+                const page = this.pagination.current_page || 1;
+                const dirty = this.items.filter(
+                    (p) => this.normDisplayOrder(p.display_order) !== this.normDisplayOrder(p._serverDisplayOrder)
+                );
+                for (const p of dirty) {
+                    const raw = p.display_order;
+                    if (raw === '' || raw === null || (typeof raw === 'string' && raw.trim() === '')) {
+                        Alpine.store('globals').showToast('Display order cannot be empty.', 'error');
+                        return;
+                    }
+                    if (Number.isNaN(parseInt(raw, 10))) {
+                        Alpine.store('globals').showToast('Display order must be a whole number for every edited row.', 'error');
+                        return;
+                    }
+                }
+                this.savingDisplayOrder = true;
+                const url = `{% url 'product:api_update_product_display_order' %}`;
+                const headers = {
+                    'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                };
+                try {
+                    const results = await Promise.all(
+                        dirty.map((p) => {
+                            const val = this.normDisplayOrder(p.display_order);
+                            return fetch(url, {
+                                method: 'POST',
+                                headers,
+                                body: JSON.stringify({ id: p.id, display_order: val }),
+                            }).then(async (response) => {
+                                let data = {};
+                                try {
+                                    data = await response.json();
+                                } catch (e) { /* ignore */ }
+                                return { response, data };
+                            });
+                        })
+                    );
+                    const firstBad = results.find((r) => !r.response.ok || !r.data.success);
+                    if (firstBad) {
+                        Alpine.store('globals').showToast(
+                            firstBad.data.error || 'Could not update one or more display orders.',
+                            'error'
+                        );
+                    } else {
+                        Alpine.store('globals').showToast('Display order saved.');
+                    }
+                    await this.fetchProducts(page);
+                } catch (err) {
+                    console.error('saveAllDirtyDisplayOrders failed:', err);
+                    Alpine.store('globals').showToast('Network error while saving display order.', 'error');
+                    await this.fetchProducts(page);
+                } finally {
+                    this.savingDisplayOrder = false;
+                }
             },
             /** Grid card: "RM x.xx N%" = unit profit + margin (matches list view profit + margin columns). */
             gridProfitCardLabel(product) {

@@ -178,8 +178,8 @@ class Product(models.Model):
         help_text="If checked, this product will be highlighted as a Best Seller."
     )
     display_order = models.IntegerField(
-        default=0,
-        help_text="Order of display on the product list page (lowest number appears first)."
+        default=99,
+        help_text="Order of display on the product list page (lowest number appears first). New products default to 99 until set."
     )
     categories = models.ManyToManyField(Category, related_name='products', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

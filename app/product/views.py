@@ -826,7 +826,10 @@ def api_manage_products(request):
     limit = request.GET.get('limit', 50)
 
     queryset = Product.objects.select_related('featured_image').prefetch_related(
-        Prefetch('categories', queryset=Category.objects.select_related('group')),
+        Prefetch(
+            'categories',
+            queryset=Category.objects.select_related('group').order_by('display_order', 'name'),
+        ),
         'suppliers',
         Prefetch(
             'quotationitem_set',
@@ -835,7 +838,7 @@ def api_manage_products(request):
                                           .order_by('-quotation__date_quoted'),
             to_attr='latest_quotation_items'
         )
-    ).order_by('name')
+    ).order_by('display_order', 'name')
 
     if search_query:
         queryset = queryset.filter(
@@ -922,6 +925,7 @@ def api_manage_products(request):
             'id': product.pk,
             'sku': product.sku or '-',
             'name': product.name,
+            'display_order': product.display_order,
             'selling_price': product.selling_price,
             'is_promotion': product.is_promotion,
             'promotion_rate': product.promotion_rate,
@@ -950,6 +954,29 @@ def api_manage_products(request):
         }
     }, encoder=DjangoJSONEncoder)
 
+
+@staff_required
+def api_update_product_display_order(request):
+    """POST JSON: id (int), display_order (int). Staff only."""
+    if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
+        return JsonResponse({"success": False, "error": "Invalid request."}, status=400)
+    try:
+        payload = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"success": False, "error": "Invalid JSON payload."}, status=400)
+    raw_id = payload.get("id")
+    raw_order = payload.get("display_order")
+    if raw_id is None or raw_order is None:
+        return JsonResponse({"success": False, "error": "id and display_order are required."}, status=400)
+    try:
+        product_id = int(raw_id)
+        display_order = int(raw_order)
+    except (TypeError, ValueError):
+        return JsonResponse({"success": False, "error": "id and display_order must be integers."}, status=400)
+    updated = Product.objects.filter(pk=product_id).update(display_order=display_order)
+    if not updated:
+        return JsonResponse({"success": False, "error": "Product not found."}, status=404)
+    return JsonResponse({"success": True, "id": product_id, "display_order": display_order})
 
 
 def _normalize_product_name_for_fuzzy(value):
