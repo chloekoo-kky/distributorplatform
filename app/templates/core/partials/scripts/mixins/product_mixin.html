@@ -118,10 +118,10 @@
                     let sellingPrice = data.selling_price != null ? parseFloat(data.selling_price) : null;
 
                     if (baseCost !== null) {
-                        if (sellingPrice !== null && profitMargin === null) {
-                            if (sellingPrice > 0) {
-                                profitMargin = ((sellingPrice - baseCost) / sellingPrice) * 100;
-                            }
+                        // Selling price and tier prices are authoritative: margin follows the latest base cost
+                        // (e.g. updated quotation landed cost), not the stale profit_margin stored on the product.
+                        if (sellingPrice !== null && sellingPrice > 0) {
+                            profitMargin = ((sellingPrice - baseCost) / sellingPrice) * 100;
                         } else if (sellingPrice === null && profitMargin !== null) {
                             const marginDecimal = profitMargin / 100;
                             if (marginDecimal < 1) {
@@ -188,6 +188,15 @@
                 }
                 const price = cost / (1 - marginDecimal);
                 this.pricingData.selling_price = parseFloat(price.toFixed(2));
+            },
+
+            /** Keep selling price and tier RM prices fixed; update margin % when base cost / source changes. */
+            recalculateMarginsFromFixedPrices() {
+                this.calculateMarginFromPrice();
+                const tiers = this.pricingData.price_tiers || [];
+                for (const tier of tiers) {
+                    this.updateTierMarginFromPrice(tier);
+                }
             },
 
             calculateMarginFromPrice() {

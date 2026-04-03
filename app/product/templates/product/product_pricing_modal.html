@@ -63,7 +63,7 @@
                                                name="base_cost_source"
                                                :value="costInfo.cost"
                                                x-model="pricingData.base_cost"
-                                               @change="if (!pricingReadOnly) { pricingData.base_cost_supplier_id = costInfo.supplier_id != null ? Number(costInfo.supplier_id) : null; calculatePriceFromMargin(); }"
+                                               @change="if (!pricingReadOnly) { pricingData.base_cost_supplier_id = costInfo.supplier_id != null ? Number(costInfo.supplier_id) : null; recalculateMarginsFromFixedPrices(); }"
                                                :disabled="pricingReadOnly"
                                                class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                                     </div>
@@ -78,7 +78,7 @@
                                 </label>
                             </template>
                         </div>
-                        <p class="text-[10px] text-gray-400 mt-2">Changing the base cost source will recalculate the selling price based on the current profit margin.</p>
+                        <p class="text-[10px] text-gray-400 mt-2">Changing the base cost source updates profit margin % to match your current selling price and tier prices (RM amounts stay the same).</p>
                     </div>
                     {# ----------------------------- #}
 
