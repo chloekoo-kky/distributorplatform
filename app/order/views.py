@@ -1088,6 +1088,27 @@ def _user_can_manual_order(user):
     ).exists()
 
 
+def _manage_orders_search_q(search_query: str) -> Q:
+    """Q object for Order Management search: ID, customer (name/phone), agent, line items (product name/alias)."""
+    normalized_id_term = search_query.lstrip('#').strip()
+    search_q = (
+        Q(id__icontains=search_query) |
+        Q(customer_name__icontains=search_query) |
+        Q(customer_phone__icontains=search_query) |
+        Q(customer__phone__icontains=search_query) |
+        Q(agent__username__icontains=search_query) |
+        Q(agent__first_name__icontains=search_query) |
+        Q(agent__last_name__icontains=search_query) |
+        Q(items__product__name__icontains=search_query) |
+        Q(items__product__alias_name__icontains=search_query)
+    )
+    if normalized_id_term and normalized_id_term != search_query:
+        search_q |= Q(id__icontains=normalized_id_term)
+    if normalized_id_term.isdigit():
+        search_q |= Q(id=int(normalized_id_term))
+    return search_q
+
+
 @staff_member_required
 def manage_orders_dashboard(request):
     """Renders the dedicated Order Management Dashboard with Statistics."""
@@ -1196,23 +1217,9 @@ def api_manage_orders(request):
     if status_filter:
         orders = orders.filter(status=status_filter)
 
-    # 3. Apply Search Filter: supports Order ID (including "#123"), customer_name, and agent fields
+    # 3. Apply Search Filter: ID, customer (name/phone), agent, product name on any line item
     if search_query:
-        normalized_id_term = search_query.lstrip('#').strip()
-        search_q = (
-            Q(id__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(agent__username__icontains=search_query) |
-            Q(agent__first_name__icontains=search_query) |
-            Q(agent__last_name__icontains=search_query)
-        )
-        if normalized_id_term and normalized_id_term != search_query:
-            search_q |= Q(id__icontains=normalized_id_term)
-        if normalized_id_term.isdigit():
-            search_q |= Q(id=int(normalized_id_term))
-        orders = orders.filter(
-            search_q
-        )
+        orders = orders.filter(_manage_orders_search_q(search_query)).distinct()
 
     # --- Statistics Calculation (Scoped to current Month/Search filters) ---
     # We create a separate queryset for stats to respect Date/Search filters
@@ -1239,21 +1246,7 @@ def api_manage_orders(request):
         )
 
     if search_query:
-        normalized_id_term = search_query.lstrip('#').strip()
-        search_q = (
-            Q(id__icontains=search_query) |
-            Q(customer_name__icontains=search_query) |
-            Q(agent__username__icontains=search_query) |
-            Q(agent__first_name__icontains=search_query) |
-            Q(agent__last_name__icontains=search_query)
-        )
-        if normalized_id_term and normalized_id_term != search_query:
-            search_q |= Q(id__icontains=normalized_id_term)
-        if normalized_id_term.isdigit():
-            search_q |= Q(id=int(normalized_id_term))
-        stats_qs = stats_qs.filter(
-            search_q
-        )
+        stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
 
     total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()
     pending_orders = stats_qs.exclude(status__in=[
