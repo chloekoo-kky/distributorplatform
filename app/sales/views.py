@@ -11,7 +11,7 @@ from django.db.models import Q
 from django.core.paginator import Paginator, EmptyPage
 import json
 
-from inventory.models import Quotation, QuotationItem
+from inventory.models import Quotation
 from .models import Invoice, InvoiceItem
 from .forms import InvoiceUpdateForm
 
@@ -134,6 +134,15 @@ def create_invoice_from_quotation(request, quotation_id):
         messages.error(request, "Cannot create an invoice from a quotation with no items.")
         return redirect('inventory:quotation_detail', quotation_id=quotation.quotation_id)
 
+    order_lines = [it for it in quotation.items.all() if it.quantity and it.quantity > 0]
+    if not order_lines:
+        messages.error(
+            request,
+            "This quotation has no lines with quantity greater than zero. "
+            "Increase quantity on the items you are ordering before converting to an invoice.",
+        )
+        return redirect('inventory:quotation_detail', quotation_id=quotation.quotation_id)
+
     try:
         invoice = Invoice.objects.create(
             quotation=quotation,
@@ -144,17 +153,16 @@ def create_invoice_from_quotation(request, quotation_id):
             transportation_cost=quotation.transportation_cost or Decimal('0.00')
         )
 
-        invoice_items_to_create = []
-        for item in quotation.items.all():
-            invoice_items_to_create.append(
-                InvoiceItem(
-                    invoice=invoice,
-                    product=item.product,
-                    description=item.product.name,
-                    quantity=item.quantity,
-                    unit_price=item.quoted_price
-                )
+        invoice_items_to_create = [
+            InvoiceItem(
+                invoice=invoice,
+                product=item.product,
+                description=item.product.name,
+                quantity=item.quantity,
+                unit_price=item.quoted_price,
             )
+            for item in order_lines
+        ]
         InvoiceItem.objects.bulk_create(invoice_items_to_create)
 
         messages.success(request, f"Successfully created Invoice {invoice.invoice_id} from Quotation {quotation.quotation_id}.")

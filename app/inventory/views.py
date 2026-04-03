@@ -202,7 +202,7 @@ def api_manage_quotations(request):
     queryset = Quotation.objects.annotate(
         annotated_item_count=Count('items'),
         annotated_total_value=total_value_calc
-    ).select_related('supplier', 'invoice').order_by('-date_quoted', '-created_at')
+    ).select_related('supplier', 'invoice').prefetch_related('items').order_by('-date_quoted', '-created_at')
 
     # --- 2. Apply Filters ---
 
@@ -235,6 +235,7 @@ def api_manage_quotations(request):
     for q in page_obj.object_list:
         inv = getattr(q, 'invoice', None)
         status_label = 'Invoiced' if inv else 'Open'
+        has_orderable_qty = any((it.quantity or 0) > 0 for it in q.items.all())
 
         serialized_items.append({
             'quotation_id': q.quotation_id,
@@ -250,7 +251,7 @@ def api_manage_quotations(request):
             'invoice_id': inv.invoice_id if inv else None,
             'create_invoice_url': (
                 reverse('sales:create_invoice_from_quotation', kwargs={'quotation_id': q.quotation_id})
-                if status_label == 'Open'
+                if status_label == 'Open' and has_orderable_qty
                 else None
             ),
         })
@@ -640,7 +641,7 @@ def quotation_detail(request, quotation_id):
 
                     product_ids_in_payload.add(product_id)
 
-                    if quantity > 0:
+                    if quantity >= 0:
                         if product_id in existing_items:
                             item = existing_items[product_id]
                             if (item.quantity != quantity or item.quoted_price != price or

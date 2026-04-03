@@ -116,7 +116,10 @@ class QuotationItem(models.Model):
         blank=True,
         help_text='Name as shown on the supplier quotation or import file; may differ from the mapped catalog product name.',
     )
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Order quantity; 0 means the supplier lists this price but no order is placed on this quotation.",
+    )
     quoted_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per single unit in MYR")
     # When set, rate changes only affect MYR (quoted_price); EUR/USD display stays fixed from input_value.
     input_currency = models.CharField(
