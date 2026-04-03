@@ -484,31 +484,6 @@
             }
         }));
 
-        Alpine.data('quotationsTableData', () => ({
-            items: [],
-            isLoading: true,
-            pagination: {},
-            filterText: '',
-            init() { this.fetchQuotations(1); },
-            async fetchQuotations(page = 1) {
-                this.isLoading = true;
-                const params = new URLSearchParams({ page, search: this.filterText });
-                try {
-                    const response = await fetch(`{% url 'inventory:api_manage_quotations' %}?${params.toString()}`, {
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-                    });
-                    const data = await response.json();
-                    this.items = data.items; this.pagination = data.pagination;
-                } catch (error) { console.error('Failed to fetch quotations:', error); }
-                finally { this.isLoading = false; }
-            },
-            clearFilters() { this.filterText = ''; this.fetchQuotations(1); },
-            formatPrice(value) {
-                if (value === null || value === undefined) return 'N/A';
-                return `RM ${Number(value).toFixed(2)}`;
-            }
-        }));
-
         Alpine.data('imageTabManager', () => ({
             isLoading: true,
             init() {

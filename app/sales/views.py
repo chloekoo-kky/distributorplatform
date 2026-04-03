@@ -158,7 +158,7 @@ def create_invoice_from_quotation(request, quotation_id):
         InvoiceItem.objects.bulk_create(invoice_items_to_create)
 
         messages.success(request, f"Successfully created Invoice {invoice.invoice_id} from Quotation {quotation.quotation_id}.")
-        return redirect('inventory:quotation_detail', quotation_id=quotation.quotation_id)
+        return redirect(f"{reverse('core:manage_dashboard')}#quotations")
 
     except IntegrityError as e:
         messages.error(request, f"Database error creating invoice: {e}")

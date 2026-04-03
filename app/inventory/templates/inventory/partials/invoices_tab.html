@@ -127,7 +127,9 @@
                                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                                   :class="{
                                                       'bg-yellow-100 text-yellow-800': invoice.status_code === 'DRAFT',
-                                                      'bg-blue-100 text-blue-800': invoice.status_code === 'ISSUED',
+                                                      'bg-blue-100 text-blue-800': invoice.status_code === 'SENT',
+                                                      'bg-amber-100 text-amber-800': invoice.status_code === 'PARTIALLY_RECEIVED',
+                                                      'bg-emerald-100 text-emerald-800': invoice.status_code === 'FULLY_RECEIVED',
                                                       'bg-green-100 text-green-800': invoice.status_code === 'PAID',
                                                       'bg-red-100 text-red-800': invoice.status_code === 'CANCELLED'
                                                   }"

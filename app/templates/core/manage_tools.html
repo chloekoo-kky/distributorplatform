@@ -37,6 +37,7 @@
          @images-submit-bulk-assign.window="Alpine.store('images').submitBulkAssignment()"
          @images-update-product-selections.window="Alpine.store('images').updateProductModalSelections()"
          @images-update-post-selections.window="Alpine.store('images').updatePostModalSelections()"
+         @open-edit-invoice.window="if ($event.detail) fetchInvoiceData($event.detail)"
     >
 
         {# --- Mobile: menu trigger --- #}

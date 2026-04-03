@@ -2,7 +2,8 @@
 from import_export import resources, fields, widgets
 from .models import Quotation, QuotationItem, Supplier, InventoryBatch # <-- Add InventoryBatch
 from product.models import Product # Keep Product import here
-from django.db import transaction
+from django.utils.dateparse import parse_date
+from datetime import date, datetime
 from decimal import Decimal # Import Decimal
 
 # --- UPDATED RESOURCE for Supplier ---
@@ -36,7 +37,8 @@ class QuotationResource(resources.ModelResource):
         import_id_fields = () # Handled manually
         skip_unchanged = True
         report_skipped = True
-        use_bulk = True # Optimize creation
+        # Per-row before_import_row / header-only rows need real saves (not bulk-only path).
+        use_bulk = False
 
     def _clean_str(self, value, field_name, required=True):
         """ Helper to strip string and check if it's required. """
@@ -48,6 +50,34 @@ class QuotationResource(resources.ModelResource):
         if required and not cleaned:
             raise ValueError(f"'{field_name}' is required and cannot be blank.")
         return cleaned or None # Return None if cleaned is empty but not required
+
+    @staticmethod
+    def _is_placeholder_product(value):
+        """Rows exported for quotations with no line items use Product 'N/A'."""
+        if value is None:
+            return True
+        s = str(value).strip().upper()
+        return s in ('', 'N/A', 'NA', '-', 'NONE')
+
+    def _parse_date_quoted(self, date_str):
+        try:
+            return self.fields['date_quoted_field'].widget.clean(date_str)
+        except Exception:
+            pass
+        s = str(date_str).strip() if date_str is not None else ''
+        parsed = parse_date(s[:10]) if len(s) >= 8 else parse_date(s) if s else None
+        if parsed:
+            return parsed
+        raise ValueError(f"'Date Quoted' ('{date_str}') is not a valid date (use YYYY-MM-DD).")
+
+    def _cell_to_date_str(self, raw, field_name):
+        if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+            raise ValueError(f"'{field_name}' is required and missing.")
+        if isinstance(raw, datetime):
+            return raw.date().isoformat()
+        if isinstance(raw, date):
+            return raw.isoformat()
+        return str(raw).strip()
 
     def _get_or_create_supplier(self, name):
         """ Finds or creates a supplier """
@@ -77,89 +107,147 @@ class QuotationResource(resources.ModelResource):
             quotation.save()
         return quotation
 
-    @transaction.atomic
-    def before_import(self, dataset, using_transactions, dry_run, **kwargs):
-        """ Prepare data before importing rows (e.g., ensure parents exist). """
-        pass # We handle creation/update per row in before_import_row for simplicity
+    def before_import(self, dataset, **kwargs):
+        """Prepare data before importing rows (django-import-export passes extra flags in **kwargs)."""
+        pass
+
+    def _row_price_myr_raw(self, row):
+        v = row.get('Quoted Price (MYR)')
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            v = row.get('Quoted Price (Unit)')
+        return v
+
+    def _resolve_product_from_row(self, row, product_name_required):
+        """Match Product SKU first, then Product Name / Product; create by name if missing."""
+        sku_raw = row.get('Product SKU')
+        sku = str(sku_raw).strip() if sku_raw is not None and str(sku_raw).strip() else ''
+        if sku:
+            product = Product.objects.filter(sku=sku).first()
+            if product:
+                return product
+        product = Product.objects.filter(name__iexact=product_name_required.strip()).first()
+        if product:
+            return product
+        return self._get_or_create_product(product_name_required)
 
     def before_import_row(self, row, row_number=None, **kwargs):
         """ Process data and create/update parent objects before item import. """
         try:
-            # --- Clean required fields ---
             supplier_name = self._clean_str(row.get('Supplier'), 'Supplier')
-            date_str = self._clean_str(row.get('Date Quoted'), 'Date Quoted')
+            date_str = self._cell_to_date_str(row.get('Date Quoted'), 'Date Quoted')
             quotation_id = self._clean_str(row.get('Quotation ID'), 'Quotation ID')
-            product_name = self._clean_str(row.get('Product'), 'Product')
-            quantity_str = self._clean_str(row.get('Quantity'), 'Quantity')
-            price_str = self._clean_str(row.get('Quoted Price (Unit)'), 'Quoted Price (Unit)')
-
-            # --- Clean optional fields (use '' for notes so DB never gets NULL) ---
             notes = self._clean_str(row.get('Quotation Notes'), 'Quotation Notes', required=False) or ''
             transport_cost_str = self._clean_str(row.get('Transportation Cost'), 'Transportation Cost', required=False) or '0'
 
-            # --- Validate and Convert ---
+            cleaned_date = self._parse_date_quoted(date_str)
             try:
-                cleaned_date = self.fields['date_quoted_field'].widget.clean(date_str)
+                transport_cost = Decimal(str(transport_cost_str).replace(',', '').strip())
             except Exception:
-                raise ValueError(f"'Date Quoted' ('{date_str}') is not YYYY-MM-DD.")
-            try:
-                transport_cost = Decimal(transport_cost_str)
-            except Exception:
-                 raise ValueError(f"'Transportation Cost' ('{transport_cost_str}') is not a valid number.")
+                raise ValueError(f"'Transportation Cost' ('{transport_cost_str}') is not a valid number.")
 
-            # --- Get/Create Parents ---
+            # --- Header-only row (matches export for quotations with no line items) ---
+            placeholder_name = None
+            for key in ('Quotation line product name', 'Product Name', 'Product', 'System product name'):
+                v = row.get(key)
+                if v is not None and str(v).strip():
+                    placeholder_name = v
+                    break
+            if self._is_placeholder_product(placeholder_name):
+                supplier = self._get_or_create_supplier(supplier_name)
+                quotation = self._get_or_create_quotation(
+                    quotation_id, supplier, cleaned_date, notes, transport_cost
+                )
+                row['_quotation_obj'] = quotation
+                row['_skip_item'] = True
+                return
+
+            name_cell = row.get('Product Name')
+            if name_cell is None or (isinstance(name_cell, str) and not str(name_cell).strip()):
+                name_cell = row.get('Product')
+            if name_cell is None or (isinstance(name_cell, str) and not str(name_cell).strip()):
+                name_cell = row.get('System product name')
+            product_name = self._clean_str(name_cell, 'Product Name')
+
+            line_cell = row.get('Quotation line product name')
+            if line_cell is not None and str(line_cell).strip():
+                row['_source_line_label'] = str(line_cell).strip()[:255]
+            else:
+                row['_source_line_label'] = (str(name_cell).strip() if name_cell is not None else '')[:255]
+
+            quantity_str = self._clean_str(row.get('Quantity'), 'Quantity')
+            self._clean_str(self._row_price_myr_raw(row), 'Quoted Price (MYR)')  # validate early
             supplier = self._get_or_create_supplier(supplier_name)
-            product = self._get_or_create_product(product_name) # Ensure product exists
+            product = self._resolve_product_from_row(row, product_name)
             quotation = self._get_or_create_quotation(
                 quotation_id, supplier, cleaned_date, notes, transport_cost
             )
 
-            # Store parents on the row dict for get_instance and import_obj
             row['_supplier_obj'] = supplier
             row['_product_obj'] = product
             row['_quotation_obj'] = quotation
 
         except ValueError as e:
-             raise ValueError(f"Row {row_number}: {e}")
+            raise ValueError(f"Row {row_number}: {e}")
         except Exception as e:
-             raise ValueError(f"Row {row_number}: Unexpected error - {e}")
+            raise ValueError(f"Row {row_number}: Unexpected error - {e}")
+
+    def skip_row(self, instance, original, row, import_validation_errors=None):
+        if row.get('_skip_item'):
+            return True
+        return super().skip_row(instance, original, row, import_validation_errors)
 
     def get_instance(self, instance_loader, row):
         """ Find existing QuotationItem based on quotation and product. """
+        if row.get('_skip_item'):
+            return None
         try:
-            # Use pre-fetched objects from before_import_row
             quotation = row['_quotation_obj']
             product = row['_product_obj']
             return QuotationItem.objects.get(quotation=quotation, product=product)
         except QuotationItem.DoesNotExist:
-            return None # Creates a new instance
-        except Exception as e:
-             return None
+            return None  # Creates a new instance
+        except Exception:
+            return None
 
     def import_obj(self, instance, row, dry_run):
         """ Populate the QuotationItem instance fields. """
         try:
-            # Set relationships using pre-fetched objects
             instance.quotation = row['_quotation_obj']
             instance.product = row['_product_obj']
 
-            # Set quantity and price
             quantity_str = self._clean_str(row.get('Quantity'), 'Quantity')
-            price_str = self._clean_str(row.get('Quoted Price (Unit)'), 'Quoted Price (Unit)')
+            price_str = self._clean_str(self._row_price_myr_raw(row), 'Quoted Price (MYR)')
 
             try:
                 instance.quantity = int(quantity_str)
             except (ValueError, TypeError):
-                 raise ValueError(f"'Quantity' ('{quantity_str}') must be an integer.")
+                raise ValueError(f"'Quantity' ('{quantity_str}') must be an integer.")
             try:
-                 instance.quoted_price = Decimal(price_str)
+                instance.quoted_price = Decimal(str(price_str).replace(',', '').strip())
             except Exception:
-                 raise ValueError(f"'Quoted Price (Unit)' ('{price_str}') must be a valid number.")
+                raise ValueError(f"'Quoted Price (MYR)' ('{price_str}') must be a valid number.")
+
+            usd_optional = self._clean_str(row.get('Quoted Price (USD)'), 'Quoted Price (USD)', required=False)
+            if usd_optional:
+                try:
+                    instance.input_currency = QuotationItem.INPUT_CURRENCY_USD
+                    instance.input_value = Decimal(str(usd_optional).replace(',', '').strip())
+                except Exception:
+                    raise ValueError(f"'Quoted Price (USD)' ('{usd_optional}') must be a valid number.")
+            else:
+                instance.input_currency = QuotationItem.INPUT_CURRENCY_MYR
+                instance.input_value = instance.quoted_price
+
+            lbl = (row.get('_source_line_label') or '').strip()[:255]
+            if lbl:
+                instance.line_product_label = lbl
+            elif row.get('_product_obj'):
+                instance.line_product_label = (row['_product_obj'].name or '')[:255]
 
         except ValueError as e:
-             raise ValueError(str(e))
+            raise ValueError(str(e))
         except Exception as e:
-             raise ValueError(f"Unexpected error populating object: {e}")
+            raise ValueError(f"Unexpected error populating object: {e}")
 
     # Optional: Customize how data is extracted for export
     def dehydrate_supplier_name(self, item):

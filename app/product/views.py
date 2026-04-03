@@ -287,6 +287,187 @@ def manage_category_edit(request, category_id):
     }
     return render(request, 'product/manage_category_form.html', context)
 
+def _upload_row_values_dict(row_result):
+    rv = getattr(row_result, 'row_values', None)
+    if rv is None:
+        return {}
+    if isinstance(rv, dict):
+        return dict(rv)
+    try:
+        return dict(rv)
+    except (TypeError, ValueError):
+        return {}
+
+
+def _upload_row_get_str(row_values_dict, *header_names):
+    """First non-empty cell matching any header name (case-insensitive)."""
+    if not row_values_dict:
+        return ''
+    for name in header_names:
+        v = row_values_dict.get(name)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    lower_to_key = {str(k).lower(): k for k in row_values_dict}
+    for name in header_names:
+        key = lower_to_key.get(str(name).lower())
+        if key is None:
+            continue
+        v = row_values_dict.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ''
+
+
+def _upload_norm_m2m_csv(value):
+    if value is None:
+        return ''
+    parts = [
+        p.strip()
+        for p in str(value).replace('，', ',').split(',')
+        if p and str(p).strip()
+    ]
+    return ', '.join(sorted(parts, key=str.lower))
+
+
+def _upload_preview_scalar(val):
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return 'Yes' if val else 'No'
+    if isinstance(val, Decimal):
+        s = format(val, 'f').rstrip('0').rstrip('.')
+        return s or '0'
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return str(val)
+    text = str(val).strip()
+    return text if text else None
+
+
+def _upload_preview_description_short(html_val, max_len=120):
+    if not html_val:
+        return None
+    plain = re.sub(r'<[^>]+>', ' ', str(html_val))
+    plain = re.sub(r'\s+', ' ', plain).strip()
+    if not plain:
+        return None
+    if len(plain) > max_len:
+        return plain[: max_len - 1] + '…'
+    return plain
+
+
+def _upload_categories_db_csv(product):
+    return ', '.join(sorted(product.categories.values_list('name', flat=True)))
+
+
+def _upload_suppliers_db_csv(product):
+    return ', '.join(sorted(product.suppliers.values_list('name', flat=True)))
+
+
+def build_product_upload_row_changes(row_result):
+    """Build a list of {field, label, old, new} for the upload confirmation modal."""
+    changes = []
+    instance = None
+    for attr in ('instance', 'object'):
+        instance = getattr(row_result, attr, None)
+        if instance is not None:
+            break
+    if instance is None:
+        return changes
+
+    rv = _upload_row_values_dict(row_result)
+    itype = str(getattr(row_result, 'import_type', '') or '').lower()
+
+    if itype == 'new':
+        changes.append({
+            'field': '_action',
+            'label': 'Action',
+            'old': None,
+            'new': 'Create new product',
+        })
+        for attr, label in (
+            ('sku', 'SKU'),
+            ('name', 'Name'),
+            ('origin_country', 'Origin country'),
+            ('display_order', 'Display order'),
+            ('members_only', 'Members only'),
+            ('selling_price', 'Selling price'),
+            ('profit_margin', 'Profit margin'),
+        ):
+            disp = _upload_preview_scalar(getattr(instance, attr, None))
+            if disp is not None:
+                changes.append({'field': attr, 'label': label, 'old': None, 'new': disp})
+        desc = _upload_preview_description_short(getattr(instance, 'description', None))
+        if desc:
+            changes.append({'field': 'description', 'label': 'Description', 'old': None, 'new': desc})
+        cat_raw = _upload_row_get_str(rv, 'categories', 'Categories')
+        if cat_raw:
+            changes.append({'field': 'categories', 'label': 'Categories', 'old': None, 'new': cat_raw})
+        sup_raw = _upload_row_get_str(rv, 'suppliers', 'Suppliers')
+        if sup_raw:
+            changes.append({'field': 'suppliers', 'label': 'Suppliers', 'old': None, 'new': sup_raw})
+        return changes
+
+    if itype == 'update' and instance.pk:
+        try:
+            old = Product.objects.prefetch_related('categories', 'suppliers').get(pk=instance.pk)
+        except Product.DoesNotExist:
+            return changes
+
+        for attr, label in (
+            ('sku', 'SKU'),
+            ('name', 'Name'),
+            ('origin_country', 'Origin country'),
+            ('display_order', 'Display order'),
+            ('members_only', 'Members only'),
+            ('selling_price', 'Selling price'),
+            ('profit_margin', 'Profit margin'),
+        ):
+            o_val = _upload_preview_scalar(getattr(old, attr, None))
+            n_val = _upload_preview_scalar(getattr(instance, attr, None))
+            if o_val != n_val:
+                changes.append({'field': attr, 'label': label, 'old': o_val or '—', 'new': n_val or '—'})
+
+        o_desc = _upload_preview_description_short(old.description)
+        n_desc = _upload_preview_description_short(instance.description)
+        if o_desc != n_desc:
+            changes.append({
+                'field': 'description',
+                'label': 'Description',
+                'old': o_desc or '—',
+                'new': n_desc or '—',
+            })
+
+        old_c = _upload_categories_db_csv(old)
+        new_c = _upload_categories_db_csv(instance)
+        cat_raw = _upload_row_get_str(rv, 'categories', 'Categories')
+        categories_differ = _upload_norm_m2m_csv(old_c) != _upload_norm_m2m_csv(new_c)
+        if categories_differ or (
+            cat_raw and _upload_norm_m2m_csv(cat_raw) != _upload_norm_m2m_csv(old_c)
+        ):
+            new_disp = cat_raw if cat_raw else (new_c or '—')
+            changes.append({
+                'field': 'categories',
+                'label': 'Categories',
+                'old': old_c or '—',
+                'new': new_disp,
+            })
+
+        old_s = _upload_suppliers_db_csv(old)
+        new_s = _upload_suppliers_db_csv(instance)
+        sup_raw = _upload_row_get_str(rv, 'suppliers', 'Suppliers')
+        suppliers_differ = _upload_norm_m2m_csv(old_s) != _upload_norm_m2m_csv(new_s)
+        if suppliers_differ or (
+            sup_raw and _upload_norm_m2m_csv(sup_raw) != _upload_norm_m2m_csv(old_s)
+        ):
+            new_disp = sup_raw if sup_raw else (new_s or '—')
+            changes.append({
+                'field': 'suppliers',
+                'label': 'Suppliers',
+                'old': old_s or '—',
+                'new': new_disp,
+            })
+
+    return changes
 
 
 @staff_required
@@ -476,10 +657,21 @@ def upload_products(request):
             final_sku = final_sku or 'N/A'
             final_name = final_name or 'Unknown'
 
+            instance = None
+            for attr in ('instance', 'object'):
+                instance = getattr(row_result, attr, None)
+                if instance is not None:
+                    break
+            price_disp = _upload_preview_scalar(
+                getattr(instance, 'selling_price', None) if instance else None
+            )
+
             preview_rows.append({
                 'status': str(itype).upper() if itype is not None else 'NEW',
                 'name': final_name,
                 'generated_sku': final_sku,
+                'price': price_disp,
+                'changes': build_product_upload_row_changes(row_result),
             })
 
         # Check if valid_rows_count is 0 but we have validation errors

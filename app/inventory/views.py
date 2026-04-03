@@ -41,6 +41,45 @@ from seo.models import PageMetadata
 logger = logging.getLogger(__name__)
 
 
+def _import_export_user_messages(result):
+    """
+    Human-readable messages from django-import-export Result.
+    base_errors hold Error objects (not tuples); row_errors are (row_number, list of errors).
+    """
+    lines = []
+    seen = set()
+
+    def add(msg):
+        if not msg:
+            return
+        text = str(msg).strip()
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(text)
+
+    if result.has_errors():
+        for err in getattr(result, 'base_errors', []) or []:
+            exc = getattr(err, 'error', err)
+            add(f"Import error: {exc}")
+
+        for item in result.row_errors():
+            if isinstance(item, tuple) and len(item) >= 2:
+                row_num, err_list = item[0], item[1]
+                for e in err_list or []:
+                    exc = getattr(e, 'error', e)
+                    add(f"Error in row {row_num}: {exc}")
+            else:
+                exc = getattr(item, 'error', item)
+                add(str(exc))
+
+    for inv in getattr(result, 'invalid_rows', []) or []:
+        num = getattr(inv, 'number', '?')
+        err = getattr(inv, 'error', inv)
+        add(f"Row {num}: {err}")
+
+    return lines
+
+
 
 def staff_required(view_func):
     """ Decorator to ensure the user is logged in AND is a staff member. """
@@ -163,9 +202,7 @@ def api_manage_quotations(request):
     queryset = Quotation.objects.annotate(
         annotated_item_count=Count('items'),
         annotated_total_value=total_value_calc
-    ).select_related('supplier').prefetch_related(
-        'invoice'
-    ).order_by('-date_quoted', '-created_at')
+    ).select_related('supplier', 'invoice').order_by('-date_quoted', '-created_at')
 
     # --- 2. Apply Filters ---
 
@@ -196,19 +233,26 @@ def api_manage_quotations(request):
 
     serialized_items = []
     for q in page_obj.object_list:
-        # Determine status string for frontend
-        status_label = 'Invoiced' if hasattr(q, 'invoice') and q.invoice else 'Open'
+        inv = getattr(q, 'invoice', None)
+        status_label = 'Invoiced' if inv else 'Open'
 
         serialized_items.append({
             'quotation_id': q.quotation_id,
             'supplier_name': q.supplier.name,
             'date_quoted': q.date_quoted,
             'status': status_label,
+            'invoice_status': inv.get_status_display() if inv else None,
+            'invoice_status_code': inv.status if inv else None,
             'item_count': q.annotated_item_count,
             'total_value': q.annotated_total_value or 0,
             'transportation_cost': q.transportation_cost or 0,
             'detail_url': reverse('inventory:quotation_detail', kwargs={'quotation_id': q.quotation_id}),
-            'invoice_id': q.invoice.invoice_id if hasattr(q, 'invoice') and q.invoice else None,
+            'invoice_id': inv.invoice_id if inv else None,
+            'create_invoice_url': (
+                reverse('sales:create_invoice_from_quotation', kwargs={'quotation_id': q.quotation_id})
+                if status_label == 'Open'
+                else None
+            ),
         })
 
     return JsonResponse({
@@ -609,9 +653,11 @@ def quotation_detail(request, quotation_id):
                                 items_to_update.append(item)
                                 logger.debug(f"[quotation_detail POST] Marked item for update: Product ID {product_id}")
                         else:
+                            prod_name = Product.objects.filter(pk=product_id).values_list('name', flat=True).first()
                             new_item = QuotationItem(
                                 quotation=quotation, product_id=product_id,
-                                quantity=quantity, quoted_price=price
+                                quantity=quantity, quoted_price=price,
+                                line_product_label=(prod_name or '')[:255],
                             )
                             new_item.input_currency = input_currency
                             new_item.input_value = input_value
@@ -1052,13 +1098,21 @@ def import_quotation_items_confirm(request, quotation_id):
                                 product.categories.add(cat)
                         except Category.DoesNotExist:
                             pass
+                line_lbl = ((row.get('imported_name') or row.get('line_product_label') or '').strip()[:255])
+                if not line_lbl:
+                    line_lbl = (product.name or '')[:255]
+
                 existing_item = QuotationItem.objects.filter(quotation=quotation, product=product).first()
                 if existing_item:
                     existing_item.quantity = qty
                     existing_item.quoted_price = price
-                    existing_item.save(update_fields=['quantity', 'quoted_price'])
+                    existing_item.line_product_label = line_lbl
+                    existing_item.save(update_fields=['quantity', 'quoted_price', 'line_product_label'])
                 else:
-                    item = QuotationItem.objects.create(quotation=quotation, product=product, quantity=qty, quoted_price=price)
+                    item = QuotationItem.objects.create(
+                        quotation=quotation, product=product, quantity=qty, quoted_price=price,
+                        line_product_label=line_lbl,
+                    )
                     # When product was just created from this import, set base cost from this quote so Set Product Pricing shows it.
                     if product.id in created_products:
                         landed = item.landed_cost_per_unit
@@ -1211,17 +1265,12 @@ def upload_quotation(request):
                 logger.error(f"[upload_quotation] Error during final import transaction: {e}", exc_info=True)
                 messages.error(request, f"An error occurred during import: {e}")
         else:
-            errors = result.has_errors() and result.row_errors() or result.base_errors
-            logger.warning(f"[upload_quotation] Dry run failed. Errors: {errors}")
-            if errors:
-                for error in errors:
-                    if error[1]:
-                        msg = f"Error in row {error[0]}: {error[1][0].error}"
-                        logger.warning(f"[upload_quotation] Import error detail: {msg}")
-                        messages.warning(request, msg)
-            else:
-                logger.error("[upload_quotation] Unknown validation error occurred.")
-                messages.error(request, "An unknown error occurred during validation.")
+            err_msgs = _import_export_user_messages(result)
+            logger.warning(f"[upload_quotation] Dry run failed. Messages: {err_msgs}")
+            for msg in err_msgs:
+                messages.warning(request, msg)
+            if not err_msgs:
+                messages.error(request, "Import failed validation. Check column headers match the export template and try again.")
             messages.error(request, "File import failed with errors. Please correct the file and try again.")
 
         return redirect(redirect_url)
@@ -1232,59 +1281,81 @@ def upload_quotation(request):
 
 
 @staff_required
-def export_quotations_csv(request):
+def export_quotations_xlsx(request):
     """
-    Handles the export of all quotations and their items to a CSV file.
+    Export all quotations and line items to Excel (.xlsx).
+    Column layout matches QuotationResource import expectations.
     """
-    response = HttpResponse(content_type='text/csv')
-    filename = f"quotations-{datetime.date.today()}.csv"
-    response['Content-Disposition'] = f'attachment; filename={filename}'
-    writer = csv.writer(response)
+    from openpyxl import Workbook
 
-    # Write header row
-    writer.writerow([
+    def _export_unit_usd(item):
+        if item.input_currency == QuotationItem.INPUT_CURRENCY_USD and item.input_value is not None:
+            return float(item.input_value)
+        return None
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Quotations'
+
+    headers = [
         'Quotation ID',
         'Supplier',
         'Date Quoted',
         'Transportation Cost',
         'Quotation Notes',
-        'Product',
+        'Product SKU',
+        'Quotation line product name',
+        'System product name',
         'Quantity',
-        'Quoted Price (Unit)',
-        'Total Item Price'
-    ])
+        'Quoted Price (USD)',
+        'Quoted Price (MYR)',
+        'Total Item Price',
+    ]
+    ws.append(headers)
 
-    # Fetch all quotations and related items efficiently
     quotations = Quotation.objects.select_related('supplier').prefetch_related('items__product')
-
     for quotation in quotations:
         if quotation.items.exists():
             for item in quotation.items.all():
-                writer.writerow([
+                sys_name = item.product.name if item.product else ''
+                line_name = (item.line_product_label or '').strip() or sys_name
+                usd = _export_unit_usd(item)
+                ws.append([
                     quotation.quotation_id,
                     quotation.supplier.name,
                     quotation.date_quoted,
-                    quotation.transportation_cost,
-                    quotation.notes,
-                    item.product.name,
-                    item.quantity,
-                    item.quoted_price,
-                    item.total_item_price, # Using the @property from QuotationItem
+                    float(quotation.transportation_cost or 0),
+                    quotation.notes or '',
+                    item.product.sku if item.product else '',
+                    line_name,
+                    sys_name,
+                    int(item.quantity),
+                    usd,
+                    float(item.quoted_price),
+                    float(item.total_item_price),
                 ])
         else:
-            # Include quotations even if they have no items
-             writer.writerow([
+            ws.append([
                 quotation.quotation_id,
                 quotation.supplier.name,
                 quotation.date_quoted,
-                quotation.transportation_cost,
-                quotation.notes,
-                'N/A', # No product
-                0,     # No quantity
-                0.00,  # No price
-                0.00,  # No total
+                float(quotation.transportation_cost or 0),
+                quotation.notes or '',
+                '',
+                'N/A',
+                'N/A',
+                0,
+                None,
+                0.0,
+                0.0,
             ])
 
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    fname = f'quotations-{datetime.date.today()}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{fname}"'
+    wb.save(response)
     return response
 
 

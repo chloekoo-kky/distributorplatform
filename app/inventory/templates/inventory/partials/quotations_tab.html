@@ -12,9 +12,6 @@
             <button @click="$dispatch('open-create-quotation-modal')" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 shadow-sm transition-colors text-sm font-medium">
                 + Create New
             </button>
-            <button @click="$dispatch('open-upload-quotation-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium">
-                Upload CSV
-            </button>
         </div>
     </div>
 
@@ -27,11 +24,11 @@
                 <div class="flex justify-between items-center mb-1">
                     <label class="block text-sm font-medium text-gray-700">Period</label>
                     <button type="button"
-                            x-show="filters.month !== 0"
+                            x-show="filters.month !== 0 || filters.year !== 0"
                             @click="resetPeriod()"
                             class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
                             x-cloak>
-                        Reset
+                        All periods
                     </button>
                 </div>
                 <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2 hover:border-gray-400 transition-colors">
@@ -46,7 +43,7 @@
             </div>
 
             {# 2. Search #}
-            <div class="md:col-span-4">
+            <div class="md:col-span-3">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
                 <div class="relative rounded-md shadow-sm">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -69,12 +66,18 @@
                 </select>
             </div>
 
-            {# 4. Export / Actions #}
-            <div class="md:col-span-2 flex justify-end">
-                <a href="{% url 'inventory:export_quotations_csv' %}" class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none" title="Export CSV">
+            {# 4. Export / Import #}
+            <div class="md:col-span-3 flex flex-nowrap items-end justify-end gap-2 min-w-0">
+                <a href="{% url 'inventory:export_quotations_xlsx' %}" class="inline-flex shrink-0 justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none whitespace-nowrap" title="Download quotations as Excel (.xlsx)">
                     <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Export
+                    Export quotations xlsx
                 </a>
+                <button type="button" @click="$dispatch('open-upload-quotation-modal')"
+                        class="inline-flex shrink-0 justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none whitespace-nowrap"
+                        title="Import quotations from CSV">
+                    <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Import
+                </button>
             </div>
         </div>
     </div>
@@ -102,12 +105,13 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Count</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transport Cost</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Landed Cost</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="items.length === 0">
                         <tr>
-                            <td colspan="8" class="px-6 py-8 text-center text-gray-500">
+                            <td colspan="9" class="px-6 py-8 text-center text-gray-500">
                                 No quotations found for <span x-text="currentMonthLabel" class="font-medium"></span> matching your filters.
                             </td>
                         </tr>
@@ -124,22 +128,56 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium" x-text="q.supplier_name"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                    <span x-show="q.status === 'Invoiced'"
-                                          class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"
-                                          x-text="q.invoice_id ? 'Invoiced (' + q.invoice_id + ')' : 'Invoiced'">
-                                    </span>
-                                    <span x-show="q.status === 'Open'"
-                                          class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                      Open
-                                    </span>
+                                    <template x-if="q.status === 'Open'">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Open</span>
+                                    </template>
+                                    <template x-if="q.status === 'Invoiced'">
+                                        <div class="flex flex-col gap-0.5">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit"
+                                                  :class="{
+                                                      'bg-yellow-100 text-yellow-800': q.invoice_status_code === 'DRAFT',
+                                                      'bg-blue-100 text-blue-800': q.invoice_status_code === 'SENT',
+                                                      'bg-green-100 text-green-800': q.invoice_status_code === 'PAID',
+                                                      'bg-amber-100 text-amber-800': q.invoice_status_code === 'PARTIALLY_RECEIVED',
+                                                      'bg-emerald-100 text-emerald-800': q.invoice_status_code === 'FULLY_RECEIVED',
+                                                      'bg-red-100 text-red-800': q.invoice_status_code === 'CANCELLED'
+                                                  }"
+                                                  x-text="q.invoice_status || '—'"></span>
+                                            <span class="text-xs text-gray-500" x-show="q.invoice_id" x-text="q.invoice_id"></span>
+                                        </div>
+                                    </template>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.item_count"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.transportation_cost)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="formatPrice((parseFloat(q.total_value) || 0) + (parseFloat(q.transportation_cost) || 0))"></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right align-middle" @click.stop>
+                                    <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                        <template x-if="q.create_invoice_url">
+                                            <form :action="q.create_invoice_url" method="post" class="inline-flex"
+                                                  @submit="if (!confirm('Convert to invoice? Items cannot be changed after this.')) $event.preventDefault()">
+                                                <input type="hidden" name="csrfmiddlewaretoken" :value="$store.globals.csrfToken">
+                                                <button type="submit"
+                                                        class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-green-500">
+                                                    <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                    Convert to invoice
+                                                </button>
+                                            </form>
+                                        </template>
+                                        <template x-if="q.invoice_id">
+                                            <button type="button"
+                                                    @click.stop="$dispatch('open-edit-invoice', q.invoice_id)"
+                                                    class="inline-flex items-center justify-center p-2 border border-gray-300 rounded-md text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
+                                                    :title="'Edit invoice ' + q.invoice_id">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                            </button>
+                                        </template>
+                                        <span x-show="!q.create_invoice_url && !q.invoice_id" class="text-xs text-gray-400">—</span>
+                                    </div>
+                                </td>
                             </tr>
 
                             <tr x-show="open" x-transition class="bg-gray-50 shadow-inner">
-                                <td colspan="8" class="p-0">
+                                <td colspan="9" class="p-0">
                                     <div class="px-6 py-4">
                                         <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading items...</div>
                                         <div x-show="!isLoading && items.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No items found for this quotation.</div>
@@ -201,8 +239,8 @@
             filters: {
                 search: '',
                 status: '',
-                month: new Date().getMonth() + 1,
-                year: new Date().getFullYear()
+                month: 0,
+                year: 0,
             },
 
             init() {

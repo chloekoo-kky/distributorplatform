@@ -111,6 +111,11 @@ class QuotationItem(models.Model):
 
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('product.Product', on_delete=models.CASCADE)
+    line_product_label = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Name as shown on the supplier quotation or import file; may differ from the mapped catalog product name.',
+    )
     quantity = models.PositiveIntegerField(default=1)
     quoted_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per single unit in MYR")
     # When set, rate changes only affect MYR (quoted_price); EUR/USD display stays fixed from input_value.

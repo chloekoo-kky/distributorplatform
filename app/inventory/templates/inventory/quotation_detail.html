@@ -57,35 +57,24 @@
                     <h2 class="text-3xl font-bold text-gray-800">Quotation Details</h2>
                     <p class="text-lg text-gray-600">{{ quotation.quotation_id }}</p>
                 </div>
-                <div class="flex items-center space-x-2">
-                    {% if not quotation.invoice %}
-                        <form method="POST" action="{% url 'sales:create_invoice_from_quotation' quotation.quotation_id %}" onsubmit="return confirm('Convert to invoice? Items cannot be changed after this.');">
-                            {% csrf_token %}
-                            <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 flex items-center"
-                                    :disabled="isLocked">
-                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                Convert to Invoice
-                            </button>
-                        </form>
-                    {% else %}
-                         <span class="px-4 py-2 text-sm font-medium text-gray-500 bg-gray-100 border border-gray-300 rounded-md flex items-center cursor-not-allowed" title="Quotation already invoiced.">
-                             <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                             Invoiced ({{ quotation.invoice.invoice_id }})
-                         </span>
-                    {% endif %}
-                    <a href="{% url 'core:manage_dashboard' %}#quotations" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                        Back to Manage Tools
-                    </a>
+                {% if quotation.invoice %}
+                <div class="flex flex-wrap items-center gap-2" title="Quotation converted to this invoice; line items are locked.">
+                    {% include 'inventory/partials/invoice_status_badge.html' with status=quotation.invoice.status display=quotation.invoice.get_status_display %}
+                    <span class="text-sm text-gray-600 font-medium tabular-nums">{{ quotation.invoice.invoice_id }}</span>
                 </div>
+                {% endif %}
             </div>
 
             <div class="bg-white shadow-lg rounded-lg overflow-hidden p-6 mb-8">
                  <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">Summary & Rates</h3>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
+                    <div class="md:col-span-1">
                         <dt class="text-sm font-medium text-gray-500">Supplier</dt>
-                        <dd class="mt-1 text-md text-gray-900">{{ quotation.supplier.name }}</dd>
+                        <dd class="mt-1">
+                            <span class="inline-block max-w-full px-3 py-2 rounded-lg border-2 border-indigo-200 bg-indigo-50 text-base font-semibold text-indigo-900 shadow-sm">
+                                {{ quotation.supplier.name }}
+                            </span>
+                        </dd>
                     </div>
                     <div>
                         <dt class="text-sm font-medium text-gray-500">Date Quoted</dt>
@@ -94,15 +83,6 @@
                                     class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                         </dd>
                     </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">Transportation (RM)</dt>
-                        <dd class="mt-1 text-md text-gray-900">
-                             <input type="number" step="0.01" min="0" id="transport-cost-input" x-model.number="transportCost" @change="formatTransportCost" :disabled="isLocked"
-                                    class="w-full p-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                        </dd>
-                    </div>
-                     <div></div>
-
                      <div>
                         <dt class="text-sm font-medium text-gray-500">Rate (1 EUR to MYR)</dt>
                         <dd class="mt-1 text-md text-gray-900">
@@ -122,13 +102,16 @@
                 <div class="mt-6 border-t pt-4">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="md:col-span-2 space-y-2">
-                            <div class="flex justify-between items-baseline">
+                            <div class="flex justify-between items-baseline gap-4">
                                 <dt class="text-sm font-medium text-gray-700">Subtotal (Items - RM):</dt>
                                 <dd class="text-sm font-bold text-gray-900" id="subtotal-display" x-text="formatPrice(subtotal)"></dd>
                             </div>
-                            <div class="flex justify-between items-baseline">
-                                <dt class="text-sm font-medium text-gray-700">Transportation Cost (RM):</dt>
-                                <dd class="text-sm font-bold text-gray-900" id="transport-cost-display" x-text="formatPrice(transportCost)"></dd>
+                            <div class="flex justify-between items-center gap-4">
+                                <dt class="text-sm font-medium text-gray-700">Transportation cost (RM):</dt>
+                                <dd>
+                                    <input type="number" step="1" min="0" id="transport-cost-input" x-model.number="transportCost" @change="formatTransportCost" :disabled="isLocked"
+                                           class="block w-32 py-2 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed text-base font-bold text-right text-gray-900 tabular-nums">
+                                </dd>
                             </div>
                             <div class="flex justify-between items-baseline border-t pt-2 mt-2">
                                 <dt class="text-base font-semibold text-gray-900">Total Landed Cost (RM):</dt>
@@ -169,13 +152,15 @@
                         {% if not quotation.invoice %}
                         <button type="button"
                                 @click="openImportModal()"
-                                class="px-4 py-1.5 text-sm font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
+                                class="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none">
+                            <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             Import Items
                         </button>
                         {% endif %}
                         <button type="button"
                                 @click="showAssignProductsModal = true"
-                                class="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                                class="inline-flex justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none">
+                            <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                             Assign Products to Supplier
                         </button>
                     </div>

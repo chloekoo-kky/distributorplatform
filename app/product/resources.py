@@ -289,3 +289,5 @@ class ProductResource(resources.ModelResource):
 
         skip_unchanged = True
         report_skipped = True
+        # Populate RowResult.row_values so upload preview can read file cells (categories, etc.).
+        store_row_values = True
