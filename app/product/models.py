@@ -244,11 +244,15 @@ class Product(models.Model):
     @property
     def base_cost(self):
         """
-        Base cost used for pricing. If the user has chosen a source in Set Product
-        Pricing (saved_base_cost), that value is returned. Otherwise the latest
-        landed cost from the most recent Quotation Item is used.
+        Base cost used for pricing. If the user pinned a supplier in Set Product
+        Pricing (saved_base_cost_supplier), saved_base_cost is kept in sync with
+        that supplier's quotations. Otherwise the latest landed cost from the most
+        recent Quotation Item is used so "Latest Quoted Cost" follows quote changes.
         """
-        if self.saved_base_cost is not None:
+        if (
+            self.saved_base_cost is not None
+            and self.saved_base_cost_supplier_id is not None
+        ):
             return self.saved_base_cost
 
         # Import here to avoid circular dependency

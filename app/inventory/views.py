@@ -1125,6 +1125,7 @@ def import_quotation_items_confirm(request, quotation_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
+    sync_saved_base_costs_for_quotation(quotation)
     return JsonResponse({
         'success': True,
         'message': f"Imported {len(rows)} item(s).",
