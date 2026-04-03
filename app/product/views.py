@@ -1683,7 +1683,8 @@ def manage_category_edit(request, category_id):
 @staff_required
 def export_products_pdf(request):
     """
-    Renders selected products in a clean, print-friendly Grid layout grouped by Category.
+    Renders selected products in a print-friendly grid grouped by category.
+    Sections follow category display order; products follow product display_order then name.
     """
     ids = request.GET.get('ids', '')
     if not ids:
@@ -1704,33 +1705,44 @@ def export_products_pdf(request):
     products = Product.objects.filter(id__in=id_list)\
         .select_related('featured_image')\
         .prefetch_related(
-            'categories',
+            Prefetch(
+                'categories',
+                queryset=Category.objects.select_related('group').order_by('display_order', 'name'),
+            ),
             Prefetch(
                 'price_tiers',
                 queryset=ProductPriceTier.objects.order_by('min_quantity'),
             ),
         )\
-        .order_by('name')
+        .order_by('display_order', 'name')
 
-    # Group products by their first/primary category
+    # Group products by primary category (first by category display order)
     grouped_products = {}
+    # category_label -> sort key (display_order, name) for section ordering
+    category_section_order = {}
 
     for product in products:
         cats = product.categories.all()
-        # Use the first category found as the grouping key, or "Uncategorized"
-        primary_cat = cats[0].name if cats else "Uncategorized"
+        if cats:
+            primary = cats[0]
+            primary_cat = primary.name
+            section_key = (primary.display_order, primary_cat)
+        else:
+            primary_cat = "Uncategorized"
+            section_key = (10**9, primary_cat)
 
         if primary_cat not in grouped_products:
             grouped_products[primary_cat] = []
+            category_section_order[primary_cat] = section_key
         grouped_products[primary_cat].append(product)
 
-    # Sort categories alphabetically, ensuring "Uncategorized" is last
-    sorted_keys = sorted(grouped_products.keys())
-    if "Uncategorized" in sorted_keys:
-        sorted_keys.remove("Uncategorized")
-        sorted_keys.append("Uncategorized")
+    for label, plist in grouped_products.items():
+        plist.sort(key=lambda p: (p.display_order, (p.name or '').lower()))
 
-    # Create a sorted dictionary
+    sorted_keys = sorted(
+        grouped_products.keys(),
+        key=lambda k: category_section_order.get(k, (10**9, k)),
+    )
     sorted_grouped_products = {key: grouped_products[key] for key in sorted_keys}
 
     context = {
