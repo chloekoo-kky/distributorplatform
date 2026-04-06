@@ -4,7 +4,6 @@
             // Pricing Modal State
             showPricingModal: false,
             pricingIsSubmitting: false,
-            pricingReadOnly: false,
             pricingData: {
                 id: null, name: '', base_cost: null, base_cost_supplier_id: null, profit_margin: null,
                 selling_price: null, is_promotion: false, promotion_rate: null, update_url: '',
@@ -77,8 +76,6 @@
                     supplier_costs: [],
                     price_tiers: []
                 };
-                this.pricingReadOnly = false;
-
                 this.showPricingModal = true;
 
                 try {
@@ -151,13 +148,6 @@
                         supplier_costs: supplierCosts,
                         price_tiers: priceTiers
                     };
-                    // If there is already pricing (main price or tiers), start in read-only mode,
-                    // and require an explicit "Edit" action to modify.
-                    if (this.pricingData.selling_price != null || (this.pricingData.price_tiers && this.pricingData.price_tiers.length > 0)) {
-                        this.pricingReadOnly = true;
-                    } else {
-                        this.pricingReadOnly = false;
-                    }
 
                     console.log('[PricingModal][state]', this.pricingData);
                     console.log('[CommissionDebug][afterSet]', {

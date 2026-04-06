@@ -13,23 +13,13 @@
          @mousedown="$store.modalBackdrop.cancelDismissArm()">
 
         {# HEADER #}
-        <div class="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
-            <h3 class="text-2xl font-bold text-gray-800">
+            <div class="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 flex-shrink-0 gap-3">
+            <h3 class="text-xl sm:text-2xl font-bold text-gray-800 pr-2">
                 Set Product Pricing
             </h3>
-            <div class="flex items-center gap-3">
-                <button
-                    type="button"
-                    x-show="pricingReadOnly"
-                    @click="pricingReadOnly = false"
-                    class="hidden sm:inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
-                >
-                    Edit
-                </button>
-                <button @click="showPricingModal = false" class="text-gray-400 hover:text-gray-600 transition-colors">
+            <button type="button" @click="showPricingModal = false" class="text-gray-400 hover:text-gray-600 transition-colors shrink-0" aria-label="Close">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
-            </div>
         </div>
 
         {# FORM #}
@@ -63,8 +53,7 @@
                                                name="base_cost_source"
                                                :value="costInfo.cost"
                                                x-model="pricingData.base_cost"
-                                               @change="if (!pricingReadOnly) { pricingData.base_cost_supplier_id = costInfo.supplier_id != null ? Number(costInfo.supplier_id) : null; recalculateMarginsFromFixedPrices(); }"
-                                               :disabled="pricingReadOnly"
+                                               @change="pricingData.base_cost_supplier_id = costInfo.supplier_id != null ? Number(costInfo.supplier_id) : null; recalculateMarginsFromFixedPrices();"
                                                class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
                                     </div>
 
@@ -111,8 +100,8 @@
                         <label for="id_pricing_profit_margin" class="font-semibold text-gray-700 block mb-1">Profit Margin (%)</label>
                         <input type="number" id="id_pricing_profit_margin"
                                x-model.number="pricingData.profit_margin"
-                               @input.debounce.300ms="!pricingReadOnly && calculatePriceFromMargin()"
-                               :disabled="!pricingData.base_cost || pricingReadOnly"
+                               @input.debounce.300ms="calculatePriceFromMargin()"
+                               :disabled="!pricingData.base_cost"
                                step="1" min="0"
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
                     </div>
@@ -121,8 +110,8 @@
                         <label for="id_pricing_selling_price" class="font-semibold text-gray-700 block mb-1">Selling Price (RM)</label>
                         <input type="number" id="id_pricing_selling_price"
                                x-model.number="pricingData.selling_price"
-                               @input.debounce.300ms="!pricingReadOnly && calculateMarginFromPrice()"
-                               :disabled="!pricingData.base_cost || pricingReadOnly"
+                               @input.debounce.300ms="calculateMarginFromPrice()"
+                               :disabled="!pricingData.base_cost"
                                step="1" min="0"
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100">
                     </div>
@@ -149,47 +138,55 @@
                     <div class="flex items-center justify-between mb-2">
                         <span class="font-semibold text-gray-700">Price Tiers</span>
                         <button type="button"
-                                @click="!pricingReadOnly && addPricingTier()"
-                                :disabled="!pricingData.base_cost || pricingReadOnly"
+                                @click="addPricingTier()"
+                                :disabled="!pricingData.base_cost"
                                 class="text-sm text-indigo-600 hover:text-indigo-800 disabled:text-gray-400 disabled:cursor-not-allowed">
                             + Add tier
                         </button>
                     </div>
                     <p class="text-xs text-gray-500 mb-2">Set min quantity, margin %, or price (RM). Editing price recomputes margin; editing margin recomputes price.</p>
-                    <div class="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                    <div class="space-y-3 max-h-[min(60vh,24rem)] sm:max-h-72 overflow-y-auto border border-gray-200 rounded-lg p-2 sm:p-2 bg-gray-50">
                         <template x-for="(tier, idx) in pricingData.price_tiers" :key="tier._tid">
-                            <div class="flex items-center gap-2 flex-nowrap overflow-x-auto bg-white p-2 rounded border border-gray-100">
-                                <label class="text-xs text-gray-500 shrink-0">Min qty:</label>
-                                <input type="number"
-                                       x-model.number="tier.min_quantity"
-                                       @blur="sortPriceTiers()"
-                                       min="1"
-                                       :disabled="pricingReadOnly"
-                                       class="w-16 p-1.5 text-sm border border-gray-300 rounded focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                <label class="text-xs text-gray-500 shrink-0">Margin %:</label>
-                                <input type="number"
-                                       x-model.number="tier.profit_margin"
-                                       @input="!pricingReadOnly && updateTierPriceFromMargin(tier)"
-                                       min="0" step="0.5"
-                                       :disabled="pricingReadOnly"
-                                       class="w-16 p-1.5 text-sm border border-gray-300 rounded focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                <label class="text-xs text-gray-500 shrink-0">Price (RM):</label>
-                                <input type="number"
-                                       x-model.number="tier.price"
-                                       @input="!pricingReadOnly && updateTierMarginFromPrice(tier)"
-                                       step="1" min="0"
-                                       placeholder="—"
-                                       :disabled="pricingReadOnly"
-                                       class="w-20 p-1.5 text-sm font-mono border border-gray-300 rounded focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                <span class="text-xs text-gray-600 shrink-0">Profit/unit:</span>
-                                <span class="text-sm font-mono font-semibold text-green-600"
-                                      x-text="tierProfitPerUnit(tier) != null ? 'RM ' + tierProfitPerUnit(tier).toFixed(2) : '—'"></span>
-                                <button type="button"
-                                        @click="!pricingReadOnly && removePricingTier(idx)"
-                                        :disabled="pricingReadOnly"
-                                        class="ml-auto text-red-500 hover:text-red-700 text-xs disabled:text-gray-300 disabled:cursor-not-allowed">
-                                    Remove
-                                </button>
+                            <div class="bg-white rounded-lg border border-gray-100 p-3 shadow-sm space-y-3 sm:space-y-0 sm:flex sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2">
+                                <div class="grid grid-cols-2 gap-3 sm:contents">
+                                    <div class="flex flex-col gap-1 min-w-0 col-span-2 sm:col-span-1 sm:w-[5.5rem]">
+                                        <label class="text-xs font-medium text-gray-600">Min qty</label>
+                                        <input type="number"
+                                               x-model.number="tier.min_quantity"
+                                               @blur="sortPriceTiers()"
+                                               min="1"
+                                               class="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 sm:p-1.5 sm:text-sm">
+                                    </div>
+                                    <div class="flex flex-col gap-1 min-w-0">
+                                        <label class="text-xs font-medium text-gray-600">Margin %</label>
+                                        <input type="number"
+                                               x-model.number="tier.profit_margin"
+                                               @input="updateTierPriceFromMargin(tier)"
+                                               min="0" step="0.5"
+                                               class="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-indigo-500 sm:w-20 sm:p-1.5">
+                                    </div>
+                                    <div class="flex flex-col gap-1 min-w-0">
+                                        <label class="text-xs font-medium text-gray-600">Price (RM)</label>
+                                        <input type="number"
+                                               x-model.number="tier.price"
+                                               @input="updateTierMarginFromPrice(tier)"
+                                               step="1" min="0"
+                                               placeholder="—"
+                                               class="w-full p-2 text-sm font-mono border border-gray-300 rounded-md focus:ring-indigo-500 sm:w-24 sm:p-1.5">
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100 sm:border-t-0 sm:pt-0 sm:ml-auto sm:flex-nowrap sm:justify-end">
+                                    <div class="text-xs text-gray-600">
+                                        <span class="text-gray-500">Profit/unit:</span>
+                                        <span class="ml-1 text-sm font-mono font-semibold text-green-600"
+                                              x-text="tierProfitPerUnit(tier) != null ? 'RM ' + tierProfitPerUnit(tier).toFixed(2) : '—'"></span>
+                                    </div>
+                                    <button type="button"
+                                            @click="removePricingTier(idx)"
+                                            class="text-sm font-medium text-red-600 hover:text-red-800 px-2 py-1 -mr-2 sm:mr-0">
+                                        Remove
+                                    </button>
+                                </div>
                             </div>
                         </template>
                         <p x-show="!pricingData.price_tiers || pricingData.price_tiers.length === 0"
@@ -232,8 +229,7 @@
                         <div class="relative inline-block w-12 align-middle select-none">
                             <input type="checkbox" name="is_promotion" id="id_is_promotion"
                                    x-model="pricingData.is_promotion"
-                                   :disabled="pricingReadOnly"
-                                   class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300 disabled:cursor-not-allowed"/>
+                                   class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300"/>
                             <label for="id_is_promotion" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                         </div>
                     </div>
@@ -251,8 +247,7 @@
                             <input type="number" id="id_promotion_rate"
                                    x-model.number="pricingData.promotion_rate"
                                    step="0.01" min="0" max="100"
-                                   :disabled="pricingReadOnly"
-                                   class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                   class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         </div>
 
                         {# Final Price Display #}
