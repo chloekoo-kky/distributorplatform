@@ -16,7 +16,7 @@ import re
 import tempfile
 from django.core.serializers.json import DjangoJSONEncoder
 
-from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch
+from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch, F, DecimalField, ExpressionWrapper
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator, EmptyPage
@@ -824,6 +824,10 @@ def api_manage_products(request):
     category_filter = request.GET.get('category', '')
     page_number = request.GET.get('page', 1)
     limit = request.GET.get('limit', 50)
+    sort_by = request.GET.get('sort_by', '').strip()
+    sort_dir = request.GET.get('sort_dir', 'asc').strip().lower()
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'asc'
 
     queryset = Product.objects.select_related('featured_image').prefetch_related(
         Prefetch(
@@ -838,7 +842,7 @@ def api_manage_products(request):
                                           .order_by('-quotation__date_quoted'),
             to_attr='latest_quotation_items'
         )
-    ).order_by('display_order', 'name')
+    )
 
     if search_query:
         queryset = queryset.filter(
@@ -851,7 +855,36 @@ def api_manage_products(request):
     if category_filter:
         queryset = queryset.filter(categories__name=category_filter)
 
+    use_profit_margin_sort = request.user.is_superuser and sort_by == 'profit_margin'
+    use_profit_rm_sort = request.user.is_superuser and sort_by == 'profit_rm'
+    use_selling_price_sort = sort_by == 'selling_price'
+
+    if use_profit_rm_sort:
+        queryset = queryset.annotate(
+            _sort_profit_rm=ExpressionWrapper(
+                F('selling_price') - F('saved_base_cost'),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )
+
     queryset = queryset.distinct()
+
+    order_cols = []
+    if use_profit_margin_sort:
+        col = F('profit_margin')
+        order_cols.append(col.asc(nulls_last=True) if sort_dir == 'asc' else col.desc(nulls_last=True))
+    elif use_profit_rm_sort:
+        col = F('_sort_profit_rm')
+        order_cols.append(col.asc(nulls_last=True) if sort_dir == 'asc' else col.desc(nulls_last=True))
+    elif use_selling_price_sort:
+        col = F('selling_price')
+        order_cols.append(col.asc(nulls_last=True) if sort_dir == 'asc' else col.desc(nulls_last=True))
+
+    if order_cols:
+        queryset = queryset.order_by(*order_cols, 'display_order', 'name')
+    else:
+        queryset = queryset.order_by('display_order', 'name')
+
     paginator = Paginator(queryset, limit)
     try:
         page_obj = paginator.page(page_number)

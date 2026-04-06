@@ -73,6 +73,7 @@
             mergeSearchSelectedIds: [],
             mergeSearchLoading: false,
             savingDisplayOrder: false,
+            sort: { field: '', direction: 'asc' },
 
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
@@ -88,12 +89,33 @@
                             this.filterText = saved.filterText || '';
                             this.filterGroup = saved.filterGroup || '';
                             this.filterCategory = saved.filterCategory || '';
+                            if (saved.sortField && typeof saved.sortField === 'string') {
+                                this.sort.field = saved.sortField;
+                            }
+                            if (saved.sortDirection === 'asc' || saved.sortDirection === 'desc') {
+                                this.sort.direction = saved.sortDirection;
+                            }
                         }
                     }
                 } catch (e) {
                     console.warn('Failed to restore manage_products_filters from localStorage', e);
                 }
 
+                {% if not user.is_superuser %}
+                if (this.sort.field === 'profit_margin' || this.sort.field === 'profit_rm') {
+                    this.sort = { field: '', direction: 'asc' };
+                }
+                {% endif %}
+
+                this.fetchProducts(1);
+            },
+            changeSort(field) {
+                if (this.sort.field === field) {
+                    this.sort.direction = this.sort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.sort.field = field;
+                    this.sort.direction = 'asc';
+                }
                 this.fetchProducts(1);
             },
             get availableCategories() {
@@ -109,6 +131,10 @@
                 // Reset selection on page change
                 this.selectedIds = [];
                 const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
+                if (this.sort.field) {
+                    params.set('sort_by', this.sort.field);
+                    params.set('sort_dir', this.sort.direction);
+                }
                 try {
                     const response = await fetch(`{% url 'product:api_manage_products' %}?${params.toString()}`, {
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -128,7 +154,9 @@
                         const payload = {
                             filterText: this.filterText || '',
                             filterGroup: this.filterGroup || '',
-                            filterCategory: this.filterCategory || ''
+                            filterCategory: this.filterCategory || '',
+                            sortField: this.sort.field || '',
+                            sortDirection: this.sort.direction || 'asc',
                         };
                         window.localStorage.setItem('manage_products_filters', JSON.stringify(payload));
                     } catch (e) {
@@ -138,6 +166,7 @@
             },
             clearFilters() {
                 this.filterText = ''; this.filterGroup = ''; this.filterCategory = '';
+                this.sort = { field: '', direction: 'asc' };
                 try {
                     window.localStorage.removeItem('manage_products_filters');
                 } catch (e) {
