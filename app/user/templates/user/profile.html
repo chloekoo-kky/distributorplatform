@@ -867,7 +867,12 @@ window.handleManualOrderSuccess = function(data) {
                         {% for plan in plans %}
                         <div class="relative rounded-lg border p-4 cursor-pointer hover:bg-gray-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between
                                     {% if plan.id == current_plan_id %}border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50{% else %}border-gray-300{% endif %}"
-                             onclick="selectPlan({{ plan.id }}, this)">
+                             data-plan-id="{{ plan.id }}"
+                             role="button"
+                             tabindex="0"
+                             aria-pressed="{% if plan.id == current_plan_id %}true{% else %}false{% endif %}"
+                             onclick="selectPlanFromCard(this)"
+                             onkeydown="subscriptionPlanCardKeydown(event, this)">
 
                             <div class="flex-1">
                                 <span class="block text-sm font-medium text-gray-900 flex flex-wrap items-center">
@@ -938,15 +943,30 @@ window.handleManualOrderSuccess = function(data) {
     let selectedPlanId = null;
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
+    function selectPlanFromCard(element) {
+        const id = parseInt(element.getAttribute('data-plan-id'), 10);
+        if (Number.isNaN(id)) return;
+        selectPlan(id, element);
+    }
+
+    function subscriptionPlanCardKeydown(event, element) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectPlanFromCard(element);
+        }
+    }
+
     function selectPlan(id, element) {
         selectedPlanId = id;
         const container = element.parentElement;
         Array.from(container.children).forEach(child => {
             child.classList.remove('border-indigo-500', 'ring-2', 'ring-indigo-500', 'bg-indigo-50');
             child.classList.add('border-gray-300');
+            child.setAttribute('aria-pressed', 'false');
         });
         element.classList.remove('border-gray-300');
         element.classList.add('border-indigo-500', 'ring-2', 'ring-indigo-500', 'bg-indigo-50');
+        element.setAttribute('aria-pressed', 'true');
         document.getElementById('confirm-plan-btn').disabled = false;
     }
 
