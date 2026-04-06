@@ -538,8 +538,9 @@
                                     <div x-show="!detailsLoading" class="divide-y divide-gray-200">
                                         <template x-for="item in details" :key="item.sku">
                                             <div class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                                                <p class="min-w-0 flex-1 text-sm leading-snug text-gray-800"
-                                                   x-text="(item.summary_name || item.product_name) + '(' + formatMoney(item.selling_price) + ') X ' + item.quantity"></p>
+                                                <p class="min-w-0 flex-1 text-sm leading-snug text-gray-800">
+                                                    <span x-text="item.summary_name || item.product_name"></span><span>(</span><span class="font-bold text-gray-900" x-text="formatMoney(item.selling_price)"></span><span>) X </span><span x-text="item.quantity"></span>
+                                                </p>
                                                 <span class="shrink-0 text-sm font-semibold tabular-nums text-gray-900"
                                                       x-text="formatMoney(item.total)"></span>
                                             </div>
@@ -855,7 +856,7 @@
             selectedOrderIds: [],
             latestSearchRequestId: 0,
 
-            ordersViewMode: 'list',
+            ordersViewMode: 'grid',
 
             setOrdersViewMode(mode) {
                 if (mode !== 'list' && mode !== 'grid') return;
