@@ -245,6 +245,22 @@
                 </div>
             </div>
 
+            {# Mobile: total orders + revenue — below date/export toolbar, above order list #}
+            <div class="sm:hidden border-t border-gray-100 bg-gray-50 px-4 py-3">
+                <div class="grid gap-3 {% if request.user.is_superuser %}grid-cols-2{% else %}grid-cols-1{% endif %}">
+                    <div class="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm">
+                        <p class="text-xs font-medium text-gray-500">Total Orders</p>
+                        <p class="mt-0.5 text-2xl font-semibold tabular-nums text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</p>
+                    </div>
+                    {% if request.user.is_superuser %}
+                    <div class="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm">
+                        <p class="text-xs font-medium text-gray-500">Total Revenue</p>
+                        <p class="mt-0.5 text-lg font-semibold tabular-nums text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <div x-show="isLoading" class="p-8 flex justify-center">
                 <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
