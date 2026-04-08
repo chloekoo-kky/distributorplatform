@@ -126,10 +126,12 @@
                 }
                 return [];
             },
-            async fetchProducts(page = 1) {
+            async fetchProducts(page = 1, options = {}) {
+                const resetSelection = options.resetSelection === true;
                 this.isLoading = true;
-                // Reset selection on page change
-                this.selectedIds = [];
+                if (resetSelection) {
+                    this.selectedIds = [];
+                }
                 const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
                 if (this.sort.field) {
                     params.set('sort_by', this.sort.field);
@@ -172,7 +174,7 @@
                 } catch (e) {
                     console.warn('Failed to clear manage_products_filters from localStorage', e);
                 }
-                this.fetchProducts(1);
+                this.fetchProducts(1, { resetSelection: true });
             },
             setGroupFilter(groupName) {
                 this.filterGroup = groupName;
@@ -280,12 +282,23 @@
                 return `${this.formatPrice(profit)}${marginPart}`;
             },
 
-            // --- Selection Methods ---
+            // --- Selection Methods (persist across category/search until Clear filters) ---
+            get productsSelectionAllVisibleChecked() {
+                if (!this.items || !this.items.length) return false;
+                return this.items.every((item) => this.selectedIds.includes(item.id));
+            },
+            get productsSelectionSomeVisibleChecked() {
+                if (!this.items || !this.items.length) return false;
+                const any = this.items.some((item) => this.selectedIds.includes(item.id));
+                return any && !this.productsSelectionAllVisibleChecked;
+            },
             toggleAll() {
-                if (this.selectedIds.length === this.items.length) {
-                    this.selectedIds = [];
+                const visibleIds = this.items.map((item) => item.id);
+                if (!visibleIds.length) return;
+                if (this.productsSelectionAllVisibleChecked) {
+                    this.selectedIds = this.selectedIds.filter((id) => !visibleIds.includes(id));
                 } else {
-                    this.selectedIds = this.items.map(item => item.id);
+                    this.selectedIds = Array.from(new Set([...this.selectedIds, ...visibleIds]));
                 }
             },
             /** Toggle selection when clicking row/card blank area (not buttons, links, or form controls). */
