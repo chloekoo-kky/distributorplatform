@@ -72,9 +72,9 @@
                 </div>
             </div>
 
-            {# Bulk Selection Bar #}
+            {# Bulk Selection Bar — sticky below site nav (and manage mobile menu strip on small screens) #}
             <div x-show="$store.images.bulkSelectedImageIds.length > 0"
-                 class="p-4 bg-indigo-50 border border-indigo-200 rounded-lg mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                 class="sticky max-md:top-[6.875rem] md:top-16 z-30 mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                  x-transition>
                 <span class="font-medium text-indigo-700">
                     <span x-text="$store.images.bulkSelectedImageIds.length"></span> image(s) selected
