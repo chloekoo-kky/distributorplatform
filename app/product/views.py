@@ -789,6 +789,18 @@ def manage_product_edit(request, product_id):
 
     elif request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         sections = list(product.content_sections.values('title', 'content').order_by('order'))
+        gallery_qs = product.gallery_images.all().select_related('category')
+        gallery_images_detail = [
+            {
+                'id': img.id,
+                'title': img.title,
+                'url': img.image.url,
+                'alt_text': img.alt_text or '',
+                'category_id': img.category_id,
+                'category_name': img.category.name if img.category else 'Uncategorized',
+            }
+            for img in gallery_qs
+        ]
         data = {
             'id': product.id,
             'name': product.name,
@@ -803,7 +815,8 @@ def manage_product_edit(request, product_id):
             'is_best_seller': product.is_best_seller, # --- NEW: Return Best Seller Status ---
             'categories': list(product.categories.all().values_list('id', flat=True)),
             'suppliers': list(product.suppliers.all().values_list('id', flat=True)),
-            'gallery_images': list(product.gallery_images.all().values_list('id', flat=True)),
+            'gallery_images': list(gallery_qs.values_list('id', flat=True)),
+            'gallery_images_detail': gallery_images_detail,
             'featured_image': product.featured_image_id,
             'selectedImageUrl': product.featured_image.image.url if product.featured_image else '',
             'update_url': reverse('product:manage_product_edit', kwargs={'product_id': product.id})

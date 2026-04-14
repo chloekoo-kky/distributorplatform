@@ -55,6 +55,10 @@
 
             get selectedGalleryImages() {
                 if (!this.productEditData.id) return [];
+                const detail = this.productEditData.gallery_images_detail;
+                if (Array.isArray(detail) && detail.length) {
+                    return detail;
+                }
                 return Alpine.store('images').galleryImages.filter(image =>
                     this.productEditData.gallery_images.includes(image.id)
                 );

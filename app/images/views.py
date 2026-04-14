@@ -20,9 +20,42 @@ from product.models import Product
 from blog.models import Post
 from inventory.views import staff_required
 from django.db import transaction
+from django.core.paginator import Paginator
 # --- End New Imports ---
 
 logger = logging.getLogger(__name__)
+
+_MEDIA_IMAGE_PREFETCH = (
+    'featured_in_products',
+    'product_galleries',
+    'featured_in_posts',
+    'post_galleries',
+)
+
+
+def _serialize_media_image(img):
+    assigned_to = []
+    for p in img.featured_in_products.all():
+        assigned_to.append({'type': 'F.Product', 'name': p.name})
+    for p in img.product_galleries.all():
+        assigned_to.append({'type': 'Product', 'name': p.name})
+    for p in img.featured_in_posts.all():
+        assigned_to.append({'type': 'F.Post', 'name': p.title})
+    for p in img.post_galleries.all():
+        assigned_to.append({'type': 'Post', 'name': p.title})
+    return {
+        'id': img.id,
+        'title': img.title,
+        'url': img.image.url,
+        'alt_text': img.alt_text,
+        'category_id': img.category_id,
+        'category_name': img.category.name if img.category else 'Uncategorized',
+        'assigned_to': assigned_to,
+    }
+
+
+def _media_image_base_queryset():
+    return MediaImage.objects.all().select_related('category').prefetch_related(*_MEDIA_IMAGE_PREFETCH)
 
 
 def format_image_title(name):
@@ -40,53 +73,61 @@ def format_image_title(name):
 @staff_required
 def ajax_get_images(request):
     """
-    Returns a JSON list of all images in the gallery,
-    optionally filtered by category.
+    Returns gallery images as JSON.
+
+    - No ``page`` parameter: full list (legacy for blog/category pickers, etc.).
+    - ``page`` set: paginated list for Manage Images; optional ``category_id``,
+      ``page_size`` (default 48, max 100).
+    - ``ids``: comma-separated IDs — returns those images only (order preserved),
+      for bulk actions when the grid is paginated.
     """
+    ids_raw = request.GET.get('ids')
+    if ids_raw:
+        raw_parts = [x.strip() for x in ids_raw.split(',') if x.strip()]
+        try:
+            id_list = [int(x) for x in raw_parts]
+        except ValueError:
+            return JsonResponse({'success': False, 'error': 'Invalid ids.'}, status=400)
+        if len(id_list) > 200:
+            return JsonResponse({'success': False, 'error': 'Too many ids.'}, status=400)
+        qs = _media_image_base_queryset().filter(id__in=id_list)
+        by_id = {img.id: _serialize_media_image(img) for img in qs}
+        data = [by_id[i] for i in id_list if i in by_id]
+        return JsonResponse({'images': data})
+
     category_id = request.GET.get('category_id')
-
-    # 1. Prefetch all relationships to avoid N+1 query performance issues
-    images_query = MediaImage.objects.all().select_related('category').prefetch_related(
-        'featured_in_products',
-        'product_galleries',
-        'featured_in_posts',
-        'post_galleries'
-    )
-
+    images_query = _media_image_base_queryset()
     if category_id:
         images_query = images_query.filter(category_id=category_id)
 
-    data = []
-    for img in images_query:
-        # 2. Build the list of assignments
-        assigned_to = []
+    page_param = request.GET.get('page')
+    if page_param is not None:
+        try:
+            page = max(1, int(page_param))
+        except ValueError:
+            page = 1
+        try:
+            page_size = int(request.GET.get('page_size', 48))
+        except ValueError:
+            page_size = 48
+        page_size = max(1, min(page_size, 100))
 
-        # Product: Featured
-        for p in img.featured_in_products.all():
-            assigned_to.append({'type': 'F.Product', 'name': p.name})
-
-        # Product: Gallery
-        for p in img.product_galleries.all():
-            assigned_to.append({'type': 'Product', 'name': p.name})
-
-        # Post: Featured
-        for p in img.featured_in_posts.all():
-            assigned_to.append({'type': 'F.Post', 'name': p.title})
-
-        # Post: Gallery
-        for p in img.post_galleries.all():
-            assigned_to.append({'type': 'Post', 'name': p.title})
-
-        data.append({
-            'id': img.id,
-            'title': img.title,
-            'url': img.image.url,
-            'alt_text': img.alt_text,
-            'category_id': img.category_id,
-            'category_name': img.category.name if img.category else 'Uncategorized',
-            'assigned_to': assigned_to, # <--- Add this field
+        paginator = Paginator(images_query.order_by('-uploaded_at'), page_size)
+        page_obj = paginator.get_page(page)
+        data = [_serialize_media_image(img) for img in page_obj.object_list]
+        categories = list(ImageCategory.objects.values('id', 'name'))
+        return JsonResponse({
+            'images': data,
+            'categories': categories,
+            'pagination': {
+                'page': page_obj.number,
+                'page_size': page_size,
+                'total': paginator.count,
+                'total_pages': paginator.num_pages,
+            },
         })
 
+    data = [_serialize_media_image(img) for img in images_query]
     categories = list(ImageCategory.objects.values('id', 'name'))
     return JsonResponse({'images': data, 'categories': categories})
 

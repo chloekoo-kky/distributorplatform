@@ -603,40 +603,40 @@
         }));
 
         Alpine.data('imageTabManager', () => ({
-            isLoading: true,
             init() {
-                if (Alpine.store('images').galleryImages.length > 0) {
-                    this.isLoading = false;
-                    return; // Already loaded
-                }
-                this.fetchInitialImageData();
-            },
-            async fetchInitialImageData() {
-                this.isLoading = true;
+                const store = Alpine.store('images');
                 const apiHeaders = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
-                try {
-                    const [imagesRes, productsRes, postsRes] = await Promise.all([
-                        fetch(`{% url 'images:ajax_get_images' %}`, { headers: apiHeaders }),
-                        fetch(`{% url 'product:api_manage_products' %}?page=1&limit=10000`, { headers: apiHeaders }),
-                        fetch(`{% url 'blog:api_manage_posts' %}?page=1&limit=10000`, { headers: apiHeaders })
-                    ]);
-
-                    if (!imagesRes.ok || !productsRes.ok || !postsRes.ok) {
-                        throw new Error('One or more API requests failed');
+                const loadAux = async () => {
+                    try {
+                        const [productsRes, postsRes] = await Promise.all([
+                            fetch(`{% url 'product:api_manage_products' %}?page=1&limit=10000`, { headers: apiHeaders }),
+                            fetch(`{% url 'blog:api_manage_posts' %}?page=1&limit=10000`, { headers: apiHeaders })
+                        ]);
+                        if (!productsRes.ok || !postsRes.ok) {
+                            throw new Error('One or more API requests failed');
+                        }
+                        const productsData = await productsRes.json();
+                        const postsData = await postsRes.json();
+                        store.allProducts = productsData.items;
+                        store.allPosts = postsData.items;
+                    } catch (error) {
+                        console.error('Failed to load products/posts for image tools:', error);
+                        Alpine.store('globals').showToast('Could not load products or posts for assignment tools.', 'error');
                     }
-                    const imagesData = await imagesRes.json();
-                    const productsData = await productsRes.json();
-                    const postsData = await postsRes.json();
-                    Alpine.store('images').galleryImages = imagesData.images;
-                    Alpine.store('images').allProducts = productsData.items;
-                    Alpine.store('images').allPosts = postsData.items;
-                    Alpine.store('globals').allImageCategories = imagesData.categories;
-                } catch (error) {
-                    console.error('Failed to load initial image data:', error);
+                };
+                store.fetchGalleryPage(1).catch((error) => {
+                    console.error('Failed to load image gallery:', error);
                     Alpine.store('globals').showToast('Could not load image gallery data.', 'error');
-                } finally {
-                    this.isLoading = false;
+                });
+                if (!store.allProducts.length || !store.allPosts.length) {
+                    loadAux();
                 }
+                this.$watch(() => Alpine.store('globals').selectedCategoryId, () => {
+                    store.fetchGalleryPage(1).catch((error) => {
+                        console.error('Failed to load images for category:', error);
+                        Alpine.store('globals').showToast('Could not load images for this category.', 'error');
+                    });
+                });
             }
         }));
 

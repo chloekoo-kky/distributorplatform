@@ -57,14 +57,11 @@
 
         {# --- Gallery Section --- #}
         <div class="lg:col-span-2">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex justify-between items-center mb-4">
                 <h3 class="text-2xl font-semibold text-gray-700">Image Gallery</h3>
-
                 <div class="flex-shrink-0">
-                    {# Uses global store for category filtering #}
                     <select x-model="$store.globals.selectedCategoryId" class="p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option :value="null">All Categories</option>
-                        {# FIX: Use unique string key with index to prevent Alpine duplicate key errors #}
                         <template x-for="(category, index) in $store.globals.allImageCategories" :key="'cat-' + index">
                             <option :value="category.id" x-text="category.name"></option>
                         </template>
@@ -72,39 +69,81 @@
                 </div>
             </div>
 
-            {# Bulk Selection Bar — sticky below site nav (and manage mobile menu strip on small screens) #}
-            <div x-show="$store.images.bulkSelectedImageIds.length > 0"
-                 class="sticky max-md:top-[6.875rem] md:top-16 z-30 mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-                 x-transition>
-                <span class="font-medium text-indigo-700">
-                    <span x-text="$store.images.bulkSelectedImageIds.length"></span> image(s) selected
-                </span>
-                <div class="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-                    <button @click="$store.images.openBulkAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Bulk Assign to Gallery...
-                    </button>
-                    <button @click="$store.images.openAutoAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700">
-                        Auto-Assign to Products
-                    </button>
-                    <button @click="$store.images.deleteSelectedImages()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
-                        Delete Selected
-                    </button>
-                    <button @click="$store.images.bulkSelectedImageIds = []; $store.images.lastSelectedIndex = null" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white/70 hover:bg-gray-100 rounded-md">
-                        Clear Selection
-                    </button>
+            {# Sticky toolbar: pagination row (same layout as former bottom bar) + bulk actions #}
+            <div x-show="$store.images.imagesPagination.total > 0 || $store.images.bulkSelectedImageIds.length > 0"
+                 class="sticky max-md:top-[6.875rem] md:top-16 z-30 mb-6 space-y-4 border-b border-gray-200 bg-gray-50/95 py-3 shadow-sm backdrop-blur-sm">
+                <div x-show="$store.images.imagesPagination.total > 0"
+                     class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
+                    <p>
+                        Showing
+                        <span class="font-medium text-gray-800" x-text="$store.images.paginationRangeStart"></span>–<span class="font-medium text-gray-800" x-text="$store.images.paginationRangeEnd"></span>
+                        of <span class="font-medium text-gray-800" x-text="$store.images.imagesPagination.total"></span>
+                    </p>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="inline-flex items-center gap-2">
+                            <span class="text-gray-500">Per page</span>
+                            <select class="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-8 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                    :value="$store.images.imagesPagination.page_size"
+                                    @change="$store.images.setGalleryPageSize($event.target.value)">
+                                <option value="12">12</option>
+                                <option value="24">24</option>
+                                <option value="48">48</option>
+                                <option value="96">96</option>
+                            </select>
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <button type="button"
+                                    class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    :disabled="$store.images.imagesPagination.page <= 1 || $store.images.galleryListLoading"
+                                    @click="$store.images.fetchGalleryPage($store.images.imagesPagination.page - 1)">
+                                Previous
+                            </button>
+                            <span class="tabular-nums text-gray-700">
+                                Page <span x-text="$store.images.imagesPagination.page"></span>
+                                of <span x-text="Math.max(1, $store.images.imagesPagination.total_pages)"></span>
+                            </span>
+                            <button type="button"
+                                    class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    :disabled="$store.images.imagesPagination.page >= $store.images.imagesPagination.total_pages || $store.images.galleryListLoading"
+                                    @click="$store.images.fetchGalleryPage($store.images.imagesPagination.page + 1)">
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div x-show="$store.images.bulkSelectedImageIds.length > 0"
+                     class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                     x-transition>
+                    <span class="font-medium text-indigo-700">
+                        <span x-text="$store.images.bulkSelectedImageIds.length"></span> image(s) selected
+                    </span>
+                    <div class="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
+                        <button @click="$store.images.openBulkAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                            Bulk Assign to Gallery...
+                        </button>
+                        <button type="button" @click="$store.images.openAutoAssignModal()" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700">
+                            Auto-Assign to Products
+                        </button>
+                        <button @click="$store.images.deleteSelectedImages()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">
+                            Delete Selected
+                        </button>
+                        <button @click="$store.images.bulkSelectedImageIds = []; $store.images.lastSelectedIndex = null" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white/70 hover:bg-gray-100 rounded-md">
+                            Clear Selection
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {# Empty/Loading States #}
-            <div x-show="$store.images.filteredImages.length === 0 && !isLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
+            <div x-show="$store.images.imagesPagination.total === 0 && !$store.images.galleryListLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
                 No images found for this category.
             </div>
-            <div x-show="isLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
+            <div x-show="$store.images.galleryListLoading" class="text-center text-gray-500 bg-white shadow-lg rounded-lg p-6">
                 Loading images...
             </div>
 
             {# Grid — key by index+id so each row is unique and checkbox & border stay in sync #}
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4" x-show="$store.images.imagesPagination.total > 0">
                 <template x-for="(image, index) in $store.images.filteredImages" :key="'img-' + index + '-' + (image.id || '')">
                     <div class="relative group bg-white rounded-md overflow-hidden shadow-md border"
                          :class="{ 'ring-2 ring-indigo-500 border-indigo-500': $store.images.bulkSelectedImageIds.some(id => id == image.id) }">

@@ -39,6 +39,9 @@
         // --- 2. Global Store for Image Management ---
         Alpine.store('images', {
             galleryImages: [],
+            /** Paginated manage gallery: { page, page_size, total, total_pages } */
+            imagesPagination: { page: 1, page_size: 48, total: 0, total_pages: 0 },
+            galleryListLoading: false,
             allProducts: [],
             allPosts: [],
             selectedImageToAssign: null,
@@ -78,10 +81,19 @@
             imageUploadIsConfirming: false,
 
             // --- Getters ---
+            /** Current page of images (server-filtered by category). */
             get filteredImages() {
-                if (Alpine.store('globals').selectedCategoryId === null) return this.galleryImages;
-                // Ensure comparison handles string/number mismatch
-                return this.galleryImages.filter(img => img.category_id == Alpine.store('globals').selectedCategoryId);
+                return this.galleryImages;
+            },
+            get paginationRangeStart() {
+                const p = this.imagesPagination;
+                if (!p || !p.total) return 0;
+                return (p.page - 1) * p.page_size + 1;
+            },
+            get paginationRangeEnd() {
+                const p = this.imagesPagination;
+                if (!p || !p.total) return 0;
+                return Math.min(p.page * p.page_size, p.total);
             },
             get filteredProductsForModal() {
                 if (!this.assignProductModalSearchTerm) return this.allProducts;
@@ -102,6 +114,53 @@
                 if (!this.bulkAssignSearchTerm) return this.allPosts;
                 const search = this.bulkAssignSearchTerm.toLowerCase();
                 return this.allPosts.filter(p => p.title.toLowerCase().includes(search));
+            },
+
+            async fetchGalleryPage(page) {
+                const globals = Alpine.store('globals');
+                const cat = globals.selectedCategoryId;
+                const ps = this.imagesPagination.page_size || 48;
+                const params = new URLSearchParams({ page: String(page), page_size: String(ps) });
+                if (cat != null && cat !== '') {
+                    params.set('category_id', String(cat));
+                }
+                this.galleryListLoading = true;
+                try {
+                    const res = await fetch(`{% url 'images:ajax_get_images' %}?${params}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    if (!res.ok) {
+                        throw new Error('Failed to load images');
+                    }
+                    const data = await res.json();
+                    this.galleryImages = data.images || [];
+                    if (data.pagination) {
+                        this.imagesPagination = {
+                            page: data.pagination.page,
+                            page_size: data.pagination.page_size,
+                            total: data.pagination.total,
+                            total_pages: data.pagination.total_pages,
+                        };
+                    }
+                    if (data.categories && data.categories.length) {
+                        globals.allImageCategories = data.categories;
+                    }
+                } finally {
+                    this.galleryListLoading = false;
+                }
+            },
+            async setGalleryPageSize(size) {
+                const n = parseInt(size, 10);
+                if (Number.isNaN(n)) return;
+                this.imagesPagination.page_size = Math.min(100, Math.max(1, n));
+                await this.fetchGalleryPage(1);
+            },
+            async refetchGalleryAfterMutation() {
+                let p = this.imagesPagination.page;
+                await this.fetchGalleryPage(p);
+                if (this.galleryImages.length === 0 && p > 1) {
+                    await this.fetchGalleryPage(p - 1);
+                }
             },
 
             // --- Methods ---
@@ -171,15 +230,11 @@
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
-                        data.images.forEach(img => {
-                            if (!this.galleryImages.some(existing => existing.id === img.id)) {
-                                this.galleryImages.unshift(img);
-                            }
-                        });
                         form.reset();
                         this.showImageUploadConfirmModal = false;
                         this.imageUploadPreviewList = [];
                         Alpine.store('globals').showToast('Image(s) uploaded successfully!');
+                        await this.fetchGalleryPage(1);
                     } else { throw new Error(data.errors || 'Upload failed'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Upload error: ' + err.message, 'error');
@@ -200,7 +255,7 @@
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
-                        this.galleryImages.splice(this.galleryImages.findIndex(img => img.id === imageId), 1);
+                        await this.refetchGalleryAfterMutation();
                         Alpine.store('globals').showToast(data.message);
                     } else { throw new Error(data.error || 'Failed to delete'); }
                 } catch (err) {
@@ -231,8 +286,8 @@
                     if (response.ok && data.success) {
                         const deleted = data.deleted_ids || [];
                         if (deleted.length) {
-                            this.galleryImages = this.galleryImages.filter(img => !deleted.includes(img.id));
                             this.bulkSelectedImageIds = this.bulkSelectedImageIds.filter(id => !deleted.includes(id));
+                            await this.refetchGalleryAfterMutation();
                         }
                         this.lastSelectedIndex = null;
                         let msg = data.message || `Deleted ${deleted.length} image(s).`;
@@ -290,6 +345,7 @@
                         this.showAssignProductModal = false;
                         Alpine.store('globals').showToast('Product assignments updated!');
                         window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
+                        await this.fetchGalleryPage(this.imagesPagination.page);
                     } else { throw new Error(data.error || 'Failed to save'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Error: ' + err.message, 'error');
@@ -335,6 +391,7 @@
                         this.allPosts = data.all_posts;
                         this.showAssignPostModal = false;
                         Alpine.store('globals').showToast('Post assignments updated!');
+                        await this.fetchGalleryPage(this.imagesPagination.page);
                     } else { throw new Error(data.error || 'Failed to save'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Error: ' + err.message, 'error');
@@ -376,51 +433,56 @@
                         this.bulkSelectedImageIds = [];
                         this.lastSelectedIndex = null;
                         Alpine.store('globals').showToast('Images successfully assigned to gallery!');
+                        await this.fetchGalleryPage(this.imagesPagination.page);
                     } else { throw new Error(data.error || 'Failed to save'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Error: ' + err.message, 'error');
                 }
                 finally { this.bulkAssignIsSubmitting = false; }
             },
-            openAutoAssignModal() {
+            async openAutoAssignModal() {
                 if (this.bulkSelectedImageIds.length === 0) {
                     Alpine.store('globals').showToast('Please select one or more images first.', 'warning');
                     return;
                 }
 
+                const idList = this.bulkSelectedImageIds.map((id) => parseInt(id, 10)).filter((n) => !Number.isNaN(n));
+                let imagesMap = {};
+                try {
+                    const res = await fetch(`{% url 'images:ajax_get_images' %}?ids=${idList.join(',')}`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    if (!res.ok) {
+                        throw new Error('Failed to load selected images');
+                    }
+                    const payload = await res.json();
+                    (payload.images || []).forEach((img) => { imagesMap[img.id] = img; });
+                } catch (e) {
+                    Alpine.store('globals').showToast('Could not load selected images for auto-assign.', 'error');
+                    return;
+                }
+
                 const products = this.allProducts || [];
                 const matches = [];
-
                 const normalize = (value) => (value || '').toString().toLowerCase();
 
                 this.bulkSelectedImageIds.forEach((imageId) => {
-                    const img = this.galleryImages.find(i => i.id == imageId);
+                    const img = imagesMap[parseInt(imageId, 10)] || imagesMap[imageId];
                     if (!img) {
                         return;
                     }
-
                     const title = normalize(img.title);
-                    let bestMatch = null;
-
-                    // Rule 1: SKU equals or is included in the image title
-                    bestMatch = products.find(p => {
+                    let bestMatch = products.find(p => {
                         const sku = normalize(p.sku);
                         return sku && (title === sku || title.includes(sku) || sku.includes(title));
                     }) || null;
-
-                    // Rule 2: Fallback to fuzzy name match
                     if (!bestMatch) {
                         bestMatch = products.find(p => {
                             const name = normalize(p.name);
                             return name && (title.includes(name) || name.includes(title));
                         }) || null;
                     }
-
-                    matches.push({
-                        image: img,
-                        product: bestMatch,
-                        selected: !!bestMatch
-                    });
+                    matches.push({ image: img, product: bestMatch, selected: !!bestMatch });
                 });
 
                 this.autoAssignMatches = matches;
@@ -467,6 +529,7 @@
                         this.lastSelectedIndex = null;
                         Alpine.store('globals').showToast('Featured images auto-assigned successfully!');
                         window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
+                        await this.fetchGalleryPage(this.imagesPagination.page);
                     } else {
                         throw new Error(data.error || 'Failed to auto-assign featured images.');
                     }
@@ -501,10 +564,9 @@
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
-                        const index = this.galleryImages.findIndex(img => img.id === data.image.id);
-                        if (index > -1) { this.galleryImages[index] = data.image; }
                         this.showImageEditModal = false;
                         Alpine.store('globals').showToast('Image updated successfully!');
+                        await this.fetchGalleryPage(this.imagesPagination.page);
                     } else { throw new Error(data.error || 'Failed to update image.'); }
                 } catch (err) {
                     Alpine.store('globals').showToast('Error: ' + err.message, 'error');
