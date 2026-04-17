@@ -32,5 +32,17 @@ def send_verification_code(email, code):
         return True
 
     except Exception as e:
-        logger.exception(f"[utils.py] Failed to send verification email to {email}: {e}")
+        backend = getattr(settings, 'EMAIL_BACKEND', '')
+        logger.exception(
+            "[utils.py] Failed to send verification email to %s (EMAIL_BACKEND=%s, HOST=%s): %s",
+            email,
+            backend,
+            getattr(settings, 'EMAIL_HOST', ''),
+            e,
+        )
+        if 'console' in backend:
+            logger.error(
+                "[utils.py] EMAIL_BACKEND is console — outgoing mail is not sent. "
+                "Set EMAIL_BACKEND to smtp and configure EMAIL_HOST / credentials in production."
+            )
         return False

@@ -18,6 +18,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'fallback-insecure-key')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Required behind nginx / a load balancer so get_host(), CSRF, and redirects match the public site.
+USE_X_FORWARDED_HOST = True
 
 allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS')
 
@@ -209,6 +211,9 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@distributorplatform.com')
+
+# Production: set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend and valid SMTP env vars.
+# If EMAIL_BACKEND stays as console after go-live, verification emails are not delivered (only printed in logs).
 
 # Logging Configuration
 LOGGING = {

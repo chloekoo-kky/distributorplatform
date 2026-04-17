@@ -67,11 +67,14 @@ def register(request):
             code = generate_verification_code()
 
             if send_verification_code(email, code):
+                registration_data.pop('csrfmiddlewaretoken', None)
                 request.session['registration_data'] = registration_data.dict()
                 request.session['verification_code'] = code
                 # Store email in session instead of phone
                 request.session['email_to_verify'] = email
                 request.session['verification_code_expiry'] = time.time() + 300 # 5 min expiry
+                request.session.modified = True
+                request.session.save()
                 logger.info("[register] Code sent successfully.")
                 # Return email in response
                 return JsonResponse({'success': True, 'email': email})

@@ -397,6 +397,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const csrfTokenInput = registerForm.querySelector('[name=csrfmiddlewaretoken]');
     const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
 
+    function getCsrfToken() {
+        const inp = registerForm.querySelector('[name=csrfmiddlewaretoken]');
+        if (inp && inp.value) return inp.value;
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1].trim()) : (csrfToken || '');
+    }
+
     const registerButtonText = document.getElementById('register-button-text');
     const registerSpinner = document.getElementById('register-spinner');
     const verifyButton = document.getElementById('verify-button');
@@ -424,14 +431,21 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const response = await fetch('{% url "user:register" %}', {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrfToken
+                    'X-CSRFToken': getCsrfToken()
                 },
                 body: formData
             });
 
             if (!response.ok) {
+                if (response.status === 403) {
+                    displayFormErrors({
+                        'error': 'Request blocked (403). Ensure DJANGO_CSRF_TRUSTED_ORIGINS includes your site URL (e.g. https://yourdomain.com), then refresh and try again.'
+                    });
+                    return;
+                }
                 try {
                     const data = await response.json();
                     displayFormErrors(data);
@@ -476,9 +490,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // URL pointing to verify_phone (which is now verify_email logic)
             const response = await fetch('{% url "user:verify_phone" %}', {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrfToken,
+                    'X-CSRFToken': getCsrfToken(),
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ code: code })
