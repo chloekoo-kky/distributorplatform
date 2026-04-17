@@ -26,7 +26,7 @@ import urllib.parse
 
 from inventory.models import QuotationItem
 from product.models import Product, Category
-from .models import Order, OrderItem, Customer, CustomerAddress
+from .models import Order, OrderItem, Customer, CustomerAddress, SalesInvoiceIssuer
 from .forms import ManualOrderForm
 from core.models import SiteSetting, PaymentOption
 
@@ -499,6 +499,251 @@ def api_customer_update(request, customer_id):
             'notes': customer.notes or '',
         },
     })
+
+
+def _sales_invoice_issuer_dict(issuer: SalesInvoiceIssuer, request=None) -> dict:
+    # Relative /media/... URL so the browser loads via the same host as the page
+    # (avoids broken images when build_absolute_uri uses an internal Docker hostname).
+    logo_url = ''
+    if issuer.logo and issuer.logo.name:
+        logo_url = issuer.logo.url
+    return {
+        'id': issuer.id,
+        'label': issuer.label,
+        'legal_name': issuer.legal_name,
+        'address': issuer.address or '',
+        'phone': issuer.phone or '',
+        'email': issuer.email or '',
+        'tax_id': issuer.tax_id or '',
+        'registration_no': issuer.registration_no or '',
+        'bank_details': issuer.bank_details or '',
+        'is_default': issuer.is_default,
+        'logo_url': logo_url,
+    }
+
+
+def _issuer_payload_and_logo_file(request):
+    """
+    Multipart: form fields + optional 'logo' file.
+    Otherwise: JSON body (no file upload).
+    """
+    ct = (request.content_type or '').lower()
+    if 'multipart/form-data' in ct:
+        d = {
+            'label': (request.POST.get('label') or '').strip(),
+            'legal_name': (request.POST.get('legal_name') or '').strip(),
+            'address': (request.POST.get('address') or '').strip(),
+            'phone': (request.POST.get('phone') or '').strip(),
+            'email': (request.POST.get('email') or '').strip(),
+            'tax_id': (request.POST.get('tax_id') or '').strip(),
+            'registration_no': (request.POST.get('registration_no') or '').strip(),
+            'bank_details': (request.POST.get('bank_details') or '').strip(),
+            'is_default': request.POST.get('is_default') in ('1', 'true', 'on', 'yes'),
+            'clear_logo': request.POST.get('clear_logo') in ('1', 'true', 'on', 'yes'),
+        }
+        return d, request.FILES.get('logo')
+    try:
+        raw = request.body
+        if not raw:
+            return None, None
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    d = {
+        'label': (data.get('label') or '').strip(),
+        'legal_name': (data.get('legal_name') or '').strip(),
+        'address': (str(data.get('address') or '')).strip(),
+        'phone': (str(data.get('phone') or '')).strip(),
+        'email': (str(data.get('email') or '')).strip(),
+        'tax_id': (str(data.get('tax_id') or '')).strip(),
+        'registration_no': (str(data.get('registration_no') or '')).strip(),
+        'bank_details': (str(data.get('bank_details') or '')).strip(),
+        'is_default': bool(data.get('is_default')),
+        'clear_logo': bool(data.get('clear_logo')),
+    }
+    return d, None
+
+
+@staff_member_required
+def api_invoice_issuers_list(request):
+    """GET: all sales invoice issuer accounts for dropdowns and management UI."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    qs = SalesInvoiceIssuer.objects.all().order_by('-is_default', 'label')
+    return JsonResponse({
+        'success': True,
+        'issuers': [_sales_invoice_issuer_dict(i, request) for i in qs],
+    })
+
+
+@staff_member_required
+@transaction.atomic
+def api_invoice_issuer_create(request):
+    """POST: JSON or multipart/form-data (optional logo file)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    data, logo_file = _issuer_payload_and_logo_file(request)
+    if data is None:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON or form data.'}, status=400)
+    label = (data.get('label') or '').strip()
+    if not label:
+        return JsonResponse({'success': False, 'error': 'Label is required.'}, status=400)
+    legal_name = (data.get('legal_name') or '').strip() or label
+    issuer = SalesInvoiceIssuer(
+        label=label,
+        legal_name=legal_name,
+        address=(data.get('address') or '').strip(),
+        phone=(data.get('phone') or '').strip(),
+        email=(data.get('email') or '').strip() or '',
+        tax_id=(data.get('tax_id') or '').strip(),
+        registration_no=(data.get('registration_no') or '').strip(),
+        bank_details=(data.get('bank_details') or '').strip(),
+        is_default=bool(data.get('is_default')),
+    )
+    if logo_file:
+        issuer.logo = logo_file
+    issuer.save()
+    return JsonResponse({'success': True, 'issuer': _sales_invoice_issuer_dict(issuer, request)})
+
+
+@staff_member_required
+def api_invoice_issuer_detail(request, issuer_id):
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    issuer = get_object_or_404(SalesInvoiceIssuer, pk=issuer_id)
+    return JsonResponse({'success': True, 'issuer': _sales_invoice_issuer_dict(issuer, request)})
+
+
+@staff_member_required
+@transaction.atomic
+def api_invoice_issuer_update(request, issuer_id):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    issuer = get_object_or_404(SalesInvoiceIssuer, pk=issuer_id)
+    data, logo_file = _issuer_payload_and_logo_file(request)
+    if data is None:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON or form data.'}, status=400)
+
+    if data.get('clear_logo'):
+        if issuer.logo:
+            issuer.logo.delete(save=False)
+        issuer.logo = None
+    if logo_file:
+        if issuer.logo:
+            issuer.logo.delete(save=False)
+        issuer.logo = logo_file
+
+    is_multipart = bool(request.FILES) or (
+        request.content_type and 'multipart/form-data' in request.content_type.lower()
+    )
+
+    if is_multipart:
+        label = (data.get('label') or '').strip()
+        if not label:
+            return JsonResponse({'success': False, 'error': 'Label cannot be empty.'}, status=400)
+        issuer.label = label
+        issuer.legal_name = (data.get('legal_name') or '').strip() or label
+        issuer.address = (data.get('address') or '').strip()
+        issuer.phone = (data.get('phone') or '').strip()
+        issuer.email = (data.get('email') or '').strip() or ''
+        issuer.tax_id = (data.get('tax_id') or '').strip()
+        issuer.registration_no = (data.get('registration_no') or '').strip()
+        issuer.bank_details = (data.get('bank_details') or '').strip()
+        issuer.is_default = bool(data.get('is_default'))
+    else:
+        if data.get('label') is not None:
+            label = (data.get('label') or '').strip()
+            if not label:
+                return JsonResponse({'success': False, 'error': 'Label cannot be empty.'}, status=400)
+            issuer.label = label
+        if data.get('legal_name') is not None:
+            issuer.legal_name = (data.get('legal_name') or '').strip() or issuer.label
+        if 'address' in data:
+            issuer.address = (data.get('address') or '').strip()
+        if 'phone' in data:
+            issuer.phone = (data.get('phone') or '').strip()
+        if 'email' in data:
+            issuer.email = (data.get('email') or '').strip() or ''
+        if 'tax_id' in data:
+            issuer.tax_id = (data.get('tax_id') or '').strip()
+        if 'registration_no' in data:
+            issuer.registration_no = (data.get('registration_no') or '').strip()
+        if 'bank_details' in data:
+            issuer.bank_details = (data.get('bank_details') or '').strip()
+        if 'is_default' in data:
+            issuer.is_default = bool(data.get('is_default'))
+    issuer.save()
+    return JsonResponse({'success': True, 'issuer': _sales_invoice_issuer_dict(issuer, request)})
+
+
+@staff_member_required
+@transaction.atomic
+def api_invoice_issuer_delete(request, issuer_id):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    issuer = get_object_or_404(SalesInvoiceIssuer, pk=issuer_id)
+    issuer.delete()
+    return JsonResponse({'success': True})
+
+
+@staff_member_required
+def sales_invoice_print(request, order_id):
+    """
+    Printable customer sales invoice for an order (browser print / save as PDF).
+    Query: issuer_id (required) — SalesInvoiceIssuer primary key.
+    """
+    issuer_id = (request.GET.get('issuer_id') or '').strip()
+    if not issuer_id:
+        return HttpResponse('Missing issuer_id.', status=400)
+    try:
+        issuer_pk = int(issuer_id)
+    except ValueError:
+        return HttpResponse('Invalid issuer_id.', status=400)
+    order = get_object_or_404(
+        Order.objects.select_related('agent', 'created_by', 'customer').prefetch_related('items__product'),
+        pk=order_id,
+    )
+    issuer = get_object_or_404(SalesInvoiceIssuer, pk=issuer_pk)
+
+    items_rows = []
+    subtotal = Decimal('0.00')
+    for item in order.items.all():
+        unit = item.effective_unit_price
+        line_total = item.total_price
+        subtotal += line_total
+        items_rows.append({
+            'description': item.product.order_display_name,
+            'sku': item.product.sku or '—',
+            'quantity': item.quantity,
+            'unit_price': unit,
+            'line_total': line_total,
+        })
+
+    if order.transaction_date:
+        invoice_date = order.transaction_date
+    else:
+        invoice_date = timezone.localtime(order.created_at).date()
+    customer_name = (order.customer_name or '').strip() or (order.customer.name if order.customer_id else '') or '—'
+    customer_phone = (order.customer_phone or '').strip() or (order.customer.phone if order.customer_id else '') or ''
+    ship_to = (order.shipping_address or '').strip()
+
+    context = {
+        'order': order,
+        'issuer': issuer,
+        'items_rows': items_rows,
+        'subtotal': subtotal,
+        'invoice_number': f'SINV-{order.id}',
+        'invoice_date': invoice_date,
+        'customer_name': customer_name,
+        'customer_phone': customer_phone,
+        'ship_to': ship_to,
+        'payment_method': (order.payment_method or '').strip(),
+        'remarks': (order.remarks or '').strip(),
+        'generated_at': timezone.now(),
+    }
+    return render(request, 'order/sales_invoice_print.html', context)
 
 
 @staff_member_required

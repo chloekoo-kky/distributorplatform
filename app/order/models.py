@@ -28,6 +28,58 @@ class Customer(models.Model):
         return self.name or f"Customer #{self.pk}"
 
 
+class SalesInvoiceIssuer(models.Model):
+    """
+    Legal / billing identity used on customer-facing sales invoices (orders).
+    Staff can maintain several issuers (e.g. different entities or bank accounts).
+    """
+    label = models.CharField(
+        max_length=120,
+        help_text='Short name shown in dropdowns (e.g. "HQ — ABC Sdn Bhd").',
+    )
+    legal_name = models.CharField(max_length=255, help_text='Full name as printed on the invoice.')
+    address = models.TextField(blank=True, help_text='Registered / mailing address.')
+    phone = models.CharField(max_length=80, blank=True)
+    email = models.EmailField(blank=True)
+    tax_id = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text='SST / VAT / tax registration number, if applicable.',
+    )
+    registration_no = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text='Company registration number, if applicable.',
+    )
+    bank_details = models.TextField(
+        blank=True,
+        help_text='Payment instructions (bank name, account no., reference).',
+    )
+    logo = models.ImageField(
+        upload_to='invoice_issuers/logos/%Y/%m/',
+        blank=True,
+        null=True,
+        help_text='Shown top-left on printed sales invoices (PNG, JPG, or WebP).',
+    )
+    is_default = models.BooleanField(
+        default=False,
+        help_text='Pre-selected when opening the sales invoice dialog.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', 'label']
+
+    def __str__(self):
+        return self.label or self.legal_name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_default:
+            SalesInvoiceIssuer.objects.exclude(pk=self.pk).update(is_default=False)
+
+
 class CustomerAddress(models.Model):
     customer = models.ForeignKey(
         Customer,

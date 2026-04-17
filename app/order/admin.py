@@ -3,7 +3,35 @@ from django.db.models import Sum, F, Q
 from django.utils.html import format_html
 from django.urls import reverse
 from import_export.admin import ImportExportModelAdmin
-from .models import Order, OrderItem, Customer, CustomerAddress
+from .models import Order, OrderItem, Customer, CustomerAddress, SalesInvoiceIssuer
+
+
+@admin.register(SalesInvoiceIssuer)
+class SalesInvoiceIssuerAdmin(admin.ModelAdmin):
+    list_display = ('label', 'legal_name', 'tax_id', 'is_default', 'updated_at')
+    list_filter = ('is_default',)
+    search_fields = ('label', 'legal_name', 'tax_id', 'registration_no')
+    ordering = ('-is_default', 'label')
+    readonly_fields = ('logo_preview',)
+
+    fieldsets = (
+        (None, {
+            'fields': (
+                'label', 'legal_name', 'is_default', 'logo', 'logo_preview',
+                'address', 'phone', 'email', 'tax_id', 'registration_no', 'bank_details',
+            ),
+        }),
+    )
+
+    def logo_preview(self, obj):
+        if not obj or not getattr(obj, 'logo', None) or not obj.logo.name:
+            return '—'
+        return format_html(
+            '<img src="{}" alt="" style="max-height:64px;max-width:200px;object-fit:contain;" />',
+            obj.logo.url,
+        )
+
+    logo_preview.short_description = 'Logo preview'
 
 
 class CustomerAddressInline(admin.TabularInline):

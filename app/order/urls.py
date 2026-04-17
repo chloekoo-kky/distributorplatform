@@ -35,6 +35,13 @@ urlpatterns = [
     path('api/order/<str:order_id>/edit-details/', views.api_manage_order_edit_details, name='api_manage_order_edit_details'),
     path('api/order/<str:order_id>/update-status/', views.api_update_order_status, name='api_update_order_status'),
 
+    path('api/invoice-issuers/', views.api_invoice_issuers_list, name='api_invoice_issuers_list'),
+    path('api/invoice-issuers/create/', views.api_invoice_issuer_create, name='api_invoice_issuer_create'),
+    path('api/invoice-issuers/<int:issuer_id>/', views.api_invoice_issuer_detail, name='api_invoice_issuer_detail'),
+    path('api/invoice-issuers/<int:issuer_id>/update/', views.api_invoice_issuer_update, name='api_invoice_issuer_update'),
+    path('api/invoice-issuers/<int:issuer_id>/delete/', views.api_invoice_issuer_delete, name='api_invoice_issuer_delete'),
+    path('sales-invoice/<str:order_id>/', views.sales_invoice_print, name='sales_invoice_print'),
+
     path('api/prepare-checkout/', views.api_prepare_checkout, name='api_prepare_checkout'),
     path('checkout/', views.checkout_confirmation_view, name='checkout_confirmation'),
     path('api/confirm-checkout/', views.api_confirm_checkout, name='api_confirm_checkout'),

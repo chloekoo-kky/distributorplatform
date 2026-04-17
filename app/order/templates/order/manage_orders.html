@@ -441,6 +441,17 @@
                                     {% endif %}
                                     <button
                                         type="button"
+                                        @click="openSalesInvoiceModal(order)"
+                                        class="inline-flex items-center justify-center w-8 h-8 border border-transparent rounded-full text-emerald-800 bg-emerald-100 hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                                        title="Sales invoice"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
                                         @click="openEditDetailsModal(order)"
                                         class="inline-flex items-center justify-center w-8 h-8 border border-transparent rounded-full text-gray-700 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                                         title="Edit order details"
@@ -582,6 +593,15 @@
                                     </button>
                                     {% endif %}
                                     <button type="button"
+                                            @click="openSalesInvoiceModal(order)"
+                                            class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-emerald-100 text-emerald-800 hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                                            title="Sales invoice">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </button>
+                                    <button type="button"
                                             @click="openEditDetailsModal(order)"
                                             class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
                                             title="Edit order details">
@@ -703,6 +723,135 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    {# --- Sales invoice (issuer + print) --- #}
+    <div x-show="showSalesInvoiceModal"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
+         x-transition.opacity
+         style="display: none;"
+         @keydown.escape.window="closeSalesInvoiceModal()" x-cloak>
+        <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl" @click.away="closeSalesInvoiceModal()">
+            <div class="border-b border-gray-200 px-6 py-4">
+                <h3 class="text-lg font-medium text-gray-900">Sales invoice</h3>
+                <p class="mt-1 text-sm text-gray-500">
+                    Order <span class="font-mono font-semibold text-gray-800" x-text="salesInvoiceOrder && salesInvoiceOrder.id"></span>
+                    — choose which legal entity issues this invoice, then open the printable document.
+                </p>
+            </div>
+            <div class="space-y-4 px-6 py-4">
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-gray-700">Invoice issuing account</label>
+                    <select x-model="selectedIssuerId"
+                            :disabled="invoiceIssuersLoading || invoiceIssuers.length === 0"
+                            class="mt-1 block w-full rounded-md border border-gray-300 p-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100">
+                        <option value="" x-show="invoiceIssuers.length === 0">No accounts yet — add one below</option>
+                        <template x-for="iss in invoiceIssuers" :key="iss.id">
+                            <option :value="String(iss.id)" x-text="iss.label + (iss.is_default ? ' (default)' : '')"></option>
+                        </template>
+                    </select>
+                    <p x-show="invoiceIssuersLoading" class="mt-1 text-xs text-gray-500">Loading accounts…</p>
+                </div>
+                <button type="button"
+                        @click="showIssuerManagement = !showIssuerManagement"
+                        class="text-sm font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none focus:underline">
+                    <span x-text="showIssuerManagement ? 'Hide account management' : 'Create and manage issuing accounts'"></span>
+                </button>
+                <div x-show="showIssuerManagement" class="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div x-show="invoiceIssuers.length > 0" class="max-h-40 space-y-2 overflow-y-auto text-sm">
+                        <p class="text-xs font-semibold uppercase text-gray-500">Saved accounts</p>
+                        <template x-for="iss in invoiceIssuers" :key="'m-' + iss.id">
+                            <div class="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white px-2 py-1.5">
+                                <span class="min-w-0 truncate font-medium text-gray-800" x-text="iss.label"></span>
+                                <span class="flex shrink-0 gap-1">
+                                    <button type="button" @click="startEditIssuer(iss)" class="rounded px-2 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50">Edit</button>
+                                    <button type="button" @click="deleteIssuer(iss)" class="rounded px-2 py-0.5 text-xs text-red-600 hover:bg-red-50">Delete</button>
+                                </span>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="border-t border-gray-200 pt-3 space-y-3">
+                        <p class="text-xs font-semibold uppercase text-gray-500" x-text="issuerFormMode === 'edit' ? 'Edit account' : 'New account'"></p>
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <div class="sm:col-span-2">
+                                <label class="text-xs text-gray-600">Label (dropdown)</label>
+                                <input type="text" x-model="issuerForm.label" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" placeholder="e.g. HQ — ABC Sdn Bhd" />
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="text-xs text-gray-600">Legal name on invoice</label>
+                                <input type="text" x-model="issuerForm.legal_name" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" />
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="text-xs text-gray-600">Company logo (top-left on invoice)</label>
+                                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif"
+                                       x-ref="issuerLogoInput"
+                                       @change="issuerClearLogo = false"
+                                       class="mt-0.5 block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100" />
+                                <p class="mt-1 text-[11px] text-gray-500">PNG, JPG, WebP, or GIF. Optional; shown beside issuer details on the printed invoice.</p>
+                                <div x-show="issuerFormMode === 'edit' && issuerEditingLogoUrl && !issuerClearLogo" class="mt-2">
+                                    <p class="text-[11px] font-medium text-gray-500">Current logo</p>
+                                    <img :src="issuerEditingLogoUrl" alt="" class="mt-1 max-h-14 max-w-[180px] rounded border border-gray-200 object-contain" />
+                                </div>
+                                <label x-show="issuerFormMode === 'edit' && issuerEditingLogoUrl" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                                    <input type="checkbox" x-model="issuerClearLogo" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                    Remove current logo
+                                </label>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="text-xs text-gray-600">Address</label>
+                                <textarea x-model="issuerForm.address" rows="2" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">Phone</label>
+                                <input type="text" x-model="issuerForm.phone" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">Email</label>
+                                <input type="email" x-model="issuerForm.email" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">Tax ID</label>
+                                <input type="text" x-model="issuerForm.tax_id" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" />
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-600">Registration no.</label>
+                                <input type="text" x-model="issuerForm.registration_no" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm" />
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="text-xs text-gray-600">Bank / payment details</label>
+                                <textarea x-model="issuerForm.bank_details" rows="2" class="mt-0.5 w-full rounded border border-gray-300 p-2 text-sm"></textarea>
+                            </div>
+                            <label class="flex items-center gap-2 sm:col-span-2 text-sm text-gray-700">
+                                <input type="checkbox" x-model="issuerForm.is_default" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                Default for new invoices
+                            </label>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" @click="saveIssuer()"
+                                    :disabled="issuerSaving"
+                                    class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+                                <span x-text="issuerFormMode === 'edit' ? 'Save changes' : 'Add account'"></span>
+                            </button>
+                            <button type="button" x-show="issuerFormMode === 'edit'" @click="resetIssuerForm()"
+                                    class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                Cancel edit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+                <button type="button" @click="closeSalesInvoiceModal()"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                    Close
+                </button>
+                <button type="button" @click="openSalesInvoicePrint()"
+                        :disabled="!selectedIssuerId || !salesInvoiceOrder"
+                        class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                    Open invoice
+                </button>
+            </div>
         </div>
     </div>
 
@@ -868,6 +1017,30 @@
             newStatus: '',
             isUpdating: false,
 
+            // --- Sales invoice ---
+            showSalesInvoiceModal: false,
+            salesInvoiceOrder: null,
+            invoiceIssuers: [],
+            selectedIssuerId: '',
+            invoiceIssuersLoading: false,
+            showIssuerManagement: false,
+            issuerFormMode: 'create',
+            issuerEditingId: null,
+            issuerForm: {
+                label: '',
+                legal_name: '',
+                address: '',
+                phone: '',
+                email: '',
+                tax_id: '',
+                registration_no: '',
+                bank_details: '',
+                is_default: false,
+            },
+            issuerEditingLogoUrl: '',
+            issuerClearLogo: false,
+            issuerSaving: false,
+
             // --- Export Selected (checkboxes) ---
             selectedOrderIds: [],
             latestSearchRequestId: 0,
@@ -962,6 +1135,186 @@
                 this.editingOrder = null;
                 this.newStatus = '';
                 this.showStatusModal = true;
+            },
+
+            openSalesInvoiceModal(order) {
+                this.salesInvoiceOrder = order;
+                this.selectedIssuerId = '';
+                this.showIssuerManagement = false;
+                this.resetIssuerForm();
+                this.showSalesInvoiceModal = true;
+                this.loadInvoiceIssuers();
+            },
+
+            closeSalesInvoiceModal() {
+                this.showSalesInvoiceModal = false;
+                this.salesInvoiceOrder = null;
+                this.invoiceIssuersLoading = false;
+            },
+
+            async loadInvoiceIssuers() {
+                this.invoiceIssuersLoading = true;
+                try {
+                    const r = await fetch('{% url "order:api_invoice_issuers_list" %}');
+                    const d = await r.json();
+                    if (!d.success || !Array.isArray(d.issuers)) {
+                        throw new Error(d.error || 'Could not load issuers');
+                    }
+                    this.invoiceIssuers = d.issuers;
+                    const def = d.issuers.find(x => x.is_default);
+                    if (def) {
+                        this.selectedIssuerId = String(def.id);
+                    } else if (d.issuers.length) {
+                        this.selectedIssuerId = String(d.issuers[0].id);
+                    } else {
+                        this.selectedIssuerId = '';
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Could not load invoice issuing accounts.');
+                    this.invoiceIssuers = [];
+                    this.selectedIssuerId = '';
+                } finally {
+                    this.invoiceIssuersLoading = false;
+                }
+            },
+
+            openSalesInvoicePrint() {
+                if (!this.salesInvoiceOrder || !this.selectedIssuerId) {
+                    alert('Select an invoice issuing account.');
+                    return;
+                }
+                const tpl = '{% url "order:sales_invoice_print" "ORDER_ID_PLACEHOLDER" %}';
+                const base = tpl.replace('ORDER_ID_PLACEHOLDER', this.salesInvoiceOrder.id);
+                const url = base + '?issuer_id=' + encodeURIComponent(this.selectedIssuerId);
+                window.open(url, '_blank', 'noopener,noreferrer');
+            },
+
+            resetIssuerForm() {
+                this.issuerFormMode = 'create';
+                this.issuerEditingId = null;
+                this.issuerEditingLogoUrl = '';
+                this.issuerClearLogo = false;
+                this.issuerForm = {
+                    label: '',
+                    legal_name: '',
+                    address: '',
+                    phone: '',
+                    email: '',
+                    tax_id: '',
+                    registration_no: '',
+                    bank_details: '',
+                    is_default: false,
+                };
+                this.$nextTick(() => {
+                    const el = this.$refs.issuerLogoInput;
+                    if (el) el.value = '';
+                });
+            },
+
+            startEditIssuer(iss) {
+                this.issuerFormMode = 'edit';
+                this.issuerEditingId = iss.id;
+                this.issuerEditingLogoUrl = iss.logo_url || '';
+                this.issuerClearLogo = false;
+                this.issuerForm = {
+                    label: iss.label || '',
+                    legal_name: iss.legal_name || '',
+                    address: iss.address || '',
+                    phone: iss.phone || '',
+                    email: iss.email || '',
+                    tax_id: iss.tax_id || '',
+                    registration_no: iss.registration_no || '',
+                    bank_details: iss.bank_details || '',
+                    is_default: !!iss.is_default,
+                };
+                this.$nextTick(() => {
+                    const el = this.$refs.issuerLogoInput;
+                    if (el) el.value = '';
+                });
+            },
+
+            async saveIssuer() {
+                if (!(this.issuerForm.label || '').trim()) {
+                    alert('Label is required.');
+                    return;
+                }
+                this.issuerSaving = true;
+                try {
+                    const isEdit = this.issuerFormMode === 'edit' && this.issuerEditingId;
+                    const fd = new FormData();
+                    fd.append('label', (this.issuerForm.label || '').trim());
+                    fd.append('legal_name', (this.issuerForm.legal_name || '').trim());
+                    fd.append('address', this.issuerForm.address || '');
+                    fd.append('phone', this.issuerForm.phone || '');
+                    fd.append('email', this.issuerForm.email || '');
+                    fd.append('tax_id', this.issuerForm.tax_id || '');
+                    fd.append('registration_no', this.issuerForm.registration_no || '');
+                    fd.append('bank_details', this.issuerForm.bank_details || '');
+                    fd.append('is_default', this.issuerForm.is_default ? '1' : '0');
+                    const logoEl = this.$refs.issuerLogoInput;
+                    if (logoEl && logoEl.files && logoEl.files.length) {
+                        fd.append('logo', logoEl.files[0]);
+                    }
+                    if (isEdit && this.issuerClearLogo) {
+                        fd.append('clear_logo', '1');
+                    }
+                    let url;
+                    if (isEdit) {
+                        url = '{% url "order:api_invoice_issuer_update" 999999999 %}'.replace('999999999', String(this.issuerEditingId));
+                    } else {
+                        url = '{% url "order:api_invoice_issuer_create" %}';
+                    }
+                    const r = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': this.csrfToken,
+                        },
+                        body: fd,
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || !d.success) {
+                        throw new Error(d.error || 'Save failed');
+                    }
+                    await this.loadInvoiceIssuers();
+                    if (d.issuer && d.issuer.id) {
+                        this.selectedIssuerId = String(d.issuer.id);
+                    }
+                    this.resetIssuerForm();
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Save failed');
+                } finally {
+                    this.issuerSaving = false;
+                }
+            },
+
+            async deleteIssuer(iss) {
+                if (!confirm('Delete issuing account "' + (iss.label || '') + '"?')) return;
+                try {
+                    const url = '{% url "order:api_invoice_issuer_delete" 999999999 %}'.replace('999999999', String(iss.id));
+                    const r = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.csrfToken,
+                        },
+                        body: '{}',
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || !d.success) {
+                        throw new Error(d.error || 'Delete failed');
+                    }
+                    await this.loadInvoiceIssuers();
+                    if (String(this.selectedIssuerId) === String(iss.id)) {
+                        this.selectedIssuerId = this.invoiceIssuers.length
+                            ? String(this.invoiceIssuers[0].id)
+                            : '';
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Delete failed');
+                }
             },
 
             async exportSelectedOrders() {
