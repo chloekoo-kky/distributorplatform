@@ -137,6 +137,7 @@ class OrderAdmin(admin.ModelAdmin):
         'id',
         'agent__username',
         'agent__email',
+        'company_name',
         'customer_name',
         'customer_phone',
         'customer__name',
@@ -163,6 +164,7 @@ class OrderAdmin(admin.ModelAdmin):
         ('Customer', {
             'fields': (
                 'customer',
+                'company_name',
                 ('customer_name', 'customer_phone'),
                 'shipping_address',
             ),

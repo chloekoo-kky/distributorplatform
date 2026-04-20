@@ -166,6 +166,12 @@ class Order(models.Model):
     )
 
     # Guest customer details (snapshot for display/export; also used when no customer linked)
+    company_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text='Bill-to company name (shown on sales invoices).',
+    )
     customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_phone = models.CharField(max_length=50, blank=True, null=True)
     shipping_address = models.TextField(blank=True, null=True)

@@ -41,6 +41,12 @@
             <div x-show="!editDetailsLoading" class="space-y-4">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="sm:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company name <span class="font-normal text-gray-500">(bill to on invoice)</span></label>
+                        <input type="text" x-model="editDetailsForm.company_name"
+                               class="w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                               placeholder="Legal entity or trading name">
+                    </div>
+                    <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Customer name</label>
                         <input type="text" x-model="editDetailsForm.customer_name"
                                class="w-full border border-gray-300 rounded-lg shadow-sm py-2 px-3 text-sm focus:ring-indigo-500 focus:border-indigo-500">

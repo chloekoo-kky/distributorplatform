@@ -728,6 +728,7 @@ def sales_invoice_print(request, order_id):
     customer_name = (order.customer_name or '').strip() or (order.customer.name if order.customer_id else '') or '—'
     customer_phone = (order.customer_phone or '').strip() or (order.customer.phone if order.customer_id else '') or ''
     ship_to = (order.shipping_address or '').strip()
+    bill_to_company_name = (order.company_name or '').strip()
 
     context = {
         'order': order,
@@ -736,6 +737,7 @@ def sales_invoice_print(request, order_id):
         'subtotal': subtotal,
         'invoice_number': f'SINV-{order.id}',
         'invoice_date': invoice_date,
+        'bill_to_company_name': bill_to_company_name,
         'customer_name': customer_name,
         'customer_phone': customer_phone,
         'ship_to': ship_to,
@@ -1611,6 +1613,7 @@ def api_manage_order_edit_details(request, order_id):
             'is_manual_order': bool(order.created_by_id),
             'sales_channel': order.sales_channel or '',
             'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
+            'company_name': order.company_name or '',
             'customer_name': order.customer_name or '',
             'customer_phone': order.customer_phone or '',
             'shipping_address': order.shipping_address or '',
@@ -1640,6 +1643,7 @@ def api_manage_order_edit_details(request, order_id):
 
         order.sales_channel = sc
         order.transaction_date = new_td
+        order.company_name = (payload.get('company_name') or '').strip() or None
         order.customer_name = (payload.get('customer_name') or '').strip() or None
         order.customer_phone = (payload.get('customer_phone') or '').strip() or None
         order.shipping_address = (payload.get('shipping_address') or '').strip() or None

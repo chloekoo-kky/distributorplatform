@@ -112,12 +112,14 @@
                             </div>
                             <div class="mt-auto space-y-1 pt-2">
                                 <p class="text-gray-700">Date of Issue: <span class="font-medium text-gray-900">{{ invoice_date|date:"d M Y" }}</span></p>
-                                <p class="text-gray-700">Order ref: <span class="font-mono font-medium text-gray-900">{{ order.id }}</span></p>
                             </div>
                         </div>
                         <div class="h-full rounded-lg border border-gray-200 bg-gray-50 p-4 text-right">
                             <p class="text-xs font-bold uppercase text-gray-500">Bill to</p>
-                            <p class="mt-1 font-semibold text-gray-900">{{ customer_name }}</p>
+                            {% if bill_to_company_name %}
+                            <p class="mt-1 text-base font-bold text-gray-900">{{ bill_to_company_name }}</p>
+                            {% endif %}
+                            <p class="{% if bill_to_company_name %}mt-1 text-gray-800{% else %}mt-1 font-semibold text-gray-900{% endif %}">{{ customer_name }}</p>
                             {% if customer_phone %}<p class="text-gray-700">{{ customer_phone }}</p>{% endif %}
                             {% if ship_to %}
                             <p class="mt-2 whitespace-pre-line text-gray-600">{{ ship_to }}</p>

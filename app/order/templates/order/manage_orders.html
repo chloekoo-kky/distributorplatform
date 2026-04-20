@@ -1004,6 +1004,7 @@
             editDetailsLoading: false,
             editDetailsSaving: false,
             editDetailsForm: {
+                company_name: '',
                 customer_name: '',
                 customer_phone: '',
                 shipping_address: '',
@@ -1442,6 +1443,7 @@
                         is_manual_order: !!o.is_manual_order
                     };
                     this.editDetailsForm = {
+                        company_name: o.company_name || '',
                         customer_name: o.customer_name || '',
                         customer_phone: o.customer_phone || '',
                         shipping_address: o.shipping_address || '',
