@@ -259,3 +259,33 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.quantity} x {self.product.name} in Order {self.order.id}"
+
+
+class CashBankReceiptEntry(models.Model):
+    """
+    Standalone cash or bank transfer received (not tied to an order line).
+    Included in order export spreadsheets alongside itemized order rows.
+    """
+
+    class PaymentType(models.TextChoices):
+        CASH = 'CASH', 'Cash received'
+        BANK = 'BANK', 'Bank transfer'
+
+    payment_type = models.CharField(max_length=10, choices=PaymentType.choices)
+    received_from = models.CharField(max_length=255, help_text='Payer or source description.')
+    transaction_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cash_bank_receipt_entries',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['transaction_date', 'id']
+
+    def __str__(self):
+        return f"{self.get_payment_type_display()} {self.amount} on {self.transaction_date} from {self.received_from}"

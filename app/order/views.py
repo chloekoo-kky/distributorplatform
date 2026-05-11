@@ -26,7 +26,14 @@ import urllib.parse
 
 from inventory.models import QuotationItem
 from product.models import Product, Category
-from .models import Order, OrderItem, Customer, CustomerAddress, SalesInvoiceIssuer
+from .models import (
+    Order,
+    OrderItem,
+    Customer,
+    CustomerAddress,
+    SalesInvoiceIssuer,
+    CashBankReceiptEntry,
+)
 from .forms import ManualOrderForm
 from core.models import SiteSetting, PaymentOption
 
@@ -43,6 +50,48 @@ HEADER_FONT_BOLD = Font(bold=True)
 
 def _logical_order_date(order):
     return order.transaction_date or (order.created_at.date() if order.created_at else None)
+
+
+def _cash_bank_receipt_export_rows(receipts_qs):
+    """Build export row dicts for CashBankReceiptEntry (same columns as order item rows)."""
+    rows = []
+    for rec in receipts_qs.select_related('recorded_by'):
+        if rec.payment_type == CashBankReceiptEntry.PaymentType.CASH:
+            product_label = 'Cash received'
+        else:
+            product_label = 'Bank transfer'
+        salesteam = rec.recorded_by.username if rec.recorded_by_id else ''
+        d = rec.transaction_date
+        month_key = d.strftime('%Y-%m')
+        amt = rec.amount
+        rows.append({
+            'month_key': month_key,
+            'values': [
+                f'CB-{rec.pk}',
+                d.strftime('%Y-%m-%d'),
+                salesteam,
+                rec.received_from.strip(),
+                product_label,
+                '',
+                '',
+                '',
+                '',
+                -float(amt),
+                0.0,
+            ],
+        })
+    return rows
+
+
+def _export_row_sort_key(row):
+    v = row['values']
+    return (v[1] or '', str(v[0]))
+
+
+def _merge_sorted_export_rows(order_rows, receipt_rows):
+    combined = list(order_rows) + list(receipt_rows)
+    combined.sort(key=_export_row_sort_key)
+    return combined
 
 
 def _excel_response_for_order_rows(filename, rows):
@@ -1706,6 +1755,60 @@ def api_bulk_update_order_status(request):
 
 @staff_member_required
 @require_http_methods(['POST'])
+def api_cash_bank_receipt_create(request):
+    """
+    Record a standalone cash received or bank transfer line for order exports.
+    Body JSON: { "payment_type": "CASH"|"BANK", "received_from": str,
+                 "transaction_date": "YYYY-MM-DD", "amount": number|string }
+    """
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    ptype = (data.get('payment_type') or '').strip().upper()
+    if ptype not in ('CASH', 'BANK'):
+        return JsonResponse({'success': False, 'error': 'payment_type must be CASH or BANK'}, status=400)
+
+    received_from = (data.get('received_from') or '').strip()
+    if not received_from:
+        return JsonResponse({'success': False, 'error': 'received_from is required'}, status=400)
+
+    date_str = (data.get('transaction_date') or '').strip()
+    try:
+        tx_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'transaction_date must be YYYY-MM-DD'}, status=400)
+
+    raw_amount = data.get('amount')
+    try:
+        amount = Decimal(str(raw_amount))
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount'}, status=400)
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
+
+    entry = CashBankReceiptEntry.objects.create(
+        payment_type=ptype,
+        received_from=received_from,
+        transaction_date=tx_date,
+        amount=amount,
+        recorded_by=request.user,
+    )
+    return JsonResponse({
+        'success': True,
+        'entry': {
+            'id': entry.pk,
+            'payment_type': entry.payment_type,
+            'received_from': entry.received_from,
+            'transaction_date': entry.transaction_date.isoformat(),
+            'amount': str(entry.amount),
+        },
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
 def export_selected_orders(request):
     """
     Export selected orders as an itemized CSV (one row per OrderItem).
@@ -1764,6 +1867,17 @@ def export_selected_orders(request):
                     float(item.profit),
                 ],
             })
+
+    dates = [d for d in (_logical_order_date(o) for o in orders) if d is not None]
+    if dates:
+        d_min, d_max = min(dates), max(dates)
+        receipts = CashBankReceiptEntry.objects.filter(
+            transaction_date__gte=d_min,
+            transaction_date__lte=d_max,
+        )
+    else:
+        receipts = CashBankReceiptEntry.objects.none()
+    rows = _merge_sorted_export_rows(rows, _cash_bank_receipt_export_rows(receipts))
 
     return _excel_response_for_order_rows('orders_export.xlsx', rows)
 
@@ -1857,6 +1971,13 @@ def export_orders_range(request):
                     float(item.profit),
                 ],
             })
+
+    receipts = CashBankReceiptEntry.objects.all()
+    if start_date:
+        receipts = receipts.filter(transaction_date__gte=start_date)
+    if end_date:
+        receipts = receipts.filter(transaction_date__lte=end_date)
+    rows = _merge_sorted_export_rows(rows, _cash_bank_receipt_export_rows(receipts))
 
     return _excel_response_for_order_rows(filename, rows)
 
@@ -2222,6 +2343,12 @@ def export_order_statement(request):
                         float(item.profit),
                     ],
                 })
+
+        receipts = CashBankReceiptEntry.objects.filter(
+            transaction_date__year=year,
+            transaction_date__month=month,
+        )
+        rows = _merge_sorted_export_rows(rows, _cash_bank_receipt_export_rows(receipts))
 
         filename = f"order_statement_{year}_{month:02d}.xlsx"
         return _excel_response_for_order_rows(filename, rows)

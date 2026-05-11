@@ -28,6 +28,7 @@ urlpatterns = [
     path('export/customers-from-orders/', views.export_customers_from_orders, name='export_customers_from_orders'),
     path('api/manage-orders/', views.api_manage_orders, name='api_manage_orders'),
     path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
+    path('api/cash-bank-receipt/', views.api_cash_bank_receipt_create, name='api_cash_bank_receipt_create'),
     path('api/bulk-update-status/', views.api_bulk_update_order_status, name='api_bulk_update_status'),
     path('export/orders-range/', views.export_orders_range, name='export_orders_range'),
 

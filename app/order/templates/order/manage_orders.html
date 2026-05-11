@@ -242,6 +242,13 @@
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         Export Selected
                     </button>
+                    <button type="button"
+                            @click="openCashBankModal()"
+                            class="inline-flex justify-center items-center w-9 h-9 shrink-0 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                            title="Record cash or bank transfer for exports">
+                        <span aria-hidden="true">$</span>
+                        <span class="sr-only">Record cash or bank transfer</span>
+                    </button>
                 </div>
             </div>
 
@@ -726,6 +733,60 @@
         </div>
     </div>
 
+    {# --- Cash / bank receipt (included in exports) --- #}
+    <div x-show="showCashBankModal"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
+         x-transition.opacity
+         style="display: none;"
+         @keydown.escape.window="showCashBankModal = false" x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @click.away="showCashBankModal = false">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Cash or bank receipt</h3>
+                <p class="mt-1 text-sm text-gray-500">
+                    Saves a row for <strong class="font-medium text-gray-700">Cash received</strong> or <strong class="font-medium text-gray-700">Bank transfer</strong>
+                    (with received-from and date). It is merged into period and range exports when the date fits the export window, and into <strong class="font-medium text-gray-700">Export selected</strong> when the date falls between the earliest and latest order date in your selection.
+                </p>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <select x-model="cashBankForm.payment_type"
+                            class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="CASH">Cash received</option>
+                        <option value="BANK">Bank transfer</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Received from</label>
+                    <input type="text" x-model="cashBankForm.received_from" placeholder="Name or payer reference"
+                           class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Transaction date</label>
+                    <input type="date" x-model="cashBankForm.transaction_date"
+                           class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <input type="number" step="0.01" min="0.01" x-model="cashBankForm.amount" placeholder="0.00"
+                           class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                <button type="button" @click="showCashBankModal = false"
+                        class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Cancel
+                </button>
+                <button type="button" @click="saveCashBankReceipt()"
+                        :disabled="cashBankSaving"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!cashBankSaving">Save</span>
+                    <span x-show="cashBankSaving">Saving…</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     {# --- Sales invoice (issuer + print) --- #}
     <div x-show="showSalesInvoiceModal"
          class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
@@ -998,6 +1059,14 @@
             showStatusModal: false,
             isBulkStatus: false,
             showExportModal: false,
+            showCashBankModal: false,
+            cashBankSaving: false,
+            cashBankForm: {
+                payment_type: 'CASH',
+                received_from: '',
+                transaction_date: '',
+                amount: '',
+            },
             showManualOrderModal: false,
             showEditDetailsModal: false,
             editDetailsRowOrder: null,
@@ -1315,6 +1384,63 @@
                 } catch (e) {
                     console.error(e);
                     alert(e.message || 'Delete failed');
+                }
+            },
+
+            openCashBankModal() {
+                const t = new Date();
+                const y = t.getFullYear();
+                const m = String(t.getMonth() + 1).padStart(2, '0');
+                const d = String(t.getDate()).padStart(2, '0');
+                this.cashBankForm = {
+                    payment_type: 'CASH',
+                    received_from: '',
+                    transaction_date: `${y}-${m}-${d}`,
+                    amount: '',
+                };
+                this.showCashBankModal = true;
+            },
+
+            async saveCashBankReceipt() {
+                const amt = String(this.cashBankForm.amount || '').trim();
+                if (!this.cashBankForm.received_from.trim()) {
+                    alert('Please enter received from.');
+                    return;
+                }
+                if (!this.cashBankForm.transaction_date) {
+                    alert('Please choose a transaction date.');
+                    return;
+                }
+                if (!amt || isNaN(parseFloat(amt)) || parseFloat(amt) <= 0) {
+                    alert('Please enter a valid amount greater than zero.');
+                    return;
+                }
+                this.cashBankSaving = true;
+                try {
+                    const r = await fetch('{% url "order:api_cash_bank_receipt_create" %}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.csrfToken,
+                        },
+                        body: JSON.stringify({
+                            payment_type: this.cashBankForm.payment_type,
+                            received_from: this.cashBankForm.received_from.trim(),
+                            transaction_date: this.cashBankForm.transaction_date,
+                            amount: amt,
+                        }),
+                    });
+                    const data = await r.json().catch(() => ({}));
+                    if (!r.ok || !data.success) {
+                        throw new Error(data.error || 'Save failed');
+                    }
+                    this.showCashBankModal = false;
+                    alert('Saved. This line will appear in exports that include its transaction date.');
+                } catch (e) {
+                    console.error(e);
+                    alert(e.message || 'Save failed');
+                } finally {
+                    this.cashBankSaving = false;
                 }
             },
 
