@@ -1626,6 +1626,185 @@ def api_manage_orders(request):
 
 
 @staff_member_required
+def api_revenue_breakdown(request):
+    """JSON API: total revenue broken down by customer for the current filter scope.
+
+    Mirrors the date/search scoping used for the Total Revenue stat in
+    `api_manage_orders` (status filter and pagination are ignored). Superuser only,
+    since the revenue figure itself is superuser-only.
+    """
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    search_query = request.GET.get('search', '').strip()
+
+    try:
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
+    except ValueError:
+        month = 0
+        year = 0
+
+    start_date = None
+    end_date = None
+    start_str = request.GET.get('start_date') or ''
+    end_str = request.GET.get('end_date') or ''
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        except ValueError:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
+
+    # Same scoping rules as the Total Revenue stat (date range > month/year, plus search).
+    stats_qs = Order.objects.all()
+    if start_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+    if not (start_date or end_date) and month and year:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        )
+    if search_query:
+        stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
+
+    rev_rows = (
+        OrderItem.objects
+        .filter(order__in=stats_qs)
+        .exclude(order__status=Order.OrderStatus.CANCELLED)
+        .values('order__customer_name', 'order__agent__username')
+        .annotate(amount=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()))
+    )
+
+    # Group by the displayed customer identity: customer_name snapshot, else agent username.
+    grouped = {}
+    for row in rev_rows:
+        name = (row['order__customer_name'] or '').strip() or row['order__agent__username'] or 'Unknown'
+        grouped[name] = grouped.get(name, Decimal('0')) + (row['amount'] or Decimal('0'))
+
+    total = sum(grouped.values()) if grouped else Decimal('0')
+
+    breakdown = []
+    for name, amount in grouped.items():
+        pct = float(amount / total * 100) if total else 0.0
+        breakdown.append({
+            'customer': name,
+            'amount': float(amount),
+            'percentage': round(pct, 2),
+        })
+
+    breakdown.sort(key=lambda r: r['amount'], reverse=True)
+
+    return JsonResponse({
+        'total': float(total),
+        'breakdown': breakdown,
+    })
+
+
+@staff_member_required
+def api_orders_breakdown(request):
+    """JSON API: order items broken down by product for the current filter scope.
+
+    Mirrors the date/search scoping used for the Total Orders stat in
+    `api_manage_orders` (status filter and pagination are ignored, cancelled orders
+    excluded). Contribution is measured by units sold (sum of OrderItem quantity),
+    so the percentages sum to 100%.
+    """
+    search_query = request.GET.get('search', '').strip()
+
+    try:
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
+    except ValueError:
+        month = 0
+        year = 0
+
+    start_date = None
+    end_date = None
+    start_str = request.GET.get('start_date') or ''
+    end_str = request.GET.get('end_date') or ''
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+        except ValueError:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+        except ValueError:
+            end_date = None
+
+    # Same scoping rules as the Total Orders stat (date range > month/year, plus search).
+    stats_qs = Order.objects.all()
+    if start_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+    if not (start_date or end_date) and month and year:
+        stats_qs = stats_qs.filter(
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        )
+    if search_query:
+        stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
+
+    item_rows = (
+        OrderItem.objects
+        .filter(order__in=stats_qs)
+        .exclude(order__status=Order.OrderStatus.CANCELLED)
+        .values('product__name')
+        .annotate(qty=Sum('quantity'))
+    )
+
+    grouped = {}
+    for row in item_rows:
+        name = (row['product__name'] or '').strip() or 'Unknown product'
+        grouped[name] = grouped.get(name, 0) + (row['qty'] or 0)
+
+    total = sum(grouped.values()) if grouped else 0
+
+    breakdown = []
+    for name, qty in grouped.items():
+        pct = (qty / total * 100) if total else 0.0
+        breakdown.append({
+            'product': name,
+            'quantity': int(qty),
+            'percentage': round(pct, 2),
+        })
+
+    breakdown.sort(key=lambda r: r['quantity'], reverse=True)
+
+    return JsonResponse({
+        'total': int(total),
+        'breakdown': breakdown,
+    })
+
+
+@staff_member_required
 def api_get_order_items(request, order_id):
     """JSON API to fetch items for a specific order (Accordion)."""
     order = get_object_or_404(Order, pk=order_id)

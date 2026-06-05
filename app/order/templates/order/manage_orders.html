@@ -22,12 +22,19 @@
 
         {# --- Statistics Cards (dashboard) — hidden on small screens to prioritize filters & list --- #}
         <div class="hidden md:grid md:grid-cols-4 gap-5 mb-6">
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+            <button type="button" @click="openOrdersBreakdown()"
+                    class="group bg-white overflow-hidden shadow rounded-lg text-left w-full transition hover:shadow-md hover:ring-2 hover:ring-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer">
                 <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
+                    <dt class="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5">
+                        Total Orders
+                        <svg class="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10M7 12h10M7 17h6" />
+                        </svg>
+                    </dt>
                     <dd class="mt-1 text-3xl font-semibold text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</dd>
+                    <p class="mt-1 text-xs font-medium text-indigo-600 opacity-80 group-hover:opacity-100">View product breakdown &rarr;</p>
                 </div>
-            </div>
+            </button>
 
             <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-yellow-400">
                 <div class="px-4 py-5 sm:p-6">
@@ -44,14 +51,177 @@
             </div>
 
            {% if request.user.is_superuser %}
-            <div class="bg-white overflow-hidden shadow rounded-lg">
+            <button type="button" @click="openRevenueBreakdown()"
+                    class="group bg-white overflow-hidden shadow rounded-lg text-left w-full transition hover:shadow-md hover:ring-2 hover:ring-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer">
                 <div class="px-4 py-5 sm:p-6">
-                    <dt class="text-sm font-medium text-gray-500 truncate">Total Revenue</dt>
+                    <dt class="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5">
+                        Total Revenue
+                        <svg class="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                        </svg>
+                    </dt>
                     <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
+                    <p class="mt-1 text-xs font-medium text-indigo-600 opacity-80 group-hover:opacity-100">View customer breakdown &rarr;</p>
                 </div>
-            </div>
+            </button>
             {% endif %}
         </div>
+
+        {# --- Order Items Breakdown Modal (by product contribution) --- #}
+        <div x-show="showOrdersModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-60 backdrop-blur-sm p-4"
+             x-transition.opacity
+             style="display: none;"
+             @keydown.escape.window="showOrdersModal = false"
+             x-cloak>
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto max-h-[85vh] flex flex-col overflow-hidden"
+                 @click.away="showOrdersModal = false">
+
+                <div class="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Order Items Breakdown</h3>
+                        <p class="mt-0.5 text-sm text-gray-500">Contribution by product &middot; <span x-text="currentMonthLabel"></span></p>
+                    </div>
+                    <button type="button" @click="showOrdersModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-500">Total Items Sold</span>
+                    <span class="text-lg font-bold text-gray-900" x-text="ordersTotal.toLocaleString('en-US')"></span>
+                </div>
+
+                <div class="flex-1 overflow-y-auto">
+                    <div x-show="ordersLoading" class="p-10 flex justify-center">
+                        <svg class="animate-spin h-7 w-7 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+
+                    <div x-show="!ordersLoading && ordersBreakdown.length === 0" class="p-10 text-center text-sm text-gray-500">
+                        No order items recorded for this period.
+                    </div>
+
+                    <ul x-show="!ordersLoading && ordersBreakdown.length > 0" class="divide-y divide-gray-100">
+                        <template x-for="(row, idx) in ordersBreakdown" :key="idx">
+                            <li class="px-6 py-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-xs font-semibold flex items-center justify-center" x-text="idx + 1"></span>
+                                        <span class="text-sm font-medium text-gray-900 truncate" x-text="row.product"></span>
+                                    </div>
+                                    <div class="text-right flex-shrink-0">
+                                        <div class="text-sm font-semibold text-gray-900"><span x-text="row.quantity.toLocaleString('en-US')"></span> <span class="text-xs font-normal text-gray-500">units</span></div>
+                                        <div class="text-xs text-gray-500" x-text="row.percentage.toFixed(2) + '%'"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-2 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                                    <div class="h-full rounded-full bg-indigo-500" :style="`width: ${Math.max(row.percentage, 1)}%`"></div>
+                                </div>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+
+                <div class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+                    <button type="button" @click="copyOrdersBreakdown()"
+                            :disabled="ordersLoading || ordersBreakdown.length === 0"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                            :class="ordersCopied ? 'text-green-700 border-green-300 bg-green-50' : ''">
+                        <svg x-show="!ordersCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <svg x-show="ordersCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" x-cloak>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span x-text="ordersCopied ? 'Copied!' : 'Copy'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {% if request.user.is_superuser %}
+        {# --- Revenue Breakdown Modal (by customer contribution) --- #}
+        <div x-show="showRevenueModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-60 backdrop-blur-sm p-4"
+             x-transition.opacity
+             style="display: none;"
+             @keydown.escape.window="showRevenueModal = false"
+             x-cloak>
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto max-h-[85vh] flex flex-col overflow-hidden"
+                 @click.away="showRevenueModal = false">
+
+                <div class="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Revenue Breakdown</h3>
+                        <p class="mt-0.5 text-sm text-gray-500">Contribution by customer &middot; <span x-text="currentMonthLabel"></span></p>
+                    </div>
+                    <button type="button" @click="showRevenueModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-500">Total Revenue</span>
+                    <span class="text-lg font-bold text-gray-900" x-text="formatRevenue(revenueTotal)"></span>
+                </div>
+
+                <div class="flex-1 overflow-y-auto">
+                    <div x-show="revenueLoading" class="p-10 flex justify-center">
+                        <svg class="animate-spin h-7 w-7 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+
+                    <div x-show="!revenueLoading && revenueBreakdown.length === 0" class="p-10 text-center text-sm text-gray-500">
+                        No revenue recorded for this period.
+                    </div>
+
+                    <ul x-show="!revenueLoading && revenueBreakdown.length > 0" class="divide-y divide-gray-100">
+                        <template x-for="(row, idx) in revenueBreakdown" :key="idx">
+                            <li class="px-6 py-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-xs font-semibold flex items-center justify-center" x-text="idx + 1"></span>
+                                        <span class="text-sm font-medium text-gray-900 truncate" x-text="row.customer"></span>
+                                    </div>
+                                    <div class="text-right flex-shrink-0">
+                                        <div class="text-sm font-semibold text-gray-900" x-text="formatRevenue(row.amount)"></div>
+                                        <div class="text-xs text-gray-500" x-text="row.percentage.toFixed(2) + '%'"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-2 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                                    <div class="h-full rounded-full bg-indigo-500" :style="`width: ${Math.max(row.percentage, 1)}%`"></div>
+                                </div>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+
+                <div class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+                    <button type="button" @click="copyRevenueBreakdown()"
+                            :disabled="revenueLoading || revenueBreakdown.length === 0"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                            :class="revenueCopied ? 'text-green-700 border-green-300 bg-green-50' : ''">
+                        <svg x-show="!revenueCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <svg x-show="revenueCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" x-cloak>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span x-text="revenueCopied ? 'Copied!' : 'Copy'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
 
         {# --- Filters: search + period + status + actions (one row on md+) --- #}
@@ -255,15 +425,27 @@
             {# Mobile: total orders + revenue — below date/export toolbar, above order list #}
             <div class="sm:hidden border-t border-gray-100 bg-gray-50 px-4 py-3">
                 <div class="grid gap-3 {% if request.user.is_superuser %}grid-cols-2{% else %}grid-cols-1{% endif %}">
-                    <div class="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm">
-                        <p class="text-xs font-medium text-gray-500">Total Orders</p>
+                    <button type="button" @click="openOrdersBreakdown()"
+                            class="text-left rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm transition active:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <p class="text-xs font-medium text-gray-500 flex items-center gap-1">
+                            Total Orders
+                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h10M7 12h10M7 17h6" />
+                            </svg>
+                        </p>
                         <p class="mt-0.5 text-2xl font-semibold tabular-nums text-gray-900" x-text="stats.total_orders">{{ stats.total_orders|default:"0" }}</p>
-                    </div>
+                    </button>
                     {% if request.user.is_superuser %}
-                    <div class="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm">
-                        <p class="text-xs font-medium text-gray-500">Total Revenue</p>
+                    <button type="button" @click="openRevenueBreakdown()"
+                            class="text-left rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm transition active:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <p class="text-xs font-medium text-gray-500 flex items-center gap-1">
+                            Total Revenue
+                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                            </svg>
+                        </p>
                         <p class="mt-0.5 text-lg font-semibold tabular-nums text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</p>
-                    </div>
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -1059,6 +1241,18 @@
             showStatusModal: false,
             isBulkStatus: false,
             showExportModal: false,
+            // --- Order items breakdown modal ---
+            showOrdersModal: false,
+            ordersLoading: false,
+            ordersTotal: 0,
+            ordersBreakdown: [],
+            ordersCopied: false,
+            // --- Revenue breakdown modal ---
+            showRevenueModal: false,
+            revenueLoading: false,
+            revenueTotal: 0,
+            revenueBreakdown: [],
+            revenueCopied: false,
             showCashBankModal: false,
             cashBankSaving: false,
             cashBankForm: {
@@ -1507,6 +1701,124 @@
                     alert('Error fetching orders.');
                 } finally {
                     this.isLoading = false;
+                }
+            },
+
+            copyToClipboard(text) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    return navigator.clipboard.writeText(text);
+                }
+                return new Promise((resolve, reject) => {
+                    try {
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        resolve();
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            },
+
+            async copyOrdersBreakdown() {
+                if (!this.ordersBreakdown.length) return;
+                const lines = [];
+                lines.push(`Order Items Breakdown — ${this.currentMonthLabel}`);
+                lines.push(`Total Items Sold: ${this.ordersTotal.toLocaleString('en-US')}`);
+                lines.push('');
+                this.ordersBreakdown.forEach((row, idx) => {
+                    lines.push(`${idx + 1}. ${row.product} — ${row.quantity.toLocaleString('en-US')} units (${row.percentage.toFixed(2)}%)`);
+                });
+                try {
+                    await this.copyToClipboard(lines.join('\n'));
+                    this.ordersCopied = true;
+                    setTimeout(() => { this.ordersCopied = false; }, 2000);
+                } catch (e) {
+                    console.error(e);
+                    alert('Failed to copy to clipboard.');
+                }
+            },
+
+            async copyRevenueBreakdown() {
+                if (!this.revenueBreakdown.length) return;
+                const lines = [];
+                lines.push(`Revenue Breakdown — ${this.currentMonthLabel}`);
+                lines.push(`Total Revenue: ${this.formatRevenue(this.revenueTotal)}`);
+                lines.push('');
+                this.revenueBreakdown.forEach((row, idx) => {
+                    lines.push(`${idx + 1}. ${row.customer} — ${this.formatRevenue(row.amount)} (${row.percentage.toFixed(2)}%)`);
+                });
+                try {
+                    await this.copyToClipboard(lines.join('\n'));
+                    this.revenueCopied = true;
+                    setTimeout(() => { this.revenueCopied = false; }, 2000);
+                } catch (e) {
+                    console.error(e);
+                    alert('Failed to copy to clipboard.');
+                }
+            },
+
+            async openOrdersBreakdown() {
+                this.showOrdersModal = true;
+                this.ordersLoading = true;
+                this.ordersBreakdown = [];
+                this.ordersTotal = 0;
+
+                const params = new URLSearchParams({
+                    search: this.filters.search,
+                    month: this.filters.month,
+                    year: this.filters.year,
+                    start_date: this.filters.start_date || '',
+                    end_date: this.filters.end_date || ''
+                });
+
+                try {
+                    const response = await fetch(`{% url 'order:api_orders_breakdown' %}?${params.toString()}`);
+                    if (!response.ok) throw new Error('Failed to load order items breakdown');
+                    const data = await response.json();
+                    this.ordersTotal = data.total;
+                    this.ordersBreakdown = data.breakdown;
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error loading order items breakdown.');
+                    this.showOrdersModal = false;
+                } finally {
+                    this.ordersLoading = false;
+                }
+            },
+
+            async openRevenueBreakdown() {
+                this.showRevenueModal = true;
+                this.revenueLoading = true;
+                this.revenueBreakdown = [];
+                this.revenueTotal = this.stats.revenue || 0;
+
+                const params = new URLSearchParams({
+                    search: this.filters.search,
+                    month: this.filters.month,
+                    year: this.filters.year,
+                    start_date: this.filters.start_date || '',
+                    end_date: this.filters.end_date || ''
+                });
+
+                try {
+                    const response = await fetch(`{% url 'order:api_revenue_breakdown' %}?${params.toString()}`);
+                    if (!response.ok) throw new Error('Failed to load revenue breakdown');
+                    const data = await response.json();
+                    this.revenueTotal = data.total;
+                    this.revenueBreakdown = data.breakdown;
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error loading revenue breakdown.');
+                    this.showRevenueModal = false;
+                } finally {
+                    this.revenueLoading = false;
                 }
             },
 
