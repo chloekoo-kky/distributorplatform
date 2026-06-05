@@ -1722,8 +1722,9 @@ def api_orders_breakdown(request):
 
     Mirrors the date/search scoping used for the Total Orders stat in
     `api_manage_orders` (status filter and pagination are ignored, cancelled orders
-    excluded). Contribution is measured by units sold (sum of OrderItem quantity),
-    so the percentages sum to 100%.
+    excluded). Contribution is measured by units sold (sum of OrderItem quantity);
+    quantity percentages sum to 100%. Revenue per product uses selling_price × quantity
+    (same basis as the Total Revenue stat).
     """
     search_query = request.GET.get('search', '').strip()
 
@@ -1777,29 +1778,42 @@ def api_orders_breakdown(request):
         .filter(order__in=stats_qs)
         .exclude(order__status=Order.OrderStatus.CANCELLED)
         .values('product__name')
-        .annotate(qty=Sum('quantity'))
+        .annotate(
+            qty=Sum('quantity'),
+            revenue=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()),
+        )
     )
 
     grouped = {}
     for row in item_rows:
         name = (row['product__name'] or '').strip() or 'Unknown product'
-        grouped[name] = grouped.get(name, 0) + (row['qty'] or 0)
+        if name not in grouped:
+            grouped[name] = {'quantity': 0, 'revenue': Decimal('0')}
+        grouped[name]['quantity'] += row['qty'] or 0
+        grouped[name]['revenue'] += row['revenue'] or Decimal('0')
 
-    total = sum(grouped.values()) if grouped else 0
+    total_qty = sum(v['quantity'] for v in grouped.values()) if grouped else 0
+    total_revenue = sum(v['revenue'] for v in grouped.values()) if grouped else Decimal('0')
 
     breakdown = []
-    for name, qty in grouped.items():
-        pct = (qty / total * 100) if total else 0.0
+    for name, data in grouped.items():
+        qty = data['quantity']
+        revenue = data['revenue']
+        qty_pct = (qty / total_qty * 100) if total_qty else 0.0
+        rev_pct = float(revenue / total_revenue * 100) if total_revenue else 0.0
         breakdown.append({
             'product': name,
             'quantity': int(qty),
-            'percentage': round(pct, 2),
+            'percentage': round(qty_pct, 2),
+            'revenue': float(revenue),
+            'revenue_percentage': round(rev_pct, 2),
         })
 
     breakdown.sort(key=lambda r: r['quantity'], reverse=True)
 
     return JsonResponse({
-        'total': int(total),
+        'total': int(total_qty),
+        'total_revenue': float(total_revenue),
         'breakdown': breakdown,
     })
 
