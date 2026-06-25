@@ -1,325 +1,1270 @@
-<div x-data="quotationsTableData()"
+<div x-data="supplierPriceMatrixData()"
      x-init="init()"
-     @refresh-data.window="if ($event.detail.tab === 'quotations') fetchQuotations()"
->
-    {# --- Header with Actions --- #}
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+     @refresh-data.window="if ($event.detail.tab === 'quotations') fetchMatrix(1)">
+
+    {{ all_suppliers_list|json_script:"matrix-filter-suppliers-data" }}
+
+    {# --- Header --- #}
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-            <h3 class="text-2xl font-semibold text-gray-700">Manage Quotations</h3>
-            <p class="text-sm text-gray-500 mt-1">Track and manage supplier price quotations.</p>
+            <h3 class="text-2xl font-semibold text-gray-700">Supplier Price Matrix</h3>
+            <p class="text-sm text-gray-500 mt-1">Centralized supplier catalog prices — upload a price list to update, not isolated quotation documents.</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <button @click="$dispatch('open-create-quotation-modal')" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 shadow-sm transition-colors text-sm font-medium">
-                + Create New
+            <button type="button"
+                    @click="exportSelectedXlsx()"
+                    :disabled="selectedKeys.length === 0"
+                    class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white">
+                <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Export selected (<span x-text="selectedKeys.length"></span>)
+            </button>
+            <button type="button"
+                    @click="deleteSelected()"
+                    :disabled="selectedKeys.length === 0 || isDeleting"
+                    class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-rose-600 border border-transparent rounded-md hover:bg-rose-700 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-600">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+                <span x-show="!isDeleting">Delete selected (<span x-text="selectedKeys.length"></span>)</span>
+                <span x-show="isDeleting">Deleting…</span>
+            </button>
+            <button type="button" @click="$dispatch('open-upload-supplier-price-matrix-modal')"
+                    class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors text-sm font-medium">
+                Upload Price List
             </button>
         </div>
     </div>
 
-    {# --- Filters Bar --- #}
+    {# --- Matrix filters --- #}
     <div class="bg-white rounded-lg shadow mb-6 p-4">
         <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-
-            {# 1. Period Selector (Month/Year) #}
-            <div class="md:col-span-3">
-                <div class="flex justify-between items-center mb-1">
-                    <label class="block text-sm font-medium text-gray-700">Period</label>
+            <div class="md:col-span-4">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <label class="block text-sm font-medium text-gray-700">Supplier</label>
                     <button type="button"
-                            x-show="filters.month !== 0 || filters.year !== 0"
-                            @click="resetPeriod()"
-                            class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
-                            x-cloak>
-                        All periods
+                            @click="openSupplierSettings()"
+                            class="inline-flex items-center justify-center p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            title="Manage suppliers"
+                            aria-label="Manage suppliers">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
                     </button>
                 </div>
-                <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2 hover:border-gray-400 transition-colors">
-                    <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                <div class="relative" @click.outside="supplierFilterOpen = false">
+                    <button type="button"
+                            @click="supplierFilterOpen = !supplierFilterOpen"
+                            class="flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 h-10 text-sm text-gray-700 shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <span class="truncate" x-text="supplierFilterLabel()"></span>
+                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform"
+                             :class="supplierFilterOpen ? 'rotate-180' : ''"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
                     </button>
-                    <span class="text-sm font-semibold text-gray-700 select-none min-w-[8rem] text-center" x-text="currentMonthLabel"></span>
-                    <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Next Month">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                    </button>
-                </div>
-            </div>
-
-            {# 2. Search #}
-            <div class="md:col-span-3">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
-                <div class="relative rounded-md shadow-sm">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <div x-show="supplierFilterOpen"
+                         x-cloak
+                         class="absolute z-30 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-60 overflow-y-auto">
+                        <button type="button"
+                                @click="clearSupplierFilter(); supplierFilterOpen = false; fetchMatrix(1)"
+                                class="w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50 border-b border-gray-100">
+                            All suppliers
+                        </button>
+                        <template x-for="sup in allSuppliers" :key="sup.id">
+                            <label class="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox"
+                                       class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                       :checked="filters.suppliers.includes(String(sup.id))"
+                                       @change="toggleSupplierFilter(sup.id)">
+                                <span class="truncate" x-text="sup.name"></span>
+                            </label>
+                        </template>
+                        <p x-show="allSuppliers.length === 0" class="px-3 py-2 text-sm text-gray-500">No suppliers found.</p>
                     </div>
-                    <input type="text" x-model.debounce.500ms="filters.search" @input="fetchQuotations(1)"
-                           class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md h-10"
-                           placeholder="Quotation ID or Supplier...">
                 </div>
             </div>
-
-            {# 3. Status Filter #}
-            <div class="md:col-span-3">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select x-model="filters.status" @change="fetchQuotations(1)"
-                        class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md h-10">
-                    <option value="">All Statuses</option>
-                    <option value="OPEN">Open</option>
-                    <option value="INVOICED">Invoiced</option>
-                </select>
-            </div>
-
-            {# 4. Export / Import #}
-            <div class="md:col-span-3 flex flex-nowrap items-end justify-end gap-2 min-w-0">
-                <a href="{% url 'inventory:export_quotations_xlsx' %}" class="inline-flex shrink-0 justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none whitespace-nowrap" title="Download quotations as Excel (.xlsx)">
-                    <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Export quotations xlsx
-                </a>
-                <button type="button" @click="$dispatch('open-upload-quotation-modal')"
-                        class="inline-flex shrink-0 justify-center items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 h-10 focus:outline-none whitespace-nowrap"
-                        title="Import quotations from CSV">
-                    <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Import
-                </button>
+            <div class="md:col-span-8">
+                <div class="flex flex-col sm:flex-row gap-4 items-end">
+                    <div class="flex-1 min-w-0 w-full">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                        <div class="relative rounded-md shadow-sm">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input type="text" x-model.debounce.500ms="filters.search"
+                                   class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 pr-10 sm:text-sm border-gray-300 rounded-md h-10"
+                                   placeholder="Search by words — medication, strength, size, SKU…">
+                            <button type="button"
+                                    x-show="filters.search || filters.suppliers.length"
+                                    @click="resetFilters()"
+                                    class="absolute inset-y-0 right-0 flex items-center pr-2"
+                                    title="Reset filters">
+                                <span class="inline-flex items-center justify-center w-6 h-6 rounded border border-gray-300 bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="shrink-0 w-full sm:w-auto">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Display currency</label>
+                        <div class="inline-flex rounded-md shadow-sm border border-gray-300 overflow-hidden h-10">
+                            <template x-for="cur in ['MYR', 'USD', 'EUR']" :key="cur">
+                                <button type="button"
+                                        @click="setDisplayCurrency(cur)"
+                                        class="px-4 h-10 text-sm font-medium border-r border-gray-300 last:border-r-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                                        :class="displayCurrency === cur ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                                        x-text="cur"></button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    {# --- Loading State --- #}
+    {# --- Results summary + page size --- #}
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 px-1">
+        <p class="text-sm text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-1" x-show="!isLoading">
+            <span>
+                <span class="font-semibold text-gray-800 tabular-nums" x-text="pagination.total_count ?? 0"></span>
+                <span x-text="(pagination.total_count === 1) ? 'product' : 'products'"></span>
+            </span>
+            <span class="text-gray-400">·</span>
+            <span>
+                Page <span class="tabular-nums" x-text="pagination.current_page || 1"></span>
+                of <span class="tabular-nums" x-text="Math.max(pagination.total_pages || 0, 1)"></span>
+            </span>
+            <span class="text-gray-400">·</span>
+            <button type="button"
+                    @click="exportAllXlsx()"
+                    :disabled="(pagination.total_count ?? 0) === 0"
+                    class="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 disabled:text-gray-400 disabled:cursor-not-allowed focus:outline-none focus:underline">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Export all
+            </button>
+        </p>
+        <p class="text-sm text-gray-400" x-show="isLoading">Loading…</p>
+        <div class="flex items-center gap-2 shrink-0">
+            <label for="matrix-page-size" class="text-sm text-gray-600 whitespace-nowrap">Rows per page</label>
+            <select id="matrix-page-size"
+                    x-model.number="pageSize"
+                    @change="onPageSizeChange()"
+                    class="block border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm h-9 py-1">
+                <option :value="25">25</option>
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+                <option :value="200">200</option>
+            </select>
+        </div>
+    </div>
+
+    {# --- Matrix table --- #}
     <div x-show="isLoading" class="p-12 text-center">
         <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <span class="text-gray-500">Loading quotations...</span>
+        <span class="text-gray-500">Loading price matrix…</span>
     </div>
 
-    {# --- Data Table --- #}
-    <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden">
+    <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden mb-8">
         <div class="overflow-x-auto">
-           <table class="min-w-full divide-y divide-gray-200">
+            <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-2 py-3 w-12"></th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quotation ID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Quoted</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Count</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transport Cost</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Landed Cost</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th class="px-3 py-3 w-10 text-center">
+                            <div class="flex justify-center">
+                                <input type="checkbox"
+                                       x-ref="selectAllCheckbox"
+                                       class="h-4 w-4 rounded border-gray-300 text-indigo-600 bg-white cursor-pointer transition-colors hover:border-indigo-300 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                                       @click.prevent="toggleSelectAllOnPage()"
+                                       :disabled="items.length === 0"
+                                       :title="isSomeOnPageSelected() ? 'Deselect all on this page' : (isAllOnPageSelected() ? 'Deselect all on this page' : 'Select all on this page')">
+                            </div>
+                        </th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase max-w-[180px]">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+                                    @click="changeSort('medication')">
+                                Medication
+                                <span x-show="sort.field === 'medication'">
+                                    <svg x-show="sort.direction === 'asc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                                    <svg x-show="sort.direction === 'desc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </button>
+                        </th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase max-w-[160px]">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+                                    @click="changeSort('product')">
+                                Catalog product
+                                <span x-show="sort.field === 'product'">
+                                    <svg x-show="sort.direction === 'asc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                                    <svg x-show="sort.direction === 'desc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </button>
+                        </th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-24">Strength</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-20">Size</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-28">Supplier</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price tiers</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-24">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+                                    @click="changeSort('updated_at')">
+                                Updated
+                                <span x-show="sort.field === 'updated_at'">
+                                    <svg x-show="sort.direction === 'asc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                                    <svg x-show="sort.direction === 'desc'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </span>
+                            </button>
+                        </th>
+                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase w-14 sticky right-0 bg-gray-50 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.06)]">
+                        </th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="items.length === 0">
                         <tr>
-                            <td colspan="9" class="px-6 py-8 text-center text-gray-500">
-                                No quotations found for <span x-text="currentMonthLabel" class="font-medium"></span> matching your filters.
+                            <td colspan="9" class="px-6 py-10 text-center text-gray-500">
+                                No price matrix rows yet. Upload a supplier price list to get started.
                             </td>
                         </tr>
                     </template>
-                    <template x-for="q in items" :key="q.quotation_id">
-                        <tbody x-data="quotationAccordionRow(q.quotation_id)" class="contents group">
-                            <tr @click="toggle()" class="cursor-pointer hover:bg-gray-50 transition-colors">
-                                <td class="px-2 py-4 whitespace-nowrap text-sm text-gray-400 text-center">
-                                    <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold">
-                                    <a :href="q.detail_url" @click.stop class="text-indigo-600 hover:text-indigo-900 underline decoration-indigo-200 hover:decoration-indigo-900" x-text="q.quotation_id"></a>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium" x-text="q.supplier_name"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                    <template x-if="q.status === 'Open'">
-                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Open</span>
-                                    </template>
-                                    <template x-if="q.status === 'Invoiced'">
-                                        <div class="flex flex-col gap-0.5">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit"
-                                                  :class="{
-                                                      'bg-yellow-100 text-yellow-800': q.invoice_status_code === 'DRAFT',
-                                                      'bg-blue-100 text-blue-800': q.invoice_status_code === 'SENT',
-                                                      'bg-green-100 text-green-800': q.invoice_status_code === 'PAID',
-                                                      'bg-amber-100 text-amber-800': q.invoice_status_code === 'PARTIALLY_RECEIVED',
-                                                      'bg-emerald-100 text-emerald-800': q.invoice_status_code === 'FULLY_RECEIVED',
-                                                      'bg-red-100 text-red-800': q.invoice_status_code === 'CANCELLED'
-                                                  }"
-                                                  x-text="q.invoice_status || '—'"></span>
-                                            <span class="text-xs text-gray-500" x-show="q.invoice_id" x-text="q.invoice_id"></span>
-                                        </div>
-                                    </template>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.item_count"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatPrice(q.transportation_cost)"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="formatPrice((parseFloat(q.total_value) || 0) + (parseFloat(q.transportation_cost) || 0))"></td>
-                                <td class="px-4 py-4 whitespace-nowrap text-sm text-right align-middle" @click.stop>
-                                    <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
-                                        <template x-if="q.create_invoice_url">
-                                            <form :action="q.create_invoice_url" method="post" class="inline-flex"
-                                                  @submit="if (!confirm('Convert to invoice? Items cannot be changed after this.')) $event.preventDefault()">
-                                                <input type="hidden" name="csrfmiddlewaretoken" :value="$store.globals.csrfToken">
-                                                <button type="submit"
-                                                        class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-green-500">
-                                                    <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                                    Convert to invoice
-                                                </button>
-                                            </form>
-                                        </template>
-                                        <template x-if="q.invoice_id">
-                                            <button type="button"
-                                                    @click.stop="$dispatch('open-edit-invoice', q.invoice_id)"
-                                                    class="inline-flex items-center justify-center p-2 border border-gray-300 rounded-md text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500"
-                                                    :title="'Edit invoice ' + q.invoice_id">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                            </button>
-                                        </template>
-                                        <span x-show="!q.create_invoice_url && !q.invoice_id" class="text-xs text-gray-400">—</span>
+                    <template x-for="(row, rowIndex) in items" :key="`${row.source}-${row.id}`">
+                        <tr class="cursor-pointer transition-colors select-none"
+                            :class="isRowSelected(row) ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-200' : 'hover:bg-indigo-50/50'"
+                            @mousedown="onRowMouseDown($event)"
+                            @click="handleRowClick($event, row, rowIndex)">
+                            <td class="px-3 py-3 w-10 text-center" @click.stop>
+                                <div class="flex justify-center">
+                                    <button type="button"
+                                            role="checkbox"
+                                            :aria-checked="hasSelectedKey(rowKey(row))"
+                                            class="h-4 w-4 shrink-0 rounded border flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 transition-colors"
+                                            :class="hasSelectedKey(rowKey(row)) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-300 hover:border-indigo-300'"
+                                            @mousedown="onRowMouseDown($event)"
+                                            @click.prevent="onRowCheckboxClick($event, row, rowIndex)">
+                                        <svg x-show="hasSelectedKey(rowKey(row))" x-cloak class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </td>
+                            <td class="px-3 py-3 text-sm text-gray-900 max-w-[180px]">
+                                <span class="block truncate" :title="row.line_medication" x-text="row.line_medication"></span>
+                            </td>
+                            <td class="px-3 py-3 text-sm text-gray-500 max-w-[160px]">
+                                <template x-if="row.product_id">
+                                    <div>
+                                        <span class="block truncate" :title="row.product_name" x-text="row.product_name"></span>
+                                        <span x-show="row.product_sku" class="block text-xs text-gray-400 truncate" x-text="row.product_sku"></span>
                                     </div>
-                                </td>
-                            </tr>
-
-                            <tr x-show="open" x-transition class="bg-gray-50 shadow-inner">
-                                <td colspan="9" class="p-0">
-                                    <div class="px-6 py-4">
-                                        <div x-show="isLoading" class="text-center text-gray-500 p-4">Loading items...</div>
-                                        <div x-show="!isLoading && items.length === 0 && hasLoaded" class="text-center text-gray-500 p-4">No items found for this quotation.</div>
-
-                                        <table x-show="!isLoading && items.length > 0" class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md overflow-hidden">
-                                            <thead class="bg-gray-100">
-                                                <tr>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product Name</th>
-                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                                                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="bg-white">
-                                                <template x-for="(item, index) in items" :key="`${item.product_sku || 'row'}-${index}`">
-                                                    <tr>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.product_sku"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-900 font-medium" x-text="item.product_name"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-900 text-right" x-text="item.quantity"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-900 text-right" x-text="formatPrice(item.quoted_price)"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-900 font-bold text-right" x-text="formatPrice(item.total_price)"></td>
-                                                    </tr>
-                                                </template>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
+                                </template>
+                                <template x-if="!row.product_id">
+                                    <span class="text-amber-600 text-xs">Unmapped</span>
+                                </template>
+                            </td>
+                            <td class="px-3 py-3 text-sm text-gray-500 whitespace-nowrap w-24" x-text="row.strength || '-'"></td>
+                            <td class="px-3 py-3 text-sm text-gray-500 whitespace-nowrap w-20" x-text="row.size || '-'"></td>
+                            <td class="px-3 py-3 text-sm text-gray-700 w-28">
+                                <span class="block truncate" :title="row.supplier_name" x-text="row.supplier_name"></span>
+                                <span x-show="row.source === 'quotation'"
+                                      class="mt-0.5 inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200"
+                                      title="From legacy purchase order quotation">PO</span>
+                            </td>
+                            <td class="px-3 py-3 text-sm text-gray-700 tabular-nums whitespace-nowrap align-top">
+                                <template x-for="(tier, tIdx) in row.tiers" :key="tIdx">
+                                    <div class="text-xs" x-text="formatTier(tier, row)"></div>
+                                </template>
+                            </td>
+                            <td class="px-3 py-3 text-xs text-gray-400 whitespace-nowrap w-24" x-text="formatDate(row.updated_at)"></td>
+                            <td class="px-3 py-3 text-center w-14 sticky right-0 z-10 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.06)]"
+                                :class="isRowSelected(row) ? 'bg-indigo-50' : 'bg-white'"
+                                @click.stop>
+                                <button type="button"
+                                        @click="openEntryDetail(row)"
+                                        class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        title="View upload history">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
                     </template>
                 </tbody>
             </table>
         </div>
+        <div class="p-4 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3 justify-between items-center">
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" @click="fetchMatrix(pagination.current_page - 1)" :disabled="!pagination.has_previous"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">Previous</button>
+                <button type="button"
+                        x-show="selectedKeys.length > 0"
+                        @click="clearSelection()"
+                        class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                        x-cloak>
+                    Clear selection
+                </button>
+            </div>
+            <div class="flex-1"></div>
+            <button type="button" @click="fetchMatrix(pagination.current_page + 1)" :disabled="!pagination.has_next"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">Next</button>
+        </div>
+    </div>
 
-        {# --- Pagination --- #}
-        <div x-show="!isLoading && items.length > 0" class="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-            <button @click="fetchQuotations(pagination.current_page - 1)" :disabled="!pagination.has_previous"
-                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                Previous
-            </button>
-            <span class="text-sm text-gray-700">
-                Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span>
-            </span>
-            <button @click="fetchQuotations(pagination.current_page + 1)" :disabled="!pagination.has_next"
-                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                Next
-            </button>
+    {# --- Entry detail / price history modal --- #}
+    <div x-show="detailModalOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-800 bg-opacity-75"
+         style="display: none;"
+         @keydown.escape.window="if (detailModalOpen) closeEntryDetail()">
+        <div @click.away="closeEntryDetail()"
+             class="relative bg-white rounded-t-lg sm:rounded-lg shadow-xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col m-0 sm:m-4">
+            <div class="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b">
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-gray-800 truncate" x-text="detailEntry?.line_medication || 'Upload history'"></h3>
+                    <p class="text-sm text-gray-500 mt-0.5 truncate">
+                        <span x-text="detailEntry?.supplier_name || ''"></span>
+                        <span x-show="detailEntry?.strength"> · <span x-text="detailEntry.strength"></span></span>
+                        <span x-show="detailEntry?.size"> · <span x-text="detailEntry.size"></span></span>
+                    </p>
+                </div>
+                <button type="button" @click="closeEntryDetail()" class="text-gray-400 hover:text-gray-600 shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <div class="px-4 sm:px-6 py-4 overflow-y-auto flex-1 space-y-5">
+                <div x-show="detailLoading" class="py-8 text-center text-gray-500 text-sm">Loading price history…</div>
+
+                <template x-if="!detailLoading && detailEntry">
+                    <div class="space-y-5">
+                        {# Current prices #}
+                        <div>
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">Current prices</h4>
+                            <div class="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-1">
+                                <template x-for="(tier, tIdx) in detailEntry.tiers" :key="'cur-' + tIdx">
+                                    <div class="text-sm tabular-nums text-gray-800" x-text="formatTier(tier)"></div>
+                                </template>
+                                <p x-show="!detailEntry.tiers?.length" class="text-sm text-gray-500">No tiers recorded.</p>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1.5">
+                                Last updated <span x-text="formatDateTime(detailEntry.updated_at)"></span>
+                                <span x-show="detailEntry.source_filename"> · from <span x-text="detailEntry.source_filename"></span></span>
+                                <span x-show="detailEntry.price_currency && detailEntry.price_currency !== 'MYR'"> · uploaded in <span x-text="detailEntry.price_currency"></span></span>
+                                <span x-show="formatConversionRate(detailEntry.price_currency, detailEntry.conversion_rate)">
+                                    · <span x-text="formatConversionRate(detailEntry.price_currency, detailEntry.conversion_rate)"></span>
+                                </span>
+                            </p>
+                            <p x-show="detailEntry.product_id" class="text-xs text-gray-500 mt-1">
+                                Catalog: <span x-text="detailEntry.product_name"></span>
+                                <span x-show="detailEntry.product_sku" class="text-gray-400"> (<span x-text="detailEntry.product_sku"></span>)</span>
+                            </p>
+                        </div>
+
+                        {# Upload history #}
+                        <div>
+                            <h4 class="text-sm font-semibold text-gray-700 mb-2">Upload history</h4>
+                            <template x-if="!detailHistory.length">
+                                <p class="text-sm text-gray-500 rounded-md border border-dashed border-gray-200 p-4 text-center">
+                                    No upload snapshots yet. Re-upload a price list to start tracking changes.
+                                </p>
+                            </template>
+                            <div class="space-y-3">
+                                <template x-for="(record, rIdx) in detailHistory" :key="record.id">
+                                    <div class="rounded-md border border-gray-200 overflow-hidden">
+                                        <div class="px-3 py-2 bg-gray-50 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                                            <div class="text-sm font-medium text-gray-800" x-text="formatHistoryDate(record)"></div>
+                                            <div class="text-xs text-gray-500 text-right">
+                                                <div class="flex flex-wrap items-center justify-end gap-1">
+                                                    <span x-show="record.source_filename" x-text="record.source_filename"></span>
+                                                    <span x-show="record.price_currency && record.price_currency !== 'MYR'"
+                                                          class="inline-flex items-center rounded bg-white px-1.5 py-0.5 border border-gray-200"
+                                                          x-text="record.price_currency"></span>
+                                                </div>
+                                                <div x-show="formatConversionRate(record.price_currency, record.conversion_rate)"
+                                                     class="text-gray-400 mt-0.5 tabular-nums"
+                                                     x-text="formatConversionRate(record.price_currency, record.conversion_rate)"></div>
+                                            </div>
+                                        </div>
+                                        <div class="px-3 py-2 space-y-2">
+                                            <template x-if="record.changes?.length">
+                                                <div class="space-y-1.5">
+                                                    <template x-for="(change, cIdx) in record.changes" :key="cIdx">
+                                                        <div class="text-sm flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                                            <span class="font-medium text-gray-700 tabular-nums" x-text="change.tier_label"></span>
+                                                            <span x-show="change.change_type === 'changed'" class="tabular-nums">
+                                                                <span class="text-gray-400" x-text="formatChangePrice(change, 'old_price', detailHistory[rIdx + 1])"></span>
+                                                                <span class="text-gray-400 mx-1">→</span>
+                                                                <span class="font-medium text-gray-900" x-text="formatChangePrice(change, 'new_price', record)"></span>
+                                                                <span class="text-xs ml-1 font-medium"
+                                                                      :class="(changeDisplayAmount(change, 'new_price', record) - changeDisplayAmount(change, 'old_price', detailHistory[rIdx + 1])) > 0 ? 'text-red-600' : 'text-green-600'"
+                                                                      x-text="formatChangeDelta(change, detailHistory[rIdx + 1], record)"></span>
+                                                            </span>
+                                                            <span x-show="change.change_type === 'added'" class="text-green-700 text-xs">
+                                                                New tier @ <span class="font-medium tabular-nums" x-text="formatChangePrice(change, 'new_price', record)"></span>
+                                                            </span>
+                                                            <span x-show="change.change_type === 'removed'" class="text-gray-500 text-xs line-through tabular-nums">
+                                                                Removed (was <span x-text="formatChangePrice(change, 'old_price', detailHistory[rIdx + 1])"></span>)
+                                                            </span>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                            <template x-if="!record.changes?.length">
+                                                <div>
+                                                    <p class="text-xs text-gray-500 mb-1.5" x-text="rIdx === detailHistory.length - 1 ? 'Initial upload' : 'No price changes from previous upload'"></p>
+                                                    <template x-for="(tier, tIdx) in record.tiers" :key="'hist-' + record.id + '-' + tIdx">
+                                                        <div class="text-xs tabular-nums text-gray-700" x-text="formatTierFromSnapshot(tier, record)"></div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="px-4 sm:px-6 py-3 border-t bg-gray-50 flex justify-end">
+                <button type="button" @click="closeEntryDetail()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {# --- Supplier settings modal --- #}
+    <div x-show="supplierSettingsOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-800 bg-opacity-75"
+         style="display: none;"
+         @keydown.escape.window="if (supplierSettingsOpen) closeSupplierSettings()">
+        <div @click.away="closeSupplierSettings()"
+             class="relative bg-white rounded-t-lg sm:rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col m-0 sm:m-4">
+            <div class="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Manage suppliers</h3>
+                    <p class="text-sm text-gray-500 mt-1">Catalog products linked to each supplier.</p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button type="button"
+                            @click="openSupplierSettingsCreate()"
+                            x-show="!supplierSettingsShowCreate"
+                            class="text-sm font-medium text-indigo-600 hover:text-indigo-800 whitespace-nowrap">
+                        + New supplier
+                    </button>
+                    <button type="button" @click="closeSupplierSettings()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="px-4 sm:px-6 py-4 overflow-y-auto flex-1">
+                <div x-show="supplierSettingsShowCreate" x-cloak
+                     class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
+                    <p class="text-sm font-medium text-gray-800">Create new supplier</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                            <input type="text"
+                                   x-model="supplierSettingsNewName"
+                                   placeholder="Supplier name"
+                                   autocomplete="off"
+                                   class="block w-full rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Code <span class="text-gray-400 font-normal">(optional)</span></label>
+                            <input type="text"
+                                   x-model="supplierSettingsNewCode"
+                                   placeholder="e.g. SUP001"
+                                   autocomplete="off"
+                                   class="block w-full rounded-md border-gray-300 shadow-sm text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <p x-show="supplierSettingsError" x-text="supplierSettingsError" class="text-sm text-red-600"></p>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button"
+                                @click="createSupplierFromSettings()"
+                                :disabled="supplierSettingsCreateBusy"
+                                class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                            Save supplier
+                        </button>
+                        <button type="button"
+                                @click="cancelSupplierSettingsCreate()"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+                <div x-show="supplierSettingsLoading" class="py-8 text-center text-sm text-gray-500">Loading suppliers…</div>
+                <template x-if="!supplierSettingsLoading && supplierSettingsList.length === 0">
+                    <p class="py-8 text-center text-sm text-gray-500">No suppliers found.</p>
+                </template>
+                <table x-show="!supplierSettingsLoading && supplierSettingsList.length > 0"
+                       class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Products</th>
+                            {% if user.is_superuser %}
+                            <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-16"></th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-100">
+                        <template x-for="sup in supplierSettingsList" :key="sup.id">
+                            <tr>
+                                <td class="px-3 py-2.5 text-gray-900">
+                                    <span x-text="sup.name"></span>
+                                    <span x-show="sup.code" class="block text-xs text-gray-400" x-text="sup.code"></span>
+                                </td>
+                                <td class="px-3 py-2.5 text-right tabular-nums text-gray-700" x-text="sup.product_count"></td>
+                                {% if user.is_superuser %}
+                                <td class="px-3 py-2.5 text-right">
+                                    <button type="button"
+                                            x-show="sup.product_count === 0"
+                                            @click="deleteSupplierFromSettings(sup)"
+                                            :disabled="supplierSettingsDeletingId === sup.id"
+                                            class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-rose-600 bg-white hover:bg-rose-50 hover:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-50"
+                                            title="Delete supplier"
+                                            :aria-label="'Delete supplier ' + sup.name">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </td>
+                                {% endif %}
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                {% if user.is_superuser %}
+                <p class="mt-3 text-xs text-gray-400">Only suppliers with 0 linked products can be deleted.</p>
+                {% endif %}
+            </div>
+            <div class="px-4 sm:px-6 py-3 border-t bg-gray-50 flex justify-end">
+                <button type="button" @click="closeSupplierSettings()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Close
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('quotationsTableData', () => ({
-            items: [],
-            isLoading: true,
-            pagination: {},
-            filters: {
-                search: '',
-                status: '',
-                month: 0,
-                year: 0,
-            },
+document.addEventListener('alpine:init', () => {
+    Alpine.data('supplierPriceMatrixData', () => ({
+        items: [],
+        isLoading: true,
+        pagination: {},
+        pageSize: 50,
+        filters: { suppliers: [], search: '' },
+        allSuppliers: [],
+        supplierFilterOpen: false,
+        supplierSettingsOpen: false,
+        supplierSettingsLoading: false,
+        supplierSettingsList: [],
+        supplierSettingsDeletingId: null,
+        supplierSettingsShowCreate: false,
+        supplierSettingsNewName: '',
+        supplierSettingsNewCode: '',
+        supplierSettingsCreateBusy: false,
+        supplierSettingsError: '',
+        supplierSettingsListUrl: '{% url "inventory:api_list_suppliers_matrix_settings" %}',
+        supplierSettingsCreateUrl: '{% url "inventory:api_create_supplier" %}',
+        supplierDeleteUrlTemplate: '{% url "inventory:api_delete_supplier" 0 %}',
+        sort: { field: 'medication', direction: 'asc' },
+        displayCurrency: 'MYR',
+        rateUSD: 4.2,
+        rateEUR: 4.9,
+        _matrixFetchSeq: 0,
+        _matrixFetchController: null,
+        detailModalOpen: false,
+        detailLoading: false,
+        detailEntry: null,
+        detailHistory: [],
+        selectedKeys: [],
+        lastSelectedIndex: null,
+        isDeleting: false,
+        matrixDetailUrlTemplate: '{% url "inventory:api_supplier_price_matrix_entry_detail" 0 %}',
+        quotationDetailUrlTemplate: '{% url "inventory:api_quotation_matrix_row_detail" 0 %}',
+        exportSelectedUrl: '{% url "inventory:export_supplier_price_matrix_xlsx" %}',
+        deleteSelectedUrl: '{% url "inventory:api_delete_supplier_price_matrix_rows" %}',
 
-            init() {
-                this.fetchQuotations(1);
-            },
-
-            // --- Date Navigation ---
-            get currentMonthLabel() {
-                if (this.filters.month === 0 || this.filters.year === 0) return 'All Periods';
-                const date = new Date(this.filters.year, this.filters.month - 1, 1);
-                return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-            },
-
-            prevMonth() {
-                if (this.filters.month === 0) {
-                     // Recover from 'All Time'
-                     const now = new Date();
-                     this.filters.month = now.getMonth() + 1;
-                     this.filters.year = now.getFullYear();
-                } else if (this.filters.month === 1) {
-                    this.filters.month = 12;
-                    this.filters.year--;
-                } else {
-                    this.filters.month--;
-                }
-                this.fetchQuotations(1);
-            },
-
-            nextMonth() {
-                if (this.filters.month === 0) {
-                     // Recover from 'All Time'
-                     const now = new Date();
-                     this.filters.month = now.getMonth() + 1;
-                     this.filters.year = now.getFullYear();
-                } else if (this.filters.month === 12) {
-                    this.filters.month = 1;
-                    this.filters.year++;
-                } else {
-                    this.filters.month++;
-                }
-                this.fetchQuotations(1);
-            },
-
-            resetPeriod() {
-                this.filters.month = 0;
-                this.filters.year = 0;
-                this.fetchQuotations(1);
-            },
-
-            async fetchQuotations(page = 1) {
-                this.isLoading = true;
-                const params = new URLSearchParams({
-                    page: page,
-                    search: this.filters.search,
-                    status: this.filters.status,
-                    month: this.filters.month,
-                    year: this.filters.year
-                });
-
-                try {
-                    const response = await fetch(`{% url 'inventory:api_manage_quotations' %}?${params.toString()}`, {
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-                    });
-                    const data = await response.json();
-                    this.items = data.items;
-                    this.pagination = data.pagination;
-                } catch (error) {
-                    console.error('Failed to fetch quotations:', error);
-                    Alpine.store('globals').showToast('Error loading quotations', 'error');
-                }
-                finally {
-                    this.isLoading = false;
-                }
-            },
-
-            formatPrice(value) {
-                if (value === null || value === undefined) return 'RM 0.00';
-                return `RM ${Number(value).toFixed(2)}`;
+        supplierFilterLabel() {
+            if (!this.filters.suppliers.length) {
+                return 'All suppliers';
             }
-        }));
-    });
+            const names = this.filters.suppliers
+                .map((id) => this.allSuppliers.find((s) => String(s.id) === id)?.name)
+                .filter(Boolean);
+            return names.length ? names.join(', ') : 'All suppliers';
+        },
+
+        toggleSupplierFilter(supplierId) {
+            const key = String(supplierId);
+            if (this.filters.suppliers.includes(key)) {
+                this.filters.suppliers = this.filters.suppliers.filter((id) => id !== key);
+            } else {
+                this.filters.suppliers = [...this.filters.suppliers, key];
+            }
+            this.fetchMatrix(1);
+        },
+
+        clearSupplierFilter() {
+            this.filters.suppliers = [];
+        },
+
+        openSupplierSettings() {
+            this.supplierFilterOpen = false;
+            this.supplierSettingsOpen = true;
+            this.fetchSupplierSettingsList();
+        },
+
+        closeSupplierSettings() {
+            this.supplierSettingsOpen = false;
+            this.supplierSettingsDeletingId = null;
+            this.cancelSupplierSettingsCreate();
+        },
+
+        openSupplierSettingsCreate() {
+            this.supplierSettingsShowCreate = true;
+            this.supplierSettingsNewName = '';
+            this.supplierSettingsNewCode = '';
+            this.supplierSettingsError = '';
+        },
+
+        cancelSupplierSettingsCreate() {
+            this.supplierSettingsShowCreate = false;
+            this.supplierSettingsNewName = '';
+            this.supplierSettingsNewCode = '';
+            this.supplierSettingsError = '';
+            this.supplierSettingsCreateBusy = false;
+        },
+
+        addSupplierToLocalLists(supplier) {
+            const sup = { id: supplier.id, name: supplier.name };
+            const key = String(sup.id);
+            if (!this.allSuppliers.some((s) => String(s.id) === key)) {
+                this.allSuppliers = [...this.allSuppliers, sup].sort((a, b) => a.name.localeCompare(b.name));
+            }
+            const globals = Alpine.store('globals');
+            if (globals?.allSuppliersList && !globals.allSuppliersList.some((s) => String(s.id) === key)) {
+                globals.allSuppliersList = [...globals.allSuppliersList, sup].sort((a, b) => a.name.localeCompare(b.name));
+            }
+            const jsonEl = document.getElementById('matrix-filter-suppliers-data')
+                || document.getElementById('all-suppliers-list-data')
+                || document.getElementById('supplier-price-matrix-suppliers');
+            if (jsonEl) {
+                try {
+                    const list = JSON.parse(jsonEl.textContent) || [];
+                    if (!list.some((s) => String(s.id) === key)) {
+                        list.push(sup);
+                        list.sort((a, b) => a.name.localeCompare(b.name));
+                        jsonEl.textContent = JSON.stringify(list);
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        },
+
+        async createSupplierFromSettings() {
+            const name = (this.supplierSettingsNewName || '').trim();
+            if (!name) {
+                this.supplierSettingsError = 'Enter a supplier name.';
+                return;
+            }
+            this.supplierSettingsCreateBusy = true;
+            this.supplierSettingsError = '';
+            try {
+                const response = await fetch(this.supplierSettingsCreateUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name,
+                        code: (this.supplierSettingsNewCode || '').trim() || null,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    this.supplierSettingsError = data.error || 'Could not create supplier.';
+                    return;
+                }
+                this.addSupplierToLocalLists({ id: data.id, name: data.name });
+                this.cancelSupplierSettingsCreate();
+                await this.fetchSupplierSettingsList();
+                Alpine.store('globals').showToast(
+                    data.existing ? `Using existing supplier "${data.name}".` : `Supplier "${data.name}" created.`,
+                    'success'
+                );
+            } catch (err) {
+                console.error('createSupplierFromSettings failed:', err);
+                this.supplierSettingsError = 'Could not create supplier.';
+            } finally {
+                this.supplierSettingsCreateBusy = false;
+            }
+        },
+
+        async fetchSupplierSettingsList() {
+            this.supplierSettingsLoading = true;
+            try {
+                const response = await fetch(this.supplierSettingsListUrl, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    Alpine.store('globals').showToast(data.error || 'Failed to load suppliers', 'error');
+                    return;
+                }
+                this.supplierSettingsList = data.suppliers || [];
+            } catch (err) {
+                console.error('fetchSupplierSettingsList failed:', err);
+                Alpine.store('globals').showToast('Network error while loading suppliers', 'error');
+            } finally {
+                this.supplierSettingsLoading = false;
+            }
+        },
+
+        removeSupplierFromLocalLists(supplierId) {
+            const key = String(supplierId);
+            this.allSuppliers = this.allSuppliers.filter((s) => String(s.id) !== key);
+            this.filters.suppliers = this.filters.suppliers.filter((id) => id !== key);
+            this.supplierSettingsList = this.supplierSettingsList.filter((s) => String(s.id) !== key);
+            const globals = Alpine.store('globals');
+            if (globals?.allSuppliersList) {
+                globals.allSuppliersList = globals.allSuppliersList.filter((s) => String(s.id) !== key);
+            }
+        },
+
+        async deleteSupplierFromSettings(supplier) {
+            if (!supplier || supplier.product_count > 0) {
+                return;
+            }
+            if (!window.confirm(`Delete supplier "${supplier.name}"? This cannot be undone.`)) {
+                return;
+            }
+            this.supplierSettingsDeletingId = supplier.id;
+            try {
+                const url = this.supplierDeleteUrlTemplate.replace('/0/', `/${supplier.id}/`);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    },
+                    body: JSON.stringify({}),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    Alpine.store('globals').showToast(data.error || 'Delete failed', 'error');
+                    return;
+                }
+                Alpine.store('globals').showToast(`Supplier "${data.name}" deleted.`);
+                this.removeSupplierFromLocalLists(supplier.id);
+                await this.fetchMatrix(this.pagination.current_page || 1);
+            } catch (err) {
+                console.error('deleteSupplierFromSettings failed:', err);
+                Alpine.store('globals').showToast('Network error while deleting supplier', 'error');
+            } finally {
+                this.supplierSettingsDeletingId = null;
+            }
+        },
+
+        rowKey(row) {
+            return `${row.source}:${row.id}`;
+        },
+
+        hasSelectedKey(key) {
+            const normalized = String(key);
+            return this.selectedKeys.some((k) => String(k) === normalized);
+        },
+
+        onRowMouseDown(event) {
+            if (event.shiftKey) {
+                event.preventDefault();
+            }
+        },
+
+        clearTextSelection() {
+            const selection = window.getSelection?.();
+            if (selection && selection.type === 'Range') {
+                selection.removeAllRanges();
+            }
+        },
+
+        isRowSelected(row) {
+            return this.hasSelectedKey(this.rowKey(row));
+        },
+
+        isAllOnPageSelected() {
+            if (!this.items.length) return false;
+            return this.items.every((r) => this.isRowSelected(r));
+        },
+
+        isSomeOnPageSelected() {
+            if (!this.items.length) return false;
+            const some = this.items.some((r) => this.isRowSelected(r));
+            return some && !this.isAllOnPageSelected();
+        },
+
+        syncSelectAllCheckbox() {
+            const el = this.$refs.selectAllCheckbox;
+            if (!el) return;
+            const all = this.isAllOnPageSelected();
+            const some = this.isSomeOnPageSelected();
+            el.indeterminate = false;
+            if (all) {
+                el.checked = true;
+            } else if (some) {
+                el.checked = false;
+                el.indeterminate = true;
+            } else {
+                el.checked = false;
+            }
+        },
+
+        onRowCheckboxClick(event, row, index) {
+            if (event.shiftKey && this.lastSelectedIndex !== null) {
+                this.clearTextSelection();
+                this.applyShiftRangeSelection(index);
+                this.lastSelectedIndex = index;
+                return;
+            }
+            this.toggleRowKey(this.rowKey(row));
+            this.lastSelectedIndex = index;
+            this.$nextTick(() => this.syncSelectAllCheckbox());
+        },
+
+        toggleRowKey(key) {
+            if (this.hasSelectedKey(key)) {
+                const normalized = String(key);
+                this.selectedKeys = this.selectedKeys.filter((k) => String(k) !== normalized);
+            } else {
+                this.selectedKeys = [...this.selectedKeys, String(key)];
+            }
+        },
+
+        deselectAllOnPage() {
+            const pageKeySet = new Set(this.items.map((r) => String(this.rowKey(r))));
+            this.selectedKeys = this.selectedKeys.filter((k) => !pageKeySet.has(String(k)));
+            this.lastSelectedIndex = null;
+            this.syncSelectAllCheckbox();
+        },
+
+        toggleSelectAllOnPage() {
+            if (this.isAllOnPageSelected() || this.isSomeOnPageSelected()) {
+                this.deselectAllOnPage();
+            } else {
+                this.selectAllOnPage();
+            }
+            this.$nextTick(() => this.syncSelectAllCheckbox());
+        },
+
+        applyShiftRangeSelection(index) {
+            if (this.lastSelectedIndex === null) return;
+            const start = Math.min(this.lastSelectedIndex, index);
+            const end = Math.max(this.lastSelectedIndex, index);
+            const rangeKeys = this.items.slice(start, end + 1).map((r) => String(this.rowKey(r)));
+            const targetSelected = this.hasSelectedKey(this.rowKey(this.items[index]));
+            if (targetSelected) {
+                const rangeSet = new Set(rangeKeys);
+                this.selectedKeys = this.selectedKeys.filter((k) => !rangeSet.has(String(k)));
+            } else {
+                const merged = new Set([...this.selectedKeys.map(String), ...rangeKeys]);
+                this.selectedKeys = Array.from(merged);
+            }
+            this.$nextTick(() => this.syncSelectAllCheckbox());
+        },
+
+        handleRowClick(event, row, index) {
+            if (event.shiftKey && this.lastSelectedIndex !== null) {
+                event.preventDefault();
+                this.clearTextSelection();
+                this.applyShiftRangeSelection(index);
+                this.lastSelectedIndex = index;
+                this.$nextTick(() => this.syncSelectAllCheckbox());
+                return;
+            }
+            const key = this.rowKey(row);
+            this.toggleRowKey(key);
+            this.lastSelectedIndex = index;
+            this.$nextTick(() => this.syncSelectAllCheckbox());
+        },
+
+        selectAllOnPage() {
+            const pageKeys = this.items.map((r) => String(this.rowKey(r)));
+            this.selectedKeys = Array.from(new Set([...this.selectedKeys.map(String), ...pageKeys]));
+            if (this.items.length) {
+                this.lastSelectedIndex = this.items.length - 1;
+            }
+            this.syncSelectAllCheckbox();
+        },
+
+        clearSelection() {
+            this.selectedKeys = [];
+            this.lastSelectedIndex = null;
+            this.syncSelectAllCheckbox();
+        },
+
+        exportSelectedXlsx() {
+            if (this.selectedKeys.length === 0) {
+                Alpine.store('globals').showToast('No rows selected', 'error');
+                return;
+            }
+            const keys = encodeURIComponent(this.selectedKeys.join(','));
+            window.location.href = `${this.exportSelectedUrl}?keys=${keys}`;
+        },
+
+        async deleteSelected() {
+            if (this.selectedKeys.length === 0) {
+                Alpine.store('globals').showToast('No rows selected', 'error');
+                return;
+            }
+            const n = this.selectedKeys.length;
+            if (!window.confirm(`Delete ${n} selected row(s) from the price matrix? This cannot be undone.`)) {
+                return;
+            }
+            this.isDeleting = true;
+            try {
+                const response = await fetch(this.deleteSelectedUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    },
+                    body: JSON.stringify({ keys: this.selectedKeys }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    Alpine.store('globals').showToast(data.error || 'Delete failed', 'error');
+                    return;
+                }
+                let msg = `Deleted ${data.deleted_count} row(s).`;
+                if (data.skipped_quotation_count > 0) {
+                    msg += ` ${data.skipped_quotation_count} purchase order row(s) were skipped.`;
+                }
+                Alpine.store('globals').showToast(msg);
+                this.clearSelection();
+                await this.fetchMatrix(this.pagination.current_page || 1);
+            } catch (err) {
+                console.error('deleteSelected failed:', err);
+                Alpine.store('globals').showToast('Network error while deleting rows', 'error');
+            } finally {
+                this.isDeleting = false;
+            }
+        },
+
+        exportAllXlsx() {
+            if ((this.pagination.total_count ?? 0) === 0) {
+                Alpine.store('globals').showToast('No rows to export', 'error');
+                return;
+            }
+            const params = new URLSearchParams({
+                all: '1',
+                search: this.filters.search,
+                supplier: this.filters.suppliers.join(','),
+                sort_by: this.sort.field,
+                sort_dir: this.sort.direction,
+            });
+            window.location.href = `${this.exportSelectedUrl}?${params}`;
+        },
+
+        init() {
+            const suppliersEl = document.getElementById('matrix-filter-suppliers-data');
+            if (suppliersEl) {
+                try {
+                    this.allSuppliers = JSON.parse(suppliersEl.textContent) || [];
+                } catch (e) {
+                    this.allSuppliers = [];
+                }
+            }
+            this.loadDisplayRates();
+            const savedPageSize = parseInt(window.localStorage.getItem('matrix_page_size') || '50', 10);
+            if ([25, 50, 100, 200].includes(savedPageSize)) {
+                this.pageSize = savedPageSize;
+            }
+            const savedCurrency = window.localStorage.getItem('matrix_display_currency');
+            if (savedCurrency && ['MYR', 'USD', 'EUR'].includes(savedCurrency)) {
+                this.displayCurrency = savedCurrency;
+            }
+            this.fetchMatrix(1);
+            this.$watch('filters.search', () => this.fetchMatrix(1));
+            this.$watch('selectedKeys', () => {
+                this.$nextTick(() => this.syncSelectAllCheckbox());
+            }, { deep: true });
+        },
+
+        loadDisplayRates() {
+            const savedUsd = window.localStorage.getItem('quotation_rate_usd');
+            if (savedUsd) this.rateUSD = parseFloat(savedUsd) || 4.2;
+            const savedEur = window.localStorage.getItem('quotation_rate_eur');
+            if (savedEur) this.rateEUR = parseFloat(savedEur) || 4.9;
+        },
+
+        setDisplayCurrency(cur) {
+            this.displayCurrency = cur;
+            window.localStorage.setItem('matrix_display_currency', cur);
+        },
+
+        currencySymbol(cur = null) {
+            const c = (cur || this.displayCurrency).toUpperCase();
+            if (c === 'USD') return '$';
+            if (c === 'EUR') return '€';
+            return 'RM';
+        },
+
+        convertMyrForDisplay(myrPrice, row = null) {
+            const myr = Number(myrPrice);
+            if (!myr || this.displayCurrency === 'MYR') return myr;
+            const target = this.displayCurrency;
+            if (row?.price_currency === target && row?.conversion_rate > 0) {
+                return myr / Number(row.conversion_rate);
+            }
+            const rate = target === 'USD' ? this.rateUSD : this.rateEUR;
+            return rate > 0 ? myr / rate : myr;
+        },
+
+        tierDisplayAmount(tier, row = null) {
+            const context = row || this.detailEntry;
+            const source = tier?.unit_price_source;
+            if (source != null && source !== ''
+                && context?.price_currency
+                && context.price_currency !== 'MYR'
+                && this.displayCurrency === context.price_currency) {
+                return Number(source);
+            }
+            return this.convertMyrForDisplay(tier?.unit_price, context);
+        },
+
+        changeDisplayAmount(change, field, row = null) {
+            const context = row || this.detailEntry;
+            const sourceKey = `${field}_source`;
+            const myrKey = `${field}_myr`;
+            const source = change?.[sourceKey];
+            if (source != null && source !== ''
+                && context?.price_currency
+                && context.price_currency !== 'MYR'
+                && this.displayCurrency === context.price_currency) {
+                return Number(source);
+            }
+            if (change?.[myrKey] != null) {
+                return this.convertMyrForDisplay(change[myrKey], context);
+            }
+            return this.convertMyrForDisplay(change?.[field], context);
+        },
+
+        formatDisplayPrice(myrPrice, row = null) {
+            const amount = this.convertMyrForDisplay(myrPrice, row);
+            if (this.displayCurrency === 'MYR') {
+                return `RM ${amount.toFixed(2)}`;
+            }
+            return `${this.currencySymbol()} ${amount.toFixed(2)}`;
+        },
+
+        formatDisplayAmount(amount) {
+            if (this.displayCurrency === 'MYR') {
+                return `RM ${Number(amount).toFixed(2)}`;
+            }
+            return `${this.currencySymbol()} ${Number(amount).toFixed(2)}`;
+        },
+
+        onPageSizeChange() {
+            window.localStorage.setItem('matrix_page_size', String(this.pageSize));
+            this.fetchMatrix(1);
+        },
+
+        changeSort(field) {
+            if (this.sort.field === field) {
+                this.sort.direction = this.sort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sort.field = field;
+                this.sort.direction = field === 'updated_at' ? 'desc' : 'asc';
+            }
+            this.fetchMatrix(1);
+        },
+
+        resetFilters() {
+            this.filters.suppliers = [];
+            this.filters.search = '';
+            this.supplierFilterOpen = false;
+            this.clearSelection();
+            this.fetchMatrix(1);
+        },
+
+        async fetchMatrix(page = 1) {
+            if (this._matrixFetchController) {
+                this._matrixFetchController.abort();
+            }
+            this._matrixFetchController = new AbortController();
+            const seq = ++this._matrixFetchSeq;
+            const search = this.filters.search;
+            const supplier = this.filters.suppliers.join(',');
+
+            this.isLoading = true;
+            const params = new URLSearchParams({
+                page: String(page),
+                limit: String(this.pageSize),
+                search,
+                supplier,
+                sort_by: this.sort.field,
+                sort_dir: this.sort.direction,
+            });
+            try {
+                const response = await fetch(`{% url 'inventory:api_manage_supplier_prices' %}?${params}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                    signal: this._matrixFetchController.signal,
+                });
+                const data = await response.json();
+                if (seq !== this._matrixFetchSeq) return;
+                this.items = data.items || [];
+                this.pagination = data.pagination || {};
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                Alpine.store('globals').showToast('Error loading price matrix', 'error');
+            } finally {
+                if (seq === this._matrixFetchSeq) {
+                    this.isLoading = false;
+                    this.$nextTick(() => this.syncSelectAllCheckbox());
+                }
+            }
+        },
+
+        async openEntryDetail(row) {
+            if (row.source === 'quotation') {
+                await this.openQuotationEntryDetail(row.id);
+            } else {
+                await this.openMatrixEntryDetail(row.id);
+            }
+        },
+
+        async openMatrixEntryDetail(entryId) {
+            this.detailModalOpen = true;
+            this.detailLoading = true;
+            this.detailEntry = null;
+            this.detailHistory = [];
+            try {
+                const response = await fetch(this.matrixDetailUrlTemplate.replace('/0/', `/${entryId}/`), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                if (!response.ok) throw new Error('Failed to load');
+                const data = await response.json();
+                this.detailEntry = data.entry;
+                this.detailHistory = data.history || [];
+            } catch (e) {
+                Alpine.store('globals').showToast('Could not load price history', 'error');
+                this.detailModalOpen = false;
+            } finally {
+                this.detailLoading = false;
+            }
+        },
+
+        async openQuotationEntryDetail(itemId) {
+            this.detailModalOpen = true;
+            this.detailLoading = true;
+            this.detailEntry = null;
+            this.detailHistory = [];
+            try {
+                const response = await fetch(this.quotationDetailUrlTemplate.replace('/0/', `/${itemId}/`), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                if (!response.ok) throw new Error('Failed to load');
+                const data = await response.json();
+                this.detailEntry = data.entry;
+                this.detailHistory = data.history || [];
+            } catch (e) {
+                Alpine.store('globals').showToast('Could not load quotation price history', 'error');
+                this.detailModalOpen = false;
+            } finally {
+                this.detailLoading = false;
+            }
+        },
+
+        closeEntryDetail() {
+            this.detailModalOpen = false;
+            this.detailEntry = null;
+            this.detailHistory = [];
+        },
+
+        formatTier(tier, row = null) {
+            const upper = tier.max_quantity != null ? tier.max_quantity : '+';
+            return `${tier.min_quantity}–${upper} @ ${this.formatDisplayAmount(this.tierDisplayAmount(tier, row))}`;
+        },
+
+        formatTierFromSnapshot(tier, row = null) {
+            const upper = tier.max_quantity != null ? tier.max_quantity : '+';
+            return `${tier.min_quantity}–${upper} @ ${this.formatDisplayAmount(this.tierDisplayAmount(tier, row))}`;
+        },
+
+        formatPrice(value, row = null) {
+            const context = row || this.detailEntry;
+            if (value === null || value === undefined) {
+                return this.formatDisplayPrice(0, context);
+            }
+            return this.formatDisplayPrice(value, context);
+        },
+
+        formatChangePrice(change, field, row = null) {
+            return this.formatDisplayAmount(this.changeDisplayAmount(change, field, row));
+        },
+
+        formatPriceDelta(delta, row = null) {
+            const context = row || this.detailEntry;
+            const n = this.convertMyrForDisplay(Math.abs(Number(delta)), context);
+            const sign = Number(delta) > 0 ? '+' : Number(delta) < 0 ? '-' : '';
+            const sym = this.displayCurrency === 'MYR' ? 'RM' : this.currencySymbol();
+            return `${sign}${sym} ${n.toFixed(2)}`;
+        },
+
+        formatChangeDelta(change, previousRecord, currentRecord) {
+            const oldAmount = this.changeDisplayAmount(change, 'old_price', previousRecord);
+            const newAmount = this.changeDisplayAmount(change, 'new_price', currentRecord);
+            const delta = newAmount - oldAmount;
+            const sign = delta > 0 ? '+' : delta < 0 ? '-' : '';
+            return `${sign}${this.formatDisplayAmount(Math.abs(delta))}`;
+        },
+
+        formatConversionRate(currency, rate) {
+            if (!currency || currency === 'MYR' || rate == null || rate === '') return '';
+            return `1 ${currency} = ${Number(rate).toFixed(2)} MYR`;
+        },
+
+        formatDate(value) {
+            if (!value) return '-';
+            return new Date(value).toLocaleDateString();
+        },
+
+        formatDateTime(value) {
+            if (!value) return '-';
+            return new Date(value).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+            });
+        },
+
+        formatHistoryDate(record) {
+            if (!record) return '—';
+            const raw = record.effective_date || record.uploaded_at;
+            if (!raw) return '—';
+            if (record.effective_date) {
+                return new Date(record.effective_date + 'T00:00:00').toLocaleDateString();
+            }
+            return this.formatDateTime(raw);
+        },
+    }));
+});
 </script>

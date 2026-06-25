@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.db import transaction, IntegrityError
 from django.urls import reverse
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.http import JsonResponse
 from django.db.models import Q
 from django.core.paginator import Paginator, EmptyPage
@@ -13,7 +13,6 @@ import json
 
 from inventory.models import Quotation
 from .models import Invoice, InvoiceItem
-from .forms import InvoiceUpdateForm
 
 from inventory.views import staff_required
 
@@ -166,7 +165,7 @@ def create_invoice_from_quotation(request, quotation_id):
         InvoiceItem.objects.bulk_create(invoice_items_to_create)
 
         messages.success(request, f"Successfully created Invoice {invoice.invoice_id} from Quotation {quotation.quotation_id}.")
-        return redirect(f"{reverse('core:manage_dashboard')}#quotations")
+        return redirect(f"{reverse('core:manage_dashboard')}#invoices")
 
     except IntegrityError as e:
         messages.error(request, f"Database error creating invoice: {e}")
@@ -177,35 +176,108 @@ def create_invoice_from_quotation(request, quotation_id):
 
 
 @staff_required
+@transaction.atomic
 def edit_invoice(request, invoice_id):
     """
     Handles fetching invoice data (GET for modal population)
     and updating invoice data (POST from modal form).
     """
-    invoice = get_object_or_404(Invoice, invoice_id=invoice_id)
+    invoice = get_object_or_404(
+        Invoice.objects.select_related('supplier').prefetch_related('items__product'),
+        invoice_id=invoice_id,
+    )
 
     if request.method == 'POST':
         if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-             messages.error(request, "Invalid request type.")
-             return redirect('core:manage_dashboard')
+            messages.error(request, "Invalid request type.")
+            return redirect('core:manage_dashboard')
 
-        form = InvoiceUpdateForm(request.POST, instance=invoice)
-        if form.is_valid():
+        try:
+            data = json.loads(request.body)
+        except (ValueError, TypeError):
+            return JsonResponse({'success': False, 'error': 'Invalid JSON payload.'}, status=400)
+
+        status = data.get('status')
+        if status and status in dict(Invoice.InvoiceStatus.choices):
+            invoice.status = status
+
+        notes = data.get('notes')
+        if notes is not None:
+            invoice.notes = notes
+
+        payment_date_raw = (data.get('payment_date') or '').strip()
+        if payment_date_raw:
             try:
-                form.save()
-                return JsonResponse({'success': True})
-            except Exception as e:
-                return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
-        else:
-            return JsonResponse({'success': False, 'errors': form.errors}, status=400)
+                from datetime import date
+                invoice.payment_date = date.fromisoformat(payment_date_raw)
+            except ValueError:
+                return JsonResponse({'success': False, 'error': 'Invalid payment date.'}, status=400)
+        elif payment_date_raw == '':
+            invoice.payment_date = None
+
+        transport_raw = data.get('transportation_cost')
+        if transport_raw is not None and transport_raw != '':
+            try:
+                invoice.transportation_cost = Decimal(str(transport_raw))
+            except (InvalidOperation, ValueError):
+                return JsonResponse({'success': False, 'error': 'Invalid transportation cost.'}, status=400)
+
+        item_map = {item.pk: item for item in invoice.items.all()}
+        for row in data.get('items') or []:
+            try:
+                item_id = int(row.get('id'))
+            except (TypeError, ValueError):
+                continue
+            item = item_map.get(item_id)
+            if not item:
+                continue
+            try:
+                qty = int(row.get('quantity', item.quantity))
+                unit_price = Decimal(str(row.get('unit_price', item.unit_price)))
+            except (InvalidOperation, ValueError, TypeError):
+                return JsonResponse({'success': False, 'error': 'Invalid item quantity or unit price.'}, status=400)
+            if qty < 0:
+                return JsonResponse({'success': False, 'error': 'Quantity cannot be negative.'}, status=400)
+            if qty < item.quantity_received:
+                return JsonResponse({
+                    'success': False,
+                    'error': (
+                        f'Cannot set quantity below received amount for '
+                        f'"{item.product.name if item.product else item.description}" '
+                        f'({item.quantity_received} already received).'
+                    ),
+                }, status=400)
+            item.quantity = qty
+            item.unit_price = unit_price
+            item.save(update_fields=['quantity', 'unit_price'])
+
+        try:
+            invoice.save()
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
 
     elif request.method == 'GET' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        items_data = []
+        for item in invoice.items.filter(quantity__gt=0).order_by('pk'):
+            items_data.append({
+                'id': item.pk,
+                'sku': item.product.sku if item.product and item.product.sku else '-',
+                'product_name': item.product.name if item.product else (item.description or '-'),
+                'quantity': item.quantity,
+                'quantity_received': item.quantity_received,
+                'unit_price': str(item.unit_price),
+                'original_currency': getattr(item, 'original_currency', '') or '',
+                'unit_price_source': str(item.unit_price_source) if getattr(item, 'unit_price_source', None) is not None else None,
+            })
         data = {
             'invoice_id': invoice.invoice_id,
             'status': invoice.status,
             'payment_date': invoice.payment_date.strftime('%Y-%m-%d') if invoice.payment_date else '',
             'notes': invoice.notes,
-            'update_url': reverse('sales:edit_invoice', kwargs={'invoice_id': invoice.invoice_id})
+            'transportation_cost': str(invoice.transportation_cost or Decimal('0.00')),
+            'items': items_data,
+            'update_url': reverse('sales:edit_invoice', kwargs={'invoice_id': invoice.invoice_id}),
         }
         return JsonResponse(data)
 

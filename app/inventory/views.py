@@ -17,20 +17,41 @@ from tablib import Dataset
 import csv
 import datetime
 from django.http import HttpResponse
+from django.views.decorators.http import require_POST
 import logging
-from decimal import Decimal
-from django.core.paginator import Paginator, EmptyPage
+from decimal import Decimal, InvalidOperation
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 import json
 import re
 
 from .forms import (
-    InventoryBatchForm, QuotationUploadForm,
+    InventoryBatchForm, QuotationUploadForm, InvoiceUploadForm,
     QuotationCreateForm, InventoryBatchUploadForm
+)
+from .invoice_import import (
+    parse_payable_invoice_detail_file,
+    suggest_supplier_match,
+    suggest_supplier_code,
+    confirm_payable_invoice_import,
+    _normalize_import_action,
 )
 from .resources import QuotationResource, InventoryBatchResource
 from product.models import Product, Category, CategoryGroup
 from product.pricing_sync import sync_saved_base_costs_for_quotation
-from .models import Quotation, InventoryBatch, QuotationItem, Supplier
+from .models import (
+    Quotation, InventoryBatch, QuotationItem, Supplier,
+    SupplierPriceMatrixEntry, SupplierPriceMatrixTier,
+    SupplierPriceMatrixUploadRecord,
+)
+from .supplier_pricing import (
+    parse_supplier_price_matrix_file,
+    sync_saved_base_costs_for_products,
+    list_quotation_matrix_rows,
+    serialize_quotation_matrix_item,
+    default_matrix_unit_price,
+    invoice_item_landed_cost_per_unit,
+    _matrix_search_tokens as matrix_search_tokens,
+)
 from sales.models import Invoice, InvoiceItem
 from blog.models import Post
 from images.models import MediaImage, ImageCategory
@@ -119,9 +140,8 @@ def api_manage_inventory(request):
         Prefetch(
             'quotationitem_set',
             queryset=QuotationItem.objects.select_related('quotation')
-                                          .prefetch_related('quotation__items')
                                           .order_by('-quotation__date_quoted'),
-            to_attr='latest_quotation_items' # This must match the property check
+            to_attr='latest_quotation_items'
         )
     ).order_by('name')
 
@@ -135,7 +155,7 @@ def api_manage_inventory(request):
     if category_filter:
         queryset = queryset.filter(categories__name=category_filter)
 
-    queryset = queryset.distinct()
+    queryset = queryset.filter(total_stock__gt=0).distinct()
 
     # --- 5. Paginate ---
     paginator = Paginator(queryset, 50) # 50 items per page
@@ -267,6 +287,187 @@ def api_manage_quotations(request):
     })
 
 
+def _serialize_procurement_invoice_items(invoice):
+    items_data = []
+    for item in invoice.items.filter(quantity__gt=0):
+        items_data.append({
+            'id': item.id,
+            'sku': item.product.sku if item.product and item.product.sku else '-',
+            'product_name': item.product.name if item.product else (item.description or '-'),
+            'description': item.description or '',
+            'quantity': item.quantity,
+            'quantity_received': item.quantity_received,
+            'quantity_remaining': item.quantity - item.quantity_received,
+            'unit_price': float(item.unit_price),
+            'total_price': float(item.total_price),
+            'original_currency': getattr(item, 'original_currency', '') or '',
+            'unit_price_source': float(item.unit_price_source) if getattr(item, 'unit_price_source', None) is not None else None,
+            'gross_source': float(item.gross_source) if getattr(item, 'gross_source', None) is not None else None,
+            'gross_myr': float(item.total_price),
+            'is_fully_received': item.is_fully_received,
+            'product_id': item.product.id if item.product else None,
+        })
+    return items_data
+
+
+def _serialize_procurement_invoice(invoice):
+    transport = float(invoice.transportation_cost or 0)
+    return {
+        'key': f'inv-{invoice.invoice_id}',
+        'record_type': 'invoice',
+        'document_id': invoice.invoice_id,
+        'supplier_name': invoice.supplier.name,
+        'supplier_id': invoice.supplier.id,
+        'quotation_id': invoice.quotation.quotation_id if invoice.quotation else None,
+        'quotation_pk': invoice.quotation.id if invoice.quotation else None,
+        'date': invoice.date_issued.isoformat() if invoice.date_issued else None,
+        'payment_date': invoice.payment_date.isoformat() if invoice.payment_date else None,
+        'status': invoice.get_status_display(),
+        'status_code': invoice.status,
+        'item_count': invoice.items.filter(quantity__gt=0).count(),
+        'transportation_cost': transport,
+        'total_amount': float(invoice.total_amount or 0),
+        'detail_url': None,
+        'create_invoice_url': None,
+        'invoice_id': invoice.invoice_id,
+        'items': _serialize_procurement_invoice_items(invoice),
+    }
+
+
+def _serialize_procurement_po(quotation, item_count, total_value):
+    has_orderable_qty = any((it.quantity or 0) > 0 for it in quotation.items.all())
+    transport = float(quotation.transportation_cost or 0)
+    goods = float(total_value or 0)
+    return {
+        'key': f'po-{quotation.quotation_id}',
+        'record_type': 'purchase_order',
+        'document_id': quotation.quotation_id,
+        'supplier_name': quotation.supplier.name,
+        'supplier_id': quotation.supplier_id,
+        'quotation_id': quotation.quotation_id,
+        'quotation_pk': quotation.pk,
+        'date': quotation.date_quoted.isoformat() if quotation.date_quoted else None,
+        'payment_date': None,
+        'status': 'Open',
+        'status_code': 'OPEN',
+        'item_count': item_count,
+        'transportation_cost': transport,
+        'total_amount': goods + transport,
+        'detail_url': reverse('inventory:quotation_detail', kwargs={'quotation_id': quotation.quotation_id}),
+        'create_invoice_url': (
+            reverse('sales:create_invoice_from_quotation', kwargs={'quotation_id': quotation.quotation_id})
+            if has_orderable_qty else None
+        ),
+        'delete_quotation_url': reverse(
+            'inventory:delete_quotation',
+            kwargs={'quotation_id': quotation.quotation_id},
+        ),
+        'invoice_id': None,
+        'items': None,
+    }
+
+
+@staff_required
+def api_manage_procurement(request):
+    """
+    Unified list of open purchase orders and supplier invoices for the Invoices tab.
+    Invoiced quotations appear only as invoices (no duplicate PO row).
+    """
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    search_query = request.GET.get('search', '').strip()
+    page_number = request.GET.get('page', 1)
+    type_filter = request.GET.get('type', '').strip().lower()  # '', 'po', 'invoice'
+    status_filter = request.GET.get('status', '').strip().upper()
+
+    try:
+        month = int(request.GET.get('month', 0))
+        year = int(request.GET.get('year', 0))
+    except ValueError:
+        month = 0
+        year = 0
+
+    include_po = type_filter in ('', 'po')
+    include_invoice = type_filter in ('', 'invoice')
+
+    if status_filter == 'OPEN':
+        include_po = True
+        include_invoice = False
+    elif status_filter and status_filter != 'OPEN':
+        include_po = False
+        include_invoice = True
+
+    records = []
+
+    if include_po:
+        po_qs = (
+            Quotation.objects.filter(invoice__isnull=True)
+            .annotate(
+                annotated_item_count=Count('items', filter=Q(items__quantity__gt=0)),
+                annotated_total_value=Sum(
+                    F('items__quantity') * F('items__quoted_price'),
+                    filter=Q(items__quantity__gt=0),
+                    output_field=DecimalField(),
+                ),
+            )
+            .select_related('supplier')
+            .prefetch_related('items')
+            .order_by('-date_quoted', '-created_at')
+        )
+        if month and year:
+            po_qs = po_qs.filter(date_quoted__year=year, date_quoted__month=month)
+        if search_query:
+            po_qs = po_qs.filter(
+                Q(quotation_id__icontains=search_query)
+                | Q(supplier__name__icontains=search_query)
+                | Q(items__product__name__icontains=search_query)
+            ).distinct()
+        for q in po_qs:
+            records.append(_serialize_procurement_po(
+                q, q.annotated_item_count, q.annotated_total_value,
+            ))
+
+    if include_invoice:
+        inv_qs = (
+            Invoice.objects.select_related('supplier', 'quotation')
+            .prefetch_related('items__product')
+            .order_by('-date_issued', '-created_at')
+        )
+        if month and year:
+            inv_qs = inv_qs.filter(date_issued__year=year, date_issued__month=month)
+        if search_query:
+            inv_qs = inv_qs.filter(
+                Q(invoice_id__icontains=search_query)
+                | Q(supplier__name__icontains=search_query)
+                | Q(quotation__quotation_id__icontains=search_query)
+                | Q(items__product__name__icontains=search_query)
+                | Q(items__description__icontains=search_query)
+            ).distinct()
+        if status_filter and status_filter != 'OPEN':
+            inv_qs = inv_qs.filter(status=status_filter)
+        for inv in inv_qs:
+            records.append(_serialize_procurement_invoice(inv))
+
+    records.sort(key=lambda r: r.get('date') or '', reverse=True)
+
+    paginator = Paginator(records, 25)
+    try:
+        page_obj = paginator.page(page_number)
+    except (EmptyPage, PageNotAnInteger):
+        return JsonResponse({'items': [], 'pagination': {}})
+
+    return JsonResponse({
+        'items': list(page_obj.object_list),
+        'pagination': {
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        },
+    })
+
+
 @staff_required
 def api_get_quotation_items(request, quotation_id):
     """
@@ -277,7 +478,8 @@ def api_get_quotation_items(request, quotation_id):
         quotation = get_object_or_404(Quotation, quotation_id=quotation_id)
 
         items = QuotationItem.objects.filter(
-            quotation=quotation
+            quotation=quotation,
+            quantity__gt=0,
         ).select_related(
             'product'
         ).order_by('product__name')
@@ -338,8 +540,10 @@ def receive_stock(request):
 
     if form.is_valid():
         try:
-            batch = form.save()
-            logger.info(f"[receive_stock] Successfully created batch: {batch.batch_number} for product ID {batch.product_id}")
+            batch = form.save(commit=False)
+            batch.batch_number = ''
+            batch.save()
+            logger.info(f"[receive_stock] Successfully created batch #{batch.pk} for product ID {batch.product_id}")
 
             # --- START Update Invoice Item and Invoice Status ---
             if invoice_item:
@@ -350,7 +554,7 @@ def receive_stock(request):
                 logger.info(f"Invoice {invoice_item.invoice.invoice_id} status updated to {invoice_item.invoice.status}.")
             # --- END Update ---
 
-            return JsonResponse({'success': True, 'batch_number': batch.batch_number})
+            return JsonResponse({'success': True, 'batch_id': batch.pk})
 
         except IntegrityError as e:
             logger.error(f"[receive_stock] IntegrityError saving batch: {e}", exc_info=True)
@@ -490,14 +694,14 @@ def create_quotation(request):
             quotation.save()
             logger.info(f"[create_quotation] Quotation saved successfully. ID: {quotation.quotation_id}")
 
-            messages.success(request, f"Quotation {quotation.quotation_id} created.");
+            messages.success(request, f"Purchase order {quotation.quotation_id} created.")
             messages.info(request, "You can now add items and other details.")
 
         except (IntegrityError, Exception) as e:
             # Log the full error if saving fails
             logger.error(f"[create_quotation] Error during quotation save: {e}", exc_info=True)
-            messages.error(request, f"Error creating quotation: {e}");
-            return redirect(reverse('core:manage_dashboard') + '#quotations')
+            messages.error(request, f"Error creating purchase order: {e}")
+            return redirect(reverse('core:manage_dashboard') + '#invoices')
 
         # Check if we have a quotation object AND it has an ID after saving
         if quotation and quotation.quotation_id:
@@ -510,13 +714,13 @@ def create_quotation(request):
             except Exception as e:
                 # Log the full error if URL generation or redirect fails
                 logger.error(f"[create_quotation] Error during redirect creation/execution: {e}", exc_info=True)
-                messages.error(request, f"Quotation created, but redirect failed: {e}");
-                return redirect(reverse('core:manage_dashboard') + '#quotations')
+                messages.error(request, f"Purchase order created, but redirect failed: {e}")
+                return redirect(reverse('core:manage_dashboard') + '#invoices')
         else:
             # This case means something went wrong during save that wasn't an exception
             logger.error("[create_quotation] Quotation object or quotation_id is missing after save attempt.")
-            messages.error(request, "Failed to create quotation object properly.");
-            return redirect(reverse('core:manage_dashboard') + '#quotations')
+            messages.error(request, "Failed to create purchase order properly.")
+            return redirect(reverse('core:manage_dashboard') + '#invoices')
 
     else:
         # Log if the form is invalid
@@ -526,7 +730,7 @@ def create_quotation(request):
 
     # Fallback redirect if form was invalid or redirect failed above
     logger.info("[create_quotation] Reached end of view (fallback redirect).")
-    return redirect(reverse('core:manage_dashboard') + '#quotations')
+    return redirect(reverse('core:manage_dashboard') + '#invoices')
 
 
 
@@ -547,7 +751,7 @@ def quotation_detail(request, quotation_id):
         # Check if quotation is already invoiced
         if hasattr(quotation, 'invoice') and quotation.invoice:
              logger.warning(f"[quotation_detail POST] Attempted update on invoiced quotation {quotation_id}")
-             return JsonResponse({'success': False, 'error': 'Cannot update items on an invoiced quotation.'}, status=400)
+             return JsonResponse({'success': False, 'error': 'Cannot update items on an invoiced purchase order.'}, status=400)
 
         try:
             data = json.loads(request.body)
@@ -731,6 +935,31 @@ def quotation_detail(request, quotation_id):
     logger.debug(f"[quotation_detail GET] Found {len(previous_prices_map)} previous prices for this supplier.")
     # --- END MODIFICATION ---
 
+    product_ids = list(supplier_products.values_list('pk', flat=True))
+    matrix_entries_qs = (
+        SupplierPriceMatrixEntry.objects.filter(supplier=supplier, product_id__in=product_ids)
+        .prefetch_related('tiers')
+        .order_by('-updated_at')
+    )
+    matrix_by_product: dict[int, SupplierPriceMatrixEntry] = {}
+    currency_counts: dict[str, int] = {}
+    for entry in matrix_entries_qs:
+        if entry.product_id and entry.product_id not in matrix_by_product:
+            matrix_by_product[entry.product_id] = entry
+        cur = entry.price_currency or 'MYR'
+        currency_counts[cur] = currency_counts.get(cur, 0) + 1
+    supplier_matrix_currency = (
+        max(currency_counts, key=currency_counts.get) if currency_counts else 'MYR'
+    )
+    supplier_matrix_conversion_rate = None
+    if supplier_matrix_currency != 'MYR':
+        latest_for_currency = matrix_entries_qs.filter(
+            price_currency=supplier_matrix_currency,
+            conversion_rate__isnull=False,
+        ).first()
+        if latest_for_currency:
+            supplier_matrix_conversion_rate = latest_for_currency.conversion_rate
+
     cart_items = []
     for product in supplier_products:
         # --- START MODIFICATION: Add 'previous_quoted_price' ---
@@ -756,6 +985,46 @@ def quotation_detail(request, quotation_id):
                 item_data['input_currency'] = item.input_currency
             if item.input_value is not None:
                 item_data['input_value'] = str(item.input_value)
+
+        matrix_entry = matrix_by_product.get(product.pk)
+        if matrix_entry:
+            matrix_myr = default_matrix_unit_price(matrix_entry)
+            matrix_currency = matrix_entry.price_currency or 'MYR'
+            if matrix_myr is not None:
+                has_line_price = Decimal(item_data['quoted_price'] or '0') > 0
+                if not has_line_price:
+                    item_data['quoted_price'] = str(matrix_myr)
+                line_currency = item_data['input_currency'] or None
+                should_apply_matrix_currency = (
+                    matrix_currency != 'MYR'
+                    and (not line_currency or line_currency == 'MYR')
+                )
+                if should_apply_matrix_currency:
+                    item_data['input_currency'] = matrix_currency
+                    original = _matrix_myr_to_original(
+                        Decimal(item_data['quoted_price']),
+                        matrix_currency,
+                        matrix_entry.conversion_rate,
+                    )
+                    if original is not None:
+                        item_data['input_value'] = str(original)
+                elif not line_currency and matrix_currency == 'MYR':
+                    item_data['input_currency'] = 'MYR'
+                    item_data['input_value'] = str(matrix_myr)
+                elif (
+                    not item_data['input_value']
+                    and line_currency
+                    and line_currency != 'MYR'
+                    and matrix_entry.conversion_rate
+                ):
+                    original = _matrix_myr_to_original(
+                        Decimal(item_data['quoted_price']),
+                        line_currency,
+                        matrix_entry.conversion_rate,
+                    )
+                    if original is not None:
+                        item_data['input_value'] = str(original)
+
         cart_items.append(item_data)
     logger.debug(f"[quotation_detail GET] Prepared cart_items list.")
 
@@ -773,6 +1042,11 @@ def quotation_detail(request, quotation_id):
         'initial_transport_cost': str(quotation.transportation_cost),
         'is_subpage': True,
         'unassigned_products': unassigned_products,
+        'supplier_matrix_currency': supplier_matrix_currency,
+        'supplier_matrix_conversion_rate': (
+            str(supplier_matrix_conversion_rate)
+            if supplier_matrix_conversion_rate is not None else ''
+        ),
     }
     logger.debug("[quotation_detail GET] Rendering template...")
     return render(request, 'inventory/quotation_detail.html', context)
@@ -790,6 +1064,33 @@ def delete_quotation_item(request, pk):
         try: item.delete(); messages.success(request, "Item deleted.")
         except Exception as e: messages.error(request, f"Error deleting item: {e}")
     return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+
+@staff_required
+def delete_quotation(request, quotation_id):
+    """Delete an open purchase order that has not been converted to an invoice."""
+    if request.method != 'POST':
+        return redirect(reverse('core:manage_dashboard') + '#invoices')
+
+    quotation = get_object_or_404(Quotation, quotation_id=quotation_id)
+
+    if Invoice.objects.filter(quotation=quotation).exists():
+        messages.error(request, "Cannot delete a purchase order that has been converted to an invoice.")
+        return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+    if InventoryBatch.objects.filter(quotation=quotation).exists():
+        messages.error(request, "Cannot delete this purchase order because stock has been received against it.")
+        return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+    try:
+        quotation.delete()
+        messages.success(request, f"Purchase order {quotation_id} deleted.")
+    except Exception as e:
+        logger.error(f"Error deleting quotation {quotation_id}: {e}", exc_info=True)
+        messages.error(request, f"Error deleting purchase order: {e}")
+        return redirect('inventory:quotation_detail', quotation_id=quotation_id)
+
+    return redirect(reverse('core:manage_dashboard') + '#invoices')
 
 
 def _normalize_import_headers(row_dict):
@@ -915,7 +1216,7 @@ def _name_similarity(tokens_a, tokens_b):
     return (2.0 * overlap) / (len(set_a) + len(set_b))
 
 
-def _resolve_product_by_sku_or_name(sku, name):
+def _resolve_product_by_sku_or_name(sku, name, *, allow_fuzzy=True):
     """
     Resolve product by SKU (exact) or by name using a fuzzy, token-based match.
     Returns (product, match_type) or (None, 'new').
@@ -935,6 +1236,9 @@ def _resolve_product_by_sku_or_name(sku, name):
     exact = Product.objects.filter(name__iexact=name).first()
     if exact:
         return exact, "matched_name_exact"
+
+    if not allow_fuzzy:
+        return None, "new"
 
     # 3) Fuzzy name match: token overlap on a small candidate set
     normalized, tokens = _normalize_product_name_for_match(name)
@@ -1069,6 +1373,17 @@ def import_quotation_items_confirm(request, quotation_id):
                 if qty < 1 or price < 0:
                     errors.append(f"Row {i + 1}: Quantity must be ≥ 1 and price ≥ 0.")
                     continue
+                input_currency = row.get('input_currency') or None
+                if input_currency and input_currency not in ('EUR', 'USD', 'MYR'):
+                    input_currency = None
+                input_value = row.get('input_value')
+                if input_value is not None and input_value != '':
+                    try:
+                        input_value = Decimal(str(input_value))
+                    except (ValueError, TypeError):
+                        input_value = None
+                else:
+                    input_value = None
                 product = None
                 if product_id:
                     try:
@@ -1108,11 +1423,15 @@ def import_quotation_items_confirm(request, quotation_id):
                     existing_item.quantity = qty
                     existing_item.quoted_price = price
                     existing_item.line_product_label = line_lbl
-                    existing_item.save(update_fields=['quantity', 'quoted_price', 'line_product_label'])
+                    existing_item.input_currency = input_currency
+                    existing_item.input_value = input_value
+                    existing_item.save(update_fields=['quantity', 'quoted_price', 'line_product_label', 'input_currency', 'input_value'])
                 else:
                     item = QuotationItem.objects.create(
                         quotation=quotation, product=product, quantity=qty, quoted_price=price,
                         line_product_label=line_lbl,
+                        input_currency=input_currency,
+                        input_value=input_value,
                     )
                     # When product was just created from this import, set base cost from this quote so Set Product Pricing shows it.
                     if product.id in created_products:
@@ -1204,7 +1523,7 @@ def upload_quotation(request):
         logger.warning("[upload_quotation] GET request received, redirecting.")
         return redirect('core:manage_dashboard') # Redirect GET requests
 
-    redirect_url = reverse('core:manage_dashboard') + '#quotations'
+    redirect_url = reverse('core:manage_dashboard') + '#invoices'
 
     form = QuotationUploadForm(request.POST, request.FILES)
     if form.is_valid():
@@ -1262,7 +1581,7 @@ def upload_quotation(request):
                 with transaction.atomic():
                     quotation_resource.import_data(dataset, dry_run=False)
                 logger.info("[upload_quotation] Import successful.")
-                messages.success(request, "Quotation file imported successfully.")
+                messages.success(request, "Purchase order file imported successfully.")
             except Exception as e:
                 logger.error(f"[upload_quotation] Error during final import transaction: {e}", exc_info=True)
                 messages.error(request, f"An error occurred during import: {e}")
@@ -1280,6 +1599,129 @@ def upload_quotation(request):
     logger.warning(f"[upload_quotation] Form was invalid. Errors: {form.errors.as_json()}")
     messages.error(request, "An error occurred with the upload form.")
     return redirect(redirect_url)
+
+
+def _load_import_dataset(file):
+    """Read a .csv or Excel upload into a tablib Dataset."""
+    dataset = Dataset()
+    if file.name.endswith('.csv'):
+        file_content = file.read()
+        decoded_content = None
+        try:
+            decoded_content = file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            decoded_content = file_content.decode('latin-1')
+        dataset.load(decoded_content, format='csv')
+    else:
+        dataset.load(file.read(), format='xlsx')
+    return dataset
+
+
+@staff_required
+def upload_invoice_preview(request):
+    """POST multipart: Payable Invoice Detail .xlsx → parsed supplier groups."""
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'Method not allowed'}, status=405)
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({'ok': False, 'error': 'No file provided'}, status=400)
+
+    try:
+        parsed, parse_error = parse_payable_invoice_detail_file(file)
+        if parse_error:
+            return JsonResponse({'ok': False, 'error': parse_error}, status=400)
+
+        for sup in parsed['suppliers']:
+            suggestion = suggest_supplier_match(sup['file_supplier_name'], Supplier)
+            sup['suggested_supplier_id'] = suggestion['supplier_id']
+            sup['suggested_supplier_name'] = suggestion['supplier_name']
+            sup['suggested_match_type'] = suggestion['match_type']
+            sup['action'] = 'map' if suggestion['supplier_id'] else 'create'
+            sup['supplier_id'] = suggestion['supplier_id']
+            sup['new_supplier_name'] = sup['file_supplier_name']
+            invoice_refs = [inv.get('reference') for inv in sup.get('invoices') or []]
+            sup['suggested_supplier_code'] = suggest_supplier_code(
+                sup['file_supplier_name'],
+                Supplier,
+                invoice_refs=invoice_refs,
+            )
+
+        return JsonResponse({
+            'ok': True,
+            'parsed': parsed,
+            'source_filename': file.name,
+        }, encoder=DjangoJSONEncoder)
+    except Exception as exc:
+        logger.exception('upload_invoice_preview failed')
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+
+
+@staff_required
+def upload_invoice_confirm(request):
+    """POST JSON: supplier mappings + parsed invoice data → import."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    suppliers = data.get('suppliers')
+    if not suppliers:
+        return JsonResponse({'success': False, 'error': 'No supplier data to import.'}, status=400)
+
+    active = [s for s in suppliers if _normalize_import_action(s.get('action')) != 'ignore']
+    if not active:
+        return JsonResponse({'success': False, 'error': 'All suppliers are ignored. Nothing to import.'}, status=400)
+
+    try:
+        with transaction.atomic():
+            stats = confirm_payable_invoice_import(
+                {
+                    'source_filename': data.get('source_filename') or '',
+                    'suppliers': suppliers,
+                },
+                product_model=Product,
+                supplier_model=Supplier,
+                invoice_model=Invoice,
+                invoice_item_model=InvoiceItem,
+            )
+    except ValueError as exc:
+        logger.warning('upload_invoice_confirm validation failed: %s', exc)
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    except IntegrityError as exc:
+        logger.warning('upload_invoice_confirm integrity error: %s', exc)
+        return JsonResponse(
+            {'success': False, 'error': 'Database conflict during import. Check for duplicate invoice IDs or supplier codes.'},
+            status=400,
+        )
+    except Exception as exc:
+        logger.exception('upload_invoice_confirm failed')
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    parts = []
+    if stats['invoices_created']:
+        parts.append(f"{stats['invoices_created']} invoice(s) created")
+    if stats['invoices_updated']:
+        parts.append(f"{stats['invoices_updated']} invoice(s) updated")
+    if stats['invoices_skipped']:
+        parts.append(f"{stats['invoices_skipped']} skipped (linked to PO)")
+    if stats['products_created']:
+        parts.append(f"{stats['products_created']} product(s) created")
+    if stats['products_matched']:
+        parts.append(f"{stats['products_matched']} existing product(s) used")
+    if stats.get('matrix_rows_updated'):
+        parts.append(f"{stats['matrix_rows_updated']} supplier price row(s) updated")
+    message = 'Import complete: ' + ', '.join(parts) if parts else 'Import complete.'
+
+    return JsonResponse({'success': True, 'message': message, 'stats': stats})
+
+
+@staff_required
+def upload_invoice(request):
+    """Legacy redirect — invoice import uses preview/confirm via AJAX."""
+    messages.info(request, 'Use Import invoice on the Invoices tab to upload a Payable Invoice Detail file.')
+    return redirect(reverse('core:manage_dashboard') + '#invoices')
 
 
 @staff_required
@@ -1312,6 +1754,7 @@ def export_quotations_xlsx(request):
         'Quoted Price (USD)',
         'Quoted Price (MYR)',
         'Total Item Price',
+        'Base Cost (MYR)',
     ]
     ws.append(headers)
 
@@ -1322,6 +1765,7 @@ def export_quotations_xlsx(request):
                 sys_name = item.product.name if item.product else ''
                 line_name = (item.line_product_label or '').strip() or sys_name
                 usd = _export_unit_usd(item)
+                landed = item.landed_cost_per_unit
                 ws.append([
                     quotation.quotation_id,
                     quotation.supplier.name,
@@ -1335,6 +1779,7 @@ def export_quotations_xlsx(request):
                     usd,
                     float(item.quoted_price),
                     float(item.total_item_price),
+                    float(landed) if landed is not None else None,
                 ])
         else:
             ws.append([
@@ -1350,6 +1795,7 @@ def export_quotations_xlsx(request):
                 None,
                 0.0,
                 0.0,
+                None,
             ])
 
     response = HttpResponse(
@@ -1361,6 +1807,350 @@ def export_quotations_xlsx(request):
     return response
 
 
+def _parse_matrix_export_keys(keys_param: str) -> tuple[list[int], list[int]]:
+    matrix_ids: list[int] = []
+    quotation_ids: list[int] = []
+    for part in (keys_param or '').split(','):
+        part = part.strip()
+        if ':' not in part:
+            continue
+        source, _, pk = part.partition(':')
+        if not pk.isdigit():
+            continue
+        pk_int = int(pk)
+        if source == 'matrix':
+            matrix_ids.append(pk_int)
+        elif source == 'quotation':
+            quotation_ids.append(pk_int)
+    return matrix_ids, quotation_ids
+
+
+def _matrix_export_datetime(value):
+    if not value:
+        return ''
+    if isinstance(value, datetime.datetime):
+        dt = value
+        if timezone.is_aware(dt):
+            dt = timezone.localtime(dt)
+        return dt.replace(tzinfo=None)
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return value
+        if timezone.is_aware(parsed):
+            parsed = timezone.localtime(parsed)
+        return parsed.replace(tzinfo=None)
+    return str(value)
+
+
+def _matrix_export_round_usd(value) -> object:
+    if value == '' or value is None:
+        return ''
+    return round(float(value), 2)
+
+
+def _matrix_export_price_fields(row: dict, tier: dict | None) -> tuple[object, object]:
+    """Return original-currency unit price (USD column) and MYR unit price."""
+    currency = (row.get('price_currency') or 'MYR').upper()
+    rate = row.get('conversion_rate')
+    myr_price = tier.get('unit_price') if tier else None
+
+    if myr_price is None:
+        return '', ''
+
+    myr_f = round(float(myr_price), 2)
+    if currency == 'MYR':
+        return '', myr_f
+
+    input_value = row.get('input_value')
+    if input_value is not None:
+        return _matrix_export_round_usd(input_value), myr_f
+
+    if rate is not None and float(rate) > 0:
+        return _matrix_export_round_usd(myr_f / float(rate)), myr_f
+
+    return '', myr_f
+
+
+def _matrix_export_row_values(row: dict, tier: dict | None) -> list:
+    usd_price, myr_price = _matrix_export_price_fields(row, tier)
+    return [
+        row.get('line_medication') or '',
+        row.get('product_name') or '',
+        row.get('strength') or '',
+        row.get('size') or '',
+        row.get('supplier_name') or '',
+        tier.get('min_quantity') if tier else '',
+        usd_price,
+        myr_price,
+        _matrix_export_datetime(row.get('updated_at')),
+    ]
+
+
+def _matrix_updated_sort_value(row) -> str:
+    raw = row.get('updated_at')
+    if not raw:
+        return ''
+    if isinstance(raw, datetime.datetime):
+        return raw.isoformat()
+    if isinstance(raw, datetime.date):
+        return raw.isoformat()
+    return str(raw)
+
+
+def _matrix_row_sort_key(row, sort_by: str):
+    if sort_by == 'updated_at':
+        return (
+            _matrix_updated_sort_value(row),
+            (row.get('line_medication') or '').lower(),
+            (row.get('product_name') or '').lower(),
+        )
+    medication = (row.get('line_medication') or '').lower()
+    product = (row.get('product_name') or row.get('line_medication') or '').lower()
+    primary = medication if sort_by == 'medication' else product
+    return (
+        primary,
+        medication,
+        product,
+        (row.get('supplier_name') or '').lower(),
+        row.get('strength') or '',
+        row.get('size') or '',
+    )
+
+
+def _normalize_matrix_sort(sort_by: str | None, sort_dir: str | None) -> tuple[str, bool]:
+    sort_by = (sort_by or 'medication').strip()
+    sort_dir = (sort_dir or 'asc').strip().lower()
+    if sort_by not in ('medication', 'product', 'updated_at'):
+        sort_by = 'medication'
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'asc'
+    return sort_by, sort_dir == 'desc'
+
+
+def _parse_matrix_supplier_ids(raw: str | None) -> list[int]:
+    if not raw or not str(raw).strip():
+        return []
+    ids: list[int] = []
+    for part in str(raw).split(','):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    return list(dict.fromkeys(ids))
+
+
+def _list_filtered_matrix_rows(
+    supplier_ids: list[int] | None = None,
+    search_query: str = '',
+    sort_by: str = 'medication',
+    sort_dir: str = 'asc',
+) -> list[dict]:
+    supplier_ids = supplier_ids or []
+    queryset = (
+        SupplierPriceMatrixEntry.objects.select_related('supplier', 'product')
+        .prefetch_related('tiers')
+    )
+    if supplier_ids:
+        queryset = queryset.filter(supplier_id__in=supplier_ids)
+    if search_query:
+        queryset = _filter_matrix_by_search(queryset, search_query)
+
+    matrix_items = [_serialize_matrix_entry(entry) for entry in queryset]
+    quotation_items = list_quotation_matrix_rows(
+        supplier_ids=supplier_ids or None,
+        search_query=search_query,
+    )
+    combined = matrix_items + quotation_items
+    sort_by, reverse = _normalize_matrix_sort(sort_by, sort_dir)
+    combined.sort(key=lambda row: _matrix_row_sort_key(row, sort_by), reverse=reverse)
+    return combined
+
+
+def _matrix_rows_for_export_from_dicts(combined_rows: list[dict]) -> list[dict]:
+    quotation_ids = [row['id'] for row in combined_rows if row.get('source') == 'quotation']
+    item_map: dict[int, QuotationItem] = {}
+    if quotation_ids:
+        items = (
+            QuotationItem.objects.filter(pk__in=quotation_ids)
+            .select_related('product', 'quotation', 'quotation__supplier')
+            .prefetch_related('quotation__items')
+        )
+        item_map = {item.pk: item for item in items}
+
+    export_rows: list[dict] = []
+    for row in combined_rows:
+        export_row = dict(row)
+        if export_row.get('source') == 'quotation':
+            item = item_map.get(export_row['id'])
+            if item and item.input_value is not None and (item.input_currency or 'MYR') != 'MYR':
+                export_row['input_value'] = item.input_value
+        export_rows.append(export_row)
+    return export_rows
+
+
+def _matrix_export_rows_by_keys(matrix_ids: list[int], quotation_ids: list[int]) -> list[dict]:
+    export_rows: list[dict] = []
+    if matrix_ids:
+        entries = (
+            SupplierPriceMatrixEntry.objects.filter(pk__in=matrix_ids)
+            .select_related('supplier', 'product')
+            .prefetch_related('tiers')
+        )
+        entry_map = {entry.id: entry for entry in entries}
+        for entry_id in matrix_ids:
+            entry = entry_map.get(entry_id)
+            if entry:
+                export_rows.append(_serialize_matrix_entry(entry))
+
+    if quotation_ids:
+        items = (
+            QuotationItem.objects.filter(pk__in=quotation_ids)
+            .select_related('product', 'quotation', 'quotation__supplier')
+            .prefetch_related('quotation__items')
+        )
+        item_map = {item.pk: item for item in items}
+        for item_id in quotation_ids:
+            item = item_map.get(item_id)
+            if item:
+                row = serialize_quotation_matrix_item(item)
+                if item.input_value is not None and (item.input_currency or 'MYR') != 'MYR':
+                    row['input_value'] = item.input_value
+                export_rows.append(row)
+    return export_rows
+
+
+def _build_matrix_export_xlsx_response(export_rows: list[dict], filename: str) -> HttpResponse:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Supplier prices'
+    headers = [
+        'Medication',
+        'Catalog product',
+        'Strength',
+        'Size',
+        'Supplier',
+        'Min qty',
+        'Unit price USD',
+        'Unit price MYR',
+        'Last updated',
+    ]
+    ws.append(headers)
+
+    for row in export_rows:
+        tiers = row.get('tiers') or []
+        if tiers:
+            for tier in tiers:
+                ws.append(_matrix_export_row_values(row, tier))
+        else:
+            ws.append(_matrix_export_row_values(row, None))
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+MATRIX_EXPORT_ALL_MAX = 5000
+
+
+@staff_required
+def export_supplier_price_matrix_xlsx(request):
+    """Export supplier price matrix rows (selected keys or all rows matching filters)."""
+    export_all = (request.GET.get('all') or '').strip().lower() in ('1', 'true', 'yes')
+
+    if export_all:
+        supplier_ids = _parse_matrix_supplier_ids(request.GET.get('supplier', ''))
+        search_query = request.GET.get('search', '').strip()
+        sort_by = request.GET.get('sort_by', 'medication')
+        sort_dir = request.GET.get('sort_dir', 'asc')
+        combined = _list_filtered_matrix_rows(supplier_ids, search_query, sort_by, sort_dir)
+        if not combined:
+            messages.error(request, 'No rows match the current filters.')
+            return redirect(reverse('core:manage_dashboard') + '#quotations')
+        if len(combined) > MATRIX_EXPORT_ALL_MAX:
+            messages.error(
+                request,
+                f'Too many rows to export ({len(combined)}). Narrow filters (max {MATRIX_EXPORT_ALL_MAX}).',
+            )
+            return redirect(reverse('core:manage_dashboard') + '#quotations')
+        export_rows = _matrix_rows_for_export_from_dicts(combined)
+        fname = f'supplier-price-matrix-all-{datetime.date.today()}.xlsx'
+        return _build_matrix_export_xlsx_response(export_rows, fname)
+
+    keys_param = (request.GET.get('keys') or '').strip()
+    matrix_ids, quotation_ids = _parse_matrix_export_keys(keys_param)
+    if not matrix_ids and not quotation_ids:
+        messages.error(request, 'No rows selected for export.')
+        return redirect(reverse('core:manage_dashboard') + '#quotations')
+
+    matrix_ids = list(dict.fromkeys(matrix_ids))[:500]
+    quotation_ids = list(dict.fromkeys(quotation_ids))[:500]
+    export_rows = _matrix_export_rows_by_keys(matrix_ids, quotation_ids)
+    fname = f'supplier-price-matrix-selected-{datetime.date.today()}.xlsx'
+    return _build_matrix_export_xlsx_response(export_rows, fname)
+
+
+MATRIX_DELETE_MAX = 500
+
+
+@staff_required
+def api_delete_supplier_price_matrix_rows(request):
+    """POST JSON: { keys: ['matrix:1', 'quotation:2', ...] } — delete matrix catalog rows."""
+    if not (request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest'):
+        return JsonResponse({'success': False, 'error': 'Invalid request.'}, status=400)
+
+    try:
+        payload = json.loads(request.body)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON payload.'}, status=400)
+
+    raw_keys = payload.get('keys') or []
+    if not raw_keys or not isinstance(raw_keys, list):
+        return JsonResponse({'success': False, 'error': 'No rows selected.'}, status=400)
+
+    if len(raw_keys) > MATRIX_DELETE_MAX:
+        return JsonResponse(
+            {'success': False, 'error': f'Too many rows selected (max {MATRIX_DELETE_MAX}).'},
+            status=400,
+        )
+
+    keys_param = ','.join(str(k) for k in raw_keys)
+    matrix_ids, quotation_ids = _parse_matrix_export_keys(keys_param)
+    matrix_ids = list(dict.fromkeys(matrix_ids))[:MATRIX_DELETE_MAX]
+
+    if not matrix_ids and not quotation_ids:
+        return JsonResponse({'success': False, 'error': 'No valid rows selected.'}, status=400)
+
+    if not matrix_ids:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                'Selected rows come from purchase orders and cannot be deleted from the price matrix. '
+                'Remove them on the purchase order or upload a price list to replace them.'
+            ),
+            'skipped_quotation_count': len(quotation_ids),
+        }, status=400)
+
+    skipped_quotation_count = len(quotation_ids)
+    with transaction.atomic():
+        qs = SupplierPriceMatrixEntry.objects.filter(pk__in=matrix_ids)
+        deleted_entries = qs.count()
+        qs.delete()
+
+    return JsonResponse({
+        'success': True,
+        'deleted_count': deleted_entries,
+        'skipped_quotation_count': skipped_quotation_count,
+    })
+
+
 @staff_required
 def api_get_product_batches(request, product_id):
     """
@@ -1370,52 +2160,943 @@ def api_get_product_batches(request, product_id):
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
     try:
-        batches = InventoryBatch.objects.filter(
-            product_id=product_id
-        ).select_related(
-            'supplier', 'quotation'
-        ).order_by('-received_date')
+        batches = list(
+            InventoryBatch.objects.filter(product_id=product_id)
+            .select_related('supplier', 'quotation', 'invoice_item', 'invoice_item__invoice')
+            .order_by('-received_date')
+        )
 
-        # --- START MODIFICATION ---
-        # 1. Get all unique quotation IDs from the batches
-        quotation_ids = {batch.quotation_id for batch in batches if batch.quotation_id}
+        # Batch-fetch quotation totals for landed cost (legacy PO path)
+        quotation_ids = {b.quotation_id for b in batches if b.quotation_id}
+        from django.db.models import DecimalField, ExpressionWrapper, F as Ff, Sum
+        quotation_totals = {}
+        if quotation_ids:
+            for row in (
+                QuotationItem.objects.filter(quotation_id__in=quotation_ids)
+                .values('quotation_id')
+                .annotate(total=Sum(ExpressionWrapper(Ff('quantity') * Ff('quoted_price'), output_field=DecimalField(max_digits=20, decimal_places=4))))
+            ):
+                if row['total'] is not None:
+                    quotation_totals[row['quotation_id']] = Decimal(str(row['total']))
 
-        # 2. Find all relevant QuotationItems in one query.
-        #    This is for *this product* across *all relevant quotations*.
-        #    We prefetch 'quotation__items' so the landed_cost_per_unit property
-        #    can calculate efficiently without N+1 queries.
-        relevant_quotation_items = QuotationItem.objects.filter(
-            product_id=product_id,
-            quotation_id__in=quotation_ids
-        ).select_related('quotation').prefetch_related('quotation__items')
-
-        # 3. Create a lookup map: {quotation_id: landed_cost}
-        cost_map = {
-            item.quotation_id: item.landed_cost_per_unit
-            for item in relevant_quotation_items
+        relevant_quotation_items = {
+            item.quotation_id: item
+            for item in QuotationItem.objects.filter(
+                product_id=product_id, quotation_id__in=quotation_ids
+            ).select_related('quotation')
         }
-        # --- END MODIFICATION ---
+
+        # Batch-fetch invoice subtotals for landed cost (direct invoice receive path)
+        invoice_ids = {
+            b.invoice_item.invoice_id
+            for b in batches
+            if b.invoice_item_id and b.invoice_item
+        }
+        invoice_subtotals = {}
+        if invoice_ids:
+            for row in (
+                InvoiceItem.objects.filter(invoice_id__in=invoice_ids)
+                .values('invoice_id')
+                .annotate(
+                    total=Sum(
+                        ExpressionWrapper(
+                            Ff('quantity') * Ff('unit_price'),
+                            output_field=DecimalField(max_digits=20, decimal_places=4),
+                        )
+                    )
+                )
+            ):
+                if row['total'] is not None:
+                    invoice_subtotals[row['invoice_id']] = Decimal(str(row['total']))
 
         serialized_batches = []
         for batch in batches:
-            # --- START MODIFICATION ---
-            # 4. Get the cost from our map
-            batch_landed_cost = cost_map.get(batch.quotation_id)
+            batch_landed_cost = None
 
-            batch_data = {
-                'batch_number': batch.batch_number,
+            # Prefer invoice line cost when batch came from Receive Stock
+            inv_item = batch.invoice_item
+            if inv_item and inv_item.quantity and inv_item.unit_price is not None:
+                batch_landed_cost = invoice_item_landed_cost_per_unit(
+                    inv_item,
+                    invoice_subtotals.get(inv_item.invoice_id),
+                )
+            elif batch.quotation_id:
+                qi = relevant_quotation_items.get(batch.quotation_id)
+                if qi and qi.quantity and qi.quoted_price:
+                    qty = Decimal(str(qi.quantity))
+                    price = qi.quoted_price
+                    transport = qi.quotation.transportation_cost or Decimal('0')
+                    qtotal = quotation_totals.get(batch.quotation_id, Decimal('0'))
+                    if qtotal > 0 and transport > 0:
+                        item_total = qty * price
+                        batch_landed_cost = (item_total + transport * (item_total / qtotal)) / qty
+                    else:
+                        batch_landed_cost = price
+
+            # Resolve invoice number: prefer the linked invoice item's invoice, else quotation id
+            invoice_number = None
+            if batch.invoice_item and batch.invoice_item.invoice:
+                invoice_number = batch.invoice_item.invoice.invoice_id
+            elif batch.quotation:
+                invoice_number = batch.quotation.quotation_id
+
+            serialized_batches.append({
+                'id': batch.pk,
+                'invoice_item_id': batch.invoice_item_id,
+                'batch_number': batch.batch_number or '',
                 'supplier_name': batch.supplier.name if batch.supplier else 'N/A',
-                'quotation_id': batch.quotation.quotation_id if batch.quotation else 'N/A',
+                'invoice_number': invoice_number or '—',
                 'quantity': batch.quantity,
                 'received_date': batch.received_date,
-                'expiry_date': batch.expiry_date or 'N/A',
-                'landed_cost': batch_landed_cost # Add the cost here
-            }
-            # --- END MODIFICATION ---
-            serialized_batches.append(batch_data)
+                'expiry_date': batch.expiry_date.isoformat() if batch.expiry_date else None,
+                'landed_cost': batch_landed_cost,
+            })
 
         return JsonResponse({'batches': serialized_batches})
 
     except Exception as e:
         logger.error(f"Error fetching batches for product {product_id}: {e}", exc_info=True)
         return JsonResponse({'error': 'Internal server error'}, status=500)
+
+
+@staff_required
+def api_get_invoice_item_batches(request, invoice_item_id):
+    """GET: all inventory batches linked to one invoice line (one receipt)."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    invoice_item = get_object_or_404(
+        InvoiceItem.objects.select_related('invoice', 'product'),
+        pk=invoice_item_id,
+    )
+    batches = (
+        InventoryBatch.objects.filter(invoice_item=invoice_item)
+        .select_related('supplier')
+        .order_by('pk')
+    )
+    rows = [{
+        'id': b.pk,
+        'batch_number': b.batch_number or '',
+        'expiry_date': b.expiry_date.isoformat() if b.expiry_date else None,
+        'quantity': b.quantity,
+    } for b in batches]
+    total_qty = sum(b.quantity for b in batches)
+    return JsonResponse({
+        'invoice_item_id': invoice_item.pk,
+        'invoice_number': invoice_item.invoice.invoice_id,
+        'product_name': invoice_item.product.name if invoice_item.product else '',
+        'total_quantity': total_qty,
+        'batches': rows,
+    })
+
+
+@staff_required
+@require_POST
+@transaction.atomic
+def api_save_invoice_item_batches(request, invoice_item_id):
+    """POST: split/update multiple batch rows for one invoice receipt."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    invoice_item = get_object_or_404(
+        InvoiceItem.objects.select_related('invoice', 'product'),
+        pk=invoice_item_id,
+    )
+
+    try:
+        data = json.loads(request.body)
+    except (ValueError, KeyError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    incoming_rows = data.get('batches') or []
+    if not incoming_rows:
+        return JsonResponse({'error': 'At least one batch row is required.'}, status=400)
+
+    existing = list(
+        InventoryBatch.objects.filter(invoice_item=invoice_item).order_by('pk')
+    )
+    if not existing:
+        return JsonResponse({'error': 'No receipt batches found for this invoice line.'}, status=404)
+
+    original_total = sum(b.quantity for b in existing)
+    template = existing[0]
+
+    parsed_rows = []
+    for row in incoming_rows:
+        try:
+            qty = int(row.get('quantity') or 0)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid quantity.'}, status=400)
+        if qty <= 0:
+            return JsonResponse({'error': 'Each batch row must have a quantity greater than zero.'}, status=400)
+
+        batch_number = (row.get('batch_number') or '').strip()
+        expiry_date_raw = (row.get('expiry_date') or '').strip()
+        expiry_date = None
+        if expiry_date_raw:
+            try:
+                expiry_date = datetime.date.fromisoformat(expiry_date_raw)
+            except ValueError:
+                return JsonResponse({'error': 'Invalid expiry date format. Use YYYY-MM-DD.'}, status=400)
+
+        row_id = row.get('id')
+        if row_id is not None:
+            try:
+                row_id = int(row_id)
+            except (TypeError, ValueError):
+                return JsonResponse({'error': 'Invalid batch id.'}, status=400)
+
+        parsed_rows.append({
+            'id': row_id,
+            'batch_number': batch_number,
+            'expiry_date': expiry_date,
+            'quantity': qty,
+        })
+
+    new_total = sum(r['quantity'] for r in parsed_rows)
+    if new_total != original_total:
+        return JsonResponse({
+            'error': f'Total quantity must stay {original_total} (currently {new_total}). Adjust row quantities when splitting.',
+        }, status=400)
+
+    existing_map = {b.pk: b for b in existing}
+    kept_ids = set()
+
+    for row in parsed_rows:
+        if row['id'] and row['id'] in existing_map:
+            batch = existing_map[row['id']]
+            batch.batch_number = row['batch_number']
+            batch.expiry_date = row['expiry_date']
+            batch.quantity = row['quantity']
+            batch.save(update_fields=['batch_number', 'expiry_date', 'quantity'])
+            kept_ids.add(batch.pk)
+        else:
+            batch = InventoryBatch.objects.create(
+                product=invoice_item.product,
+                supplier=template.supplier,
+                quotation=template.quotation,
+                invoice_item=invoice_item,
+                received_date=template.received_date,
+                batch_number=row['batch_number'],
+                expiry_date=row['expiry_date'],
+                quantity=row['quantity'],
+            )
+            kept_ids.add(batch.pk)
+
+    for batch in existing:
+        if batch.pk not in kept_ids:
+            batch.delete()
+
+    invoice_item.update_received_quantity()
+
+    saved = InventoryBatch.objects.filter(invoice_item=invoice_item).order_by('pk')
+    return JsonResponse({
+        'success': True,
+        'batches': [{
+            'id': b.pk,
+            'batch_number': b.batch_number or '',
+            'expiry_date': b.expiry_date.isoformat() if b.expiry_date else None,
+            'quantity': b.quantity,
+        } for b in saved],
+    })
+
+
+@staff_required
+@require_POST
+def api_update_batch(request, batch_id):
+    """AJAX: update a standalone batch (no invoice line group)."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    batch = get_object_or_404(InventoryBatch, pk=batch_id)
+
+    if batch.invoice_item_id:
+        return JsonResponse({
+            'error': 'Use batch group save for invoice-linked receipts.',
+        }, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except (ValueError, KeyError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    batch_number = (data.get('batch_number') or '').strip()
+    expiry_date_raw = (data.get('expiry_date') or '').strip()
+
+    batch.batch_number = batch_number
+
+    if expiry_date_raw:
+        try:
+            batch.expiry_date = datetime.date.fromisoformat(expiry_date_raw)
+        except ValueError:
+            return JsonResponse({'error': 'Invalid expiry date format. Use YYYY-MM-DD.'}, status=400)
+    else:
+        batch.expiry_date = None
+
+    if 'quantity' in data:
+        try:
+            qty = int(data.get('quantity') or 0)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid quantity.'}, status=400)
+        if qty <= 0:
+            return JsonResponse({'error': 'Quantity must be greater than zero.'}, status=400)
+        batch.quantity = qty
+
+    batch.save()
+    return JsonResponse({
+        'success': True,
+        'batch_number': batch.batch_number,
+        'expiry_date': batch.expiry_date.isoformat() if batch.expiry_date else None,
+        'quantity': batch.quantity,
+    })
+
+
+def _filter_matrix_by_search(queryset, search_query: str):
+    """
+    Each token must match at least one searchable field (AND across tokens).
+    Handles multi-word queries and double-spaces in stored medication names.
+    """
+    for token in matrix_search_tokens(search_query):
+        queryset = queryset.filter(
+            Q(line_medication__icontains=token)
+            | Q(strength__icontains=token)
+            | Q(size__icontains=token)
+            | Q(form__icontains=token)
+            | Q(notes__icontains=token)
+            | Q(product__name__icontains=token)
+            | Q(product__sku__icontains=token)
+            | Q(supplier__name__icontains=token)
+        )
+    return queryset
+
+
+def _matrix_tier_key(min_qty, max_qty):
+    return (int(min_qty), int(max_qty) if max_qty is not None else None)
+
+
+def _normalize_matrix_tiers_for_json(tiers) -> list[dict]:
+    """Serialize tier rows (model instances or dicts) for JSON storage/comparison."""
+    normalized = []
+    for tier in tiers:
+        if hasattr(tier, 'min_quantity'):
+            min_qty = tier.min_quantity
+            max_qty = tier.max_quantity
+            unit_price = tier.unit_price
+        else:
+            min_qty = tier.get('min_quantity', 1)
+            max_qty = tier.get('max_quantity')
+            unit_price = tier.get('unit_price')
+        normalized.append({
+            'min_quantity': int(min_qty),
+            'max_quantity': int(max_qty) if max_qty not in (None, '') else None,
+            'unit_price': str(Decimal(str(unit_price)).quantize(Decimal('0.01'))),
+        })
+    normalized.sort(key=lambda t: t['min_quantity'])
+    return normalized
+
+
+def _format_matrix_tier_label(min_qty, max_qty) -> str:
+    upper = str(max_qty) if max_qty is not None else '+'
+    return f"{min_qty}–{upper}"
+
+
+def _enrich_matrix_tier_snapshots(
+    tiers: list | None,
+    price_currency: str | None,
+    conversion_rate,
+) -> list | None:
+    """Derive unit_price_source on legacy snapshots for consistent USD/EUR display."""
+    if not tiers:
+        return tiers
+    enriched = []
+    currency = (price_currency or 'MYR').upper()
+    for tier in tiers:
+        t = dict(tier)
+        if (
+            not t.get('unit_price_source')
+            and currency != 'MYR'
+            and conversion_rate
+            and t.get('unit_price') is not None
+        ):
+            try:
+                myr = Decimal(str(t['unit_price']))
+                rate = Decimal(str(conversion_rate))
+                if rate > 0:
+                    t['unit_price_source'] = str((myr / rate).quantize(Decimal('0.0001')))
+            except (InvalidOperation, ZeroDivisionError, TypeError):
+                pass
+        enriched.append(t)
+    return enriched
+
+
+def _tier_snapshot_compare_price(tier: dict) -> Decimal:
+    """Price used for matrix history diffs; prefers invoice source currency when stored."""
+    source = tier.get('unit_price_source')
+    if source not in (None, ''):
+        return Decimal(str(source))
+    return Decimal(str(tier['unit_price']))
+
+
+def _diff_matrix_tier_snapshots(previous_tiers, current_tiers) -> list[dict]:
+    """Compare two tier snapshots; previous may be None for first upload."""
+    if not previous_tiers:
+        return []
+
+    prev_map = {_matrix_tier_key(t['min_quantity'], t['max_quantity']): t for t in previous_tiers}
+    curr_map = {_matrix_tier_key(t['min_quantity'], t['max_quantity']): t for t in current_tiers}
+    changes = []
+
+    for key, curr in curr_map.items():
+        label = _format_matrix_tier_label(key[0], key[1])
+        prev = prev_map.get(key)
+        curr_price = _tier_snapshot_compare_price(curr)
+        if prev is None:
+            changes.append({
+                'change_type': 'added',
+                'tier_label': label,
+                'min_quantity': key[0],
+                'max_quantity': key[1],
+                'new_price': curr_price,
+                'new_price_myr': Decimal(curr['unit_price']),
+                'new_price_source': curr.get('unit_price_source'),
+            })
+        else:
+            prev_price = _tier_snapshot_compare_price(prev)
+            prev_cmp = prev_price.quantize(Decimal('0.01'))
+            curr_cmp = curr_price.quantize(Decimal('0.01'))
+            if prev_cmp != curr_cmp:
+                delta = curr_price - prev_price
+                changes.append({
+                    'change_type': 'changed',
+                    'tier_label': label,
+                    'min_quantity': key[0],
+                    'max_quantity': key[1],
+                    'old_price': prev_price,
+                    'new_price': curr_price,
+                    'delta': delta,
+                    'old_price_myr': Decimal(prev['unit_price']),
+                    'new_price_myr': Decimal(curr['unit_price']),
+                    'old_price_source': prev.get('unit_price_source'),
+                    'new_price_source': curr.get('unit_price_source'),
+                })
+
+    for key, prev in prev_map.items():
+        if key not in curr_map:
+            label = _format_matrix_tier_label(key[0], key[1])
+            changes.append({
+                'change_type': 'removed',
+                'tier_label': label,
+                'min_quantity': key[0],
+                'max_quantity': key[1],
+                'old_price': _tier_snapshot_compare_price(prev),
+                'old_price_myr': Decimal(prev['unit_price']),
+                'old_price_source': prev.get('unit_price_source'),
+            })
+
+    changes.sort(key=lambda c: c['min_quantity'])
+    return changes
+
+
+def _serialize_matrix_entry(entry):
+    return {
+        'id': entry.id,
+        'source': 'matrix',
+        'supplier_id': entry.supplier_id,
+        'supplier_name': entry.supplier.name,
+        'product_id': entry.product_id,
+        'product_name': entry.product.name if entry.product else None,
+        'product_sku': entry.product.sku if entry.product else None,
+        'line_medication': entry.line_medication,
+        'strength': entry.strength,
+        'form': entry.form,
+        'size': entry.size,
+        'notes': entry.notes,
+        'price_currency': entry.price_currency,
+        'conversion_rate': entry.conversion_rate,
+        'source_filename': entry.source_filename,
+        'effective_date': entry.effective_date,
+        'updated_at': entry.updated_at,
+        'tiers': [
+            {
+                'min_quantity': tier.min_quantity,
+                'max_quantity': tier.max_quantity,
+                'unit_price': tier.unit_price,
+            }
+            for tier in entry.tiers.all()
+        ],
+    }
+
+
+@staff_required
+def api_manage_supplier_prices(request):
+    """GET: paginated supplier price matrix rows."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    supplier_ids = _parse_matrix_supplier_ids(request.GET.get('supplier', ''))
+    search_query = request.GET.get('search', '').strip()
+    page_number = request.GET.get('page', 1)
+    try:
+        limit = int(request.GET.get('limit', 50))
+    except (TypeError, ValueError):
+        limit = 50
+    if limit not in (25, 50, 100, 200):
+        limit = 50
+
+    sort_by = request.GET.get('sort_by', 'medication')
+    sort_dir = request.GET.get('sort_dir', 'asc')
+    combined = _list_filtered_matrix_rows(supplier_ids, search_query, sort_by, sort_dir)
+
+    paginator = Paginator(combined, limit)
+    try:
+        page_obj = paginator.page(page_number)
+    except (EmptyPage, PageNotAnInteger):
+        return JsonResponse({
+            'items': [],
+            'pagination': {
+                'current_page': 1,
+                'total_pages': 0,
+                'total_count': 0,
+                'page_size': limit,
+                'has_next': False,
+                'has_previous': False,
+            },
+        })
+
+    return JsonResponse({
+        'items': page_obj.object_list,
+        'pagination': {
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'total_count': paginator.count,
+            'page_size': limit,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        },
+    }, encoder=DjangoJSONEncoder)
+
+
+@staff_required
+def api_quotation_matrix_row_detail(request, item_id):
+    """GET: legacy quotation line as matrix-style row with quotation price history."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    item = get_object_or_404(
+        QuotationItem.objects.select_related('product', 'quotation', 'quotation__supplier')
+        .prefetch_related('quotation__items'),
+        pk=item_id,
+    )
+    product = item.product
+    supplier = item.quotation.supplier
+
+    if SupplierPriceMatrixEntry.objects.filter(supplier=supplier, product=product).exists():
+        return JsonResponse({'error': 'This product uses the price matrix for this supplier.'}, status=404)
+
+    history_items = list(
+        QuotationItem.objects.filter(product=product, quotation__supplier=supplier)
+        .select_related('quotation')
+        .prefetch_related('quotation__items')
+        .order_by('-quotation__date_quoted', '-pk')
+    )
+
+    history = []
+    for i, qi in enumerate(history_items):
+        cost = qi.landed_cost_per_unit
+        if cost is None:
+            continue
+        tiers = _normalize_matrix_tiers_for_json([{
+            'min_quantity': 1,
+            'max_quantity': None,
+            'unit_price': cost,
+        }])
+        previous = None
+        for j in range(i + 1, len(history_items)):
+            prev_cost = history_items[j].landed_cost_per_unit
+            if prev_cost is not None:
+                previous = _normalize_matrix_tiers_for_json([{
+                    'min_quantity': 1,
+                    'max_quantity': None,
+                    'unit_price': prev_cost,
+                }])
+                break
+        q = qi.quotation
+        history.append({
+            'id': qi.pk,
+            'uploaded_at': q.date_quoted.isoformat() if q.date_quoted else None,
+            'source_filename': f'Quotation {q.quotation_id}',
+            'price_currency': qi.input_currency or 'MYR',
+            'conversion_rate': None,
+            'tiers': tiers,
+            'changes': _diff_matrix_tier_snapshots(previous, tiers),
+        })
+
+    return JsonResponse({
+        'entry': serialize_quotation_matrix_item(item),
+        'history': history,
+    }, encoder=DjangoJSONEncoder)
+
+
+@staff_required
+def api_supplier_price_matrix_entry_detail(request, entry_id):
+    """GET: matrix entry with upload history and tier price changes."""
+    if request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+    entry = get_object_or_404(
+        SupplierPriceMatrixEntry.objects.select_related('supplier', 'product').prefetch_related('tiers'),
+        pk=entry_id,
+    )
+    records = list(entry.upload_records.order_by('-effective_date', '-uploaded_at'))
+    enriched_tiers_list = [
+        _enrich_matrix_tier_snapshots(r.tiers, r.price_currency, r.conversion_rate)
+        for r in records
+    ]
+    history = []
+    for i, record in enumerate(records):
+        tiers = enriched_tiers_list[i]
+        previous = enriched_tiers_list[i + 1] if i + 1 < len(enriched_tiers_list) else None
+        history.append({
+            'id': record.id,
+            'uploaded_at': record.uploaded_at,
+            'effective_date': record.effective_date,
+            'source_filename': record.source_filename,
+            'price_currency': record.price_currency,
+            'conversion_rate': record.conversion_rate,
+            'tiers': tiers,
+            'changes': _diff_matrix_tier_snapshots(previous, tiers),
+        })
+
+    return JsonResponse({
+        'entry': _serialize_matrix_entry(entry),
+        'history': history,
+    }, encoder=DjangoJSONEncoder)
+
+
+@staff_required
+def upload_supplier_price_matrix_preview(request):
+    """POST multipart: file → parsed rows with product mapping suggestions."""
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'Method not allowed'}, status=405)
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({'ok': False, 'error': 'No file provided'}, status=400)
+
+    try:
+        rows, parse_error = parse_supplier_price_matrix_file(file)
+        if parse_error is not None:
+            return JsonResponse({'ok': False, 'error': parse_error}, status=400)
+        if not rows:
+            return JsonResponse({'ok': False, 'error': 'No price rows found in file.'}, status=400)
+
+        is_pdf = (file.name or '').lower().endswith('.pdf')
+        match_cache: dict[tuple[str, str], tuple] = {}
+        preview_rows = []
+        for r in rows:
+            match_name = r.get('match_name') or r.get('medication') or ''
+            sku = (r.get('sku') or '').strip()
+            cache_key = (sku.lower(), match_name.strip().lower())
+            if cache_key not in match_cache:
+                match_cache[cache_key] = _resolve_product_by_sku_or_name(
+                    sku or None,
+                    match_name,
+                    allow_fuzzy=not is_pdf,
+                )
+            product, match_type = match_cache[cache_key]
+            preview_rows.append({
+                **r,
+                'product_id': product.id if product else None,
+                'product_name': product.name if product else None,
+                'product_sku': product.sku if product else None,
+                'match_type': match_type,
+                'new_product_name': match_name if match_type == 'new' else None,
+                'new_product_sku': sku or None if match_type == 'new' else None,
+            })
+
+        return JsonResponse({
+            'ok': True,
+            'rows': preview_rows,
+            'source_filename': file.name,
+        }, encoder=DjangoJSONEncoder)
+    except Exception as exc:
+        logger.exception('upload_supplier_price_matrix_preview failed')
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+
+
+def _supplier_catalog_product_ids(supplier_id: int) -> set[int]:
+    """Distinct catalog product IDs linked via M2M or price matrix entries."""
+    ids = set(
+        Product.objects.filter(suppliers__id=supplier_id).values_list('pk', flat=True)
+    )
+    ids.update(
+        SupplierPriceMatrixEntry.objects.filter(
+            supplier_id=supplier_id,
+            product_id__isnull=False,
+        ).values_list('product_id', flat=True)
+    )
+    return ids
+
+
+def _supplier_settings_rows() -> list[dict]:
+    from collections import defaultdict
+
+    m2m_by_supplier: dict[int, set[int]] = defaultdict(set)
+    for supplier_id, product_id in Product.suppliers.through.objects.values_list(
+        'supplier_id', 'product_id'
+    ):
+        m2m_by_supplier[supplier_id].add(product_id)
+
+    matrix_by_supplier: dict[int, set[int]] = defaultdict(set)
+    for supplier_id, product_id in SupplierPriceMatrixEntry.objects.filter(
+        product_id__isnull=False,
+    ).values_list('supplier_id', 'product_id'):
+        matrix_by_supplier[supplier_id].add(product_id)
+
+    rows: list[dict] = []
+    for supplier in Supplier.objects.order_by('name'):
+        product_ids = m2m_by_supplier[supplier.pk] | matrix_by_supplier[supplier.pk]
+        rows.append({
+            'id': supplier.pk,
+            'name': supplier.name,
+            'code': supplier.code or '',
+            'product_count': len(product_ids),
+        })
+    return rows
+
+
+@staff_required
+def api_list_suppliers_matrix_settings(request):
+    """GET: suppliers with catalog product counts for matrix settings modal."""
+    if request.method != 'GET' or not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+    return JsonResponse({'suppliers': _supplier_settings_rows()})
+
+
+@staff_required
+def api_delete_supplier(request, supplier_id):
+    """POST: delete a supplier with no linked catalog products (superuser only)."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Permission denied.'}, status=403)
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request'}, status=400)
+
+    supplier = get_object_or_404(Supplier, pk=supplier_id)
+    if _supplier_catalog_product_ids(supplier.pk):
+        return JsonResponse(
+            {
+                'success': False,
+                'error': 'Cannot delete a supplier that still has linked products.',
+            },
+            status=400,
+        )
+
+    name = supplier.name
+    supplier.delete()
+    return JsonResponse({'success': True, 'id': supplier_id, 'name': name})
+
+
+@staff_required
+def api_create_supplier(request):
+    """POST JSON: { name, code? } — create a supplier for price matrix / catalog use."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    name = (data.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'error': 'Supplier name is required.'}, status=400)
+
+    code = (data.get('code') or '').strip() or None
+    if Supplier.objects.filter(name__iexact=name).exists():
+        existing = Supplier.objects.filter(name__iexact=name).first()
+        return JsonResponse({
+            'success': True,
+            'id': existing.pk,
+            'name': existing.name,
+            'existing': True,
+        })
+
+    try:
+        supplier = Supplier.objects.create(name=name, code=code)
+    except IntegrityError:
+        return JsonResponse({'success': False, 'error': 'A supplier with that name or code already exists.'}, status=400)
+
+    return JsonResponse({'success': True, 'id': supplier.pk, 'name': supplier.name, 'existing': False})
+
+
+def _matrix_myr_to_original(myr_price, currency: str, conversion_rate) -> Decimal | None:
+    """Convert stored MYR tier price back to the uploaded list currency."""
+    cur = (currency or 'MYR').upper()
+    if cur == 'MYR' or not myr_price or not conversion_rate:
+        return None
+    try:
+        rate = Decimal(str(conversion_rate))
+        if rate <= 0:
+            return None
+        return (Decimal(str(myr_price)) / rate).quantize(Decimal('0.01'))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _matrix_conversion_rate(currency: str, rate_usd, rate_eur):
+    cur = (currency or 'MYR').upper()
+    if cur == 'USD':
+        return rate_usd
+    if cur == 'EUR':
+        return rate_eur
+    return None
+
+
+def _matrix_price_to_myr(amount, currency: str, rate_usd, rate_eur) -> Decimal:
+    cur = (currency or 'MYR').upper()
+    if cur == 'MYR':
+        return amount
+    if cur == 'USD':
+        return (amount * rate_usd).quantize(Decimal('0.01'))
+    if cur == 'EUR':
+        return (amount * rate_eur).quantize(Decimal('0.01'))
+    return amount
+
+
+@staff_required
+def upload_supplier_price_matrix_confirm(request):
+    """
+    POST JSON: supplier_id, currency?, rate_usd?, rate_eur?, source_filename?, rows[].
+    Upserts centralized supplier price matrix entries and tier prices (stored in MYR).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    supplier_id = data.get('supplier_id')
+    rows = data.get('rows') or []
+    if not supplier_id:
+        return JsonResponse({'success': False, 'error': 'supplier_id is required.'}, status=400)
+    if not rows:
+        return JsonResponse({'success': False, 'error': 'No rows provided.'}, status=400)
+
+    supplier = get_object_or_404(Supplier, pk=supplier_id)
+    source_filename = (data.get('source_filename') or '')[:255]
+    currency = (data.get('currency') or 'MYR').upper()
+    if currency not in ('MYR', 'USD', 'EUR'):
+        return JsonResponse({'success': False, 'error': 'Invalid currency.'}, status=400)
+    try:
+        rate_usd = Decimal(str(data.get('rate_usd') or '4.2'))
+        rate_eur = Decimal(str(data.get('rate_eur') or '4.9'))
+    except (InvalidOperation, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid exchange rate.'}, status=400)
+    if currency == 'USD' and rate_usd <= 0:
+        return JsonResponse({'success': False, 'error': 'USD rate must be greater than zero.'}, status=400)
+    if currency == 'EUR' and rate_eur <= 0:
+        return JsonResponse({'success': False, 'error': 'EUR rate must be greater than zero.'}, status=400)
+
+    conversion_rate = _matrix_conversion_rate(currency, rate_usd, rate_eur)
+
+    errors = []
+    affected_product_ids = set()
+
+    try:
+        with transaction.atomic():
+            for i, row in enumerate(rows):
+                medication = (row.get('medication') or row.get('line_medication') or '').strip()
+                if not medication:
+                    errors.append(f"Row {i + 1}: medication name is required.")
+                    continue
+                strength = (row.get('strength') or '').strip()
+                size = (row.get('size') or '').strip()
+                form = (row.get('form') or '').strip()
+                notes = (row.get('notes') or '').strip()
+                tiers = row.get('tiers') or []
+                if not tiers:
+                    errors.append(f"Row {i + 1}: at least one price tier is required.")
+                    continue
+
+                product = None
+                product_id = row.get('product_id')
+                new_name = (row.get('new_product_name') or '').strip()
+                new_sku = (row.get('new_product_sku') or '').strip() or None
+                if product_id:
+                    try:
+                        product = Product.objects.get(pk=product_id)
+                    except Product.DoesNotExist:
+                        errors.append(f"Row {i + 1}: product not found.")
+                        continue
+                elif new_name:
+                    product = Product.objects.filter(name__iexact=new_name).first()
+                    if not product:
+                        sku_to_use = new_sku if new_sku and not Product.objects.filter(sku=new_sku).exists() else None
+                        product = Product.objects.create(name=new_name, description='', sku=sku_to_use)
+                    elif new_sku and not product.sku and not Product.objects.filter(sku=new_sku).exclude(pk=product.pk).exists():
+                        product.sku = new_sku
+                        product.save(update_fields=['sku'])
+
+                entry, _created = SupplierPriceMatrixEntry.objects.update_or_create(
+                    supplier=supplier,
+                    line_medication=medication,
+                    strength=strength,
+                    size=size,
+                    defaults={
+                        'form': form,
+                        'notes': notes,
+                        'product': product,
+                        'price_currency': currency,
+                        'conversion_rate': conversion_rate,
+                        'source_filename': source_filename,
+                    },
+                )
+                entry.tiers.all().delete()
+                for tier in tiers:
+                    try:
+                        min_qty = int(tier.get('min_quantity', 1))
+                        max_qty = tier.get('max_quantity')
+                        max_qty = int(max_qty) if max_qty not in (None, '') else None
+                        raw_price = Decimal(str(tier.get('unit_price')))
+                        unit_price = _matrix_price_to_myr(raw_price, currency, rate_usd, rate_eur)
+                    except (ValueError, TypeError, InvalidOperation):
+                        errors.append(f"Row {i + 1}: invalid tier data.")
+                        continue
+                    if min_qty < 1 or unit_price < 0:
+                        errors.append(f"Row {i + 1}: tier min quantity must be ≥ 1 and price ≥ 0.")
+                        continue
+                    SupplierPriceMatrixTier.objects.create(
+                        entry=entry,
+                        min_quantity=min_qty,
+                        max_quantity=max_qty,
+                        unit_price=unit_price,
+                    )
+
+                snapshot_tiers = _normalize_matrix_tiers_for_json(entry.tiers.all())
+                SupplierPriceMatrixUploadRecord.objects.create(
+                    entry=entry,
+                    source_filename=source_filename,
+                    price_currency=currency,
+                    conversion_rate=conversion_rate,
+                    tiers=snapshot_tiers,
+                )
+
+                if product:
+                    if not product.suppliers.filter(pk=supplier.pk).exists():
+                        product.suppliers.add(supplier)
+                    affected_product_ids.add(product.id)
+
+    except Exception as exc:
+        logger.exception("upload_supplier_price_matrix_confirm failed")
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    sync_saved_base_costs_for_products(list(affected_product_ids))
+    return JsonResponse({
+        'success': True,
+        'message': f"Updated {len(rows)} price row(s) for {supplier.name}.",
+        'updated_rows': len(rows),
+    })

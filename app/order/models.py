@@ -208,9 +208,31 @@ class Order(models.Model):
     def total_commission(self):
         """Calculates the total commission earned on this order."""
         user_group = self.agent.user_groups.first()
-        if not user_group or user_group.commission_percentage == 0:
+        if not user_group:
             return Decimal('0.00')
 
+        if getattr(user_group, 'commission_type', 'PROFIT_PCT') == 'SELLING_PCT':
+            # Commission is a percentage of selling price, with tier-specific rates.
+            rates = sorted(
+                user_group.tier_commission_rates or [],
+                key=lambda t: t.get('min_quantity', 1),
+            )
+            if not rates:
+                return Decimal('0.00')
+            total = Decimal('0.00')
+            for item in self.items.all():
+                qty = item.quantity
+                # Step-down: find highest tier whose min_quantity <= item.quantity
+                rate = Decimal(str(rates[0].get('rate', 0)))
+                for t in rates:
+                    if t.get('min_quantity', 1) <= qty:
+                        rate = Decimal(str(t.get('rate', 0)))
+                total += item.effective_unit_price * qty * (rate / Decimal('100'))
+            return total
+
+        # PROFIT_PCT (default)
+        if not user_group.commission_percentage:
+            return Decimal('0.00')
         commission_rate = user_group.commission_percentage / Decimal('100.00')
         return self.total_profit * commission_rate
 
@@ -270,6 +292,7 @@ class CashBankReceiptEntry(models.Model):
     class PaymentType(models.TextChoices):
         CASH = 'CASH', 'Cash received'
         BANK = 'BANK', 'Bank transfer'
+        LOAN = 'LOAN', 'Loan repayment'
 
     payment_type = models.CharField(max_length=10, choices=PaymentType.choices)
     received_from = models.CharField(max_length=255, help_text='Payer or source description.')
@@ -289,3 +312,56 @@ class CashBankReceiptEntry(models.Model):
 
     def __str__(self):
         return f"{self.get_payment_type_display()} {self.amount} on {self.transaction_date} from {self.received_from}"
+
+
+class AgentCommissionPaymentEntry(models.Model):
+    """Standalone commission paid to an agent (used in order financial dashboard)."""
+
+    paid_to = models.CharField(max_length=255, help_text='Agent name or reference.')
+    payment_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    notes = models.CharField(max_length=500, blank=True, default='')
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agent_commission_payment_entries',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['payment_date', 'id']
+
+    def __str__(self):
+        return f"Commission {self.amount} to {self.paid_to} on {self.payment_date}"
+
+
+class RevenueAdjustmentEntry(models.Model):
+    """
+    Standalone revenue line for exports (commission released, loan interest).
+    Adds positive Line Revenue in order export spreadsheets.
+    """
+
+    class AdjustmentType(models.TextChoices):
+        COMMISSION_RELEASED = 'COMMISSION_RELEASED', 'Commission released'
+        LOAN_INTEREST = 'LOAN_INTEREST', 'Interest of loan'
+
+    adjustment_type = models.CharField(max_length=20, choices=AdjustmentType.choices)
+    reference = models.CharField(max_length=255, help_text='Description or reference.')
+    transaction_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='revenue_adjustment_entries',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['transaction_date', 'id']
+
+    def __str__(self):
+        return f"{self.get_adjustment_type_display()} {self.amount} on {self.transaction_date}"

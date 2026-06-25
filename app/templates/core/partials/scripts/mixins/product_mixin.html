@@ -7,7 +7,7 @@
             pricingData: {
                 id: null, name: '', base_cost: null, base_cost_supplier_id: null, profit_margin: null,
                 selling_price: null, is_promotion: false, promotion_rate: null, update_url: '',
-                supplier_costs: [], price_tiers: []
+                supplier_costs: [], price_tiers: [], latest_invoice_cost: null,
             },
 
             // Product Edit Modal State
@@ -39,12 +39,99 @@
                 const profit = sellPrice - baseCost;
                 return profit > 0 ? profit : null;
             },
-            commissionAmount(group) {
-                const profit = this.commissionProfit();
-                if (profit === null || !group || !group.commission_percentage) {
-                    return null;
+
+            // True if a group has any non-zero commission configured.
+            groupHasCommission(group) {
+                if (!group) return false;
+                if ((group.commission_type || 'PROFIT_PCT') === 'SELLING_PCT') {
+                    return (group.tier_commission_rates || []).some(t => parseFloat(t.rate) > 0);
                 }
-                return (profit * (group.commission_percentage / 100)).toFixed(2);
+                return (parseFloat(group.commission_percentage) || 0) > 0;
+            },
+
+            // Look up the applicable rate from tier_commission_rates for a given min_quantity.
+            // Uses step-down: returns the rate of the highest tier whose min_quantity <= qty.
+            _tierRate(group, qty) {
+                const rates = [...(group.tier_commission_rates || [])].sort((a, b) => a.min_quantity - b.min_quantity);
+                if (!rates.length) return 0;
+                let rate = parseFloat(rates[0].rate) || 0;
+                for (const t of rates) {
+                    if (t.min_quantity <= qty) rate = parseFloat(t.rate) || 0;
+                }
+                return rate;
+            },
+
+            // Returns commission as a number for a group at a given selling price and min_quantity.
+            groupCommission(group, sellingPrice, minQty) {
+                if (!group || !sellingPrice) return 0;
+                const price = parseFloat(sellingPrice);
+                const qty = minQty || 1;
+                if (isNaN(price) || price <= 0) return 0;
+                if ((group.commission_type || 'PROFIT_PCT') === 'SELLING_PCT') {
+                    const rate = this._tierRate(group, qty);
+                    return price * (rate / 100);
+                }
+                // PROFIT_PCT
+                const base = parseFloat(this.pricingData.base_cost);
+                if (isNaN(base) || base <= 0) return 0;
+                const profit = price - base;
+                if (profit <= 0) return 0;
+                return profit * ((parseFloat(group.commission_percentage) || 0) / 100);
+            },
+
+            // Human-readable label for a group's commission type + rate at a given qty.
+            groupCommissionLabel(group, minQty) {
+                if (!group) return '';
+                if ((group.commission_type || 'PROFIT_PCT') === 'SELLING_PCT') {
+                    const rate = this._tierRate(group, minQty || 1);
+                    return `${rate}% of selling price`;
+                }
+                return `${parseFloat(group.commission_percentage) || 0}% of profit`;
+            },
+
+            // Net profit after deducting a single group's commission (selling price row).
+            groupSellingNetProfit(group, sellingPrice, minQty) {
+                const profit = this.commissionProfit();
+                if (profit === null) return null;
+                const comm = this.groupCommission(group, sellingPrice, minQty || 1);
+                return profit - comm;
+            },
+
+            // Net profit after deducting a single group's commission (tier row).
+            groupTierNetProfit(group, tier) {
+                const profit = this.tierProfitPerUnit(tier);
+                if (profit == null) return null;
+                const comm = this.groupCommission(group, parseFloat(tier.price), tier.min_quantity || 1);
+                return profit - comm;
+            },
+
+            // Net profit for the base selling price row after all commissions (kept for compatibility).
+            sellingPriceNetProfit() {
+                const profit = this.commissionProfit();
+                if (profit === null) return null;
+                const price = parseFloat(this.pricingData.selling_price);
+                const groups = Alpine.store('globals').allUserGroupsList || [];
+                const totalComm = groups.filter(g => this.groupHasCommission(g))
+                    .reduce((s, g) => s + this.groupCommission(g, price, 1), 0);
+                return profit - totalComm;
+            },
+
+            // Net profit for a price tier row after all commissions (kept for compatibility).
+            tierNetProfit(tier) {
+                const profit = this.tierProfitPerUnit(tier);
+                if (profit == null) return null;
+                const price = parseFloat(tier.price);
+                const minQty = tier.min_quantity || 1;
+                const groups = Alpine.store('globals').allUserGroupsList || [];
+                const totalComm = groups.filter(g => this.groupHasCommission(g))
+                    .reduce((s, g) => s + this.groupCommission(g, price, minQty), 0);
+                return profit - totalComm;
+            },
+
+            commissionAmount(group) {
+                const price = parseFloat(this.pricingData.selling_price);
+                const amount = this.groupCommission(group, price, 1);
+                return amount > 0 ? amount.toFixed(2) : null;
             },
 
             get selectedBaseCostSupplierName() {
@@ -78,7 +165,8 @@
                     promotion_rate: null,
                     update_url: '',
                     supplier_costs: [],
-                    price_tiers: []
+                    price_tiers: [],
+                    latest_invoice_cost: null,
                 };
                 this.showPricingModal = true;
 
@@ -108,11 +196,13 @@
                     }
                     let baseCost = null;
                     // Use saved_base_cost when set (user has chosen a source); otherwise use computed base_cost
-                    // (e.g. latest quoted cost) so products created from quotation import show their cost.
+                    // (matrix / invoice landed / quotation), then fall back to latest invoice landed cost.
                     if (data.saved_base_cost != null) {
                         baseCost = parseFloat(data.saved_base_cost);
                     } else if (data.base_cost != null && data.base_cost !== '') {
                         baseCost = parseFloat(data.base_cost);
+                    } else if (data.latest_invoice_cost?.landed_cost) {
+                        baseCost = parseFloat(data.latest_invoice_cost.landed_cost);
                     }
 
                     let profitMargin = data.profit_margin != null ? parseFloat(data.profit_margin) : null;
@@ -150,7 +240,8 @@
                         promotion_rate: data.promotion_rate != null ? parseFloat(data.promotion_rate) : null,
                         update_url: `/api/manage-pricing/${data.id}/`,
                         supplier_costs: supplierCosts,
-                        price_tiers: priceTiers
+                        price_tiers: priceTiers,
+                        latest_invoice_cost: data.latest_invoice_cost || null,
                     };
 
                     console.log('[PricingModal][state]', this.pricingData);

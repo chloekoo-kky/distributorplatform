@@ -16,11 +16,12 @@ import re
 import tempfile
 from django.core.serializers.json import DjangoJSONEncoder
 
-from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch, F, DecimalField, ExpressionWrapper
+from django.db.models import Q, Subquery, OuterRef, Sum, Prefetch, F, DecimalField, ExpressionWrapper, Count
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator, EmptyPage
 from inventory.models import QuotationItem, InventoryBatch, Supplier
+from inventory.supplier_pricing import get_product_supplier_costs
 from inventory.views import staff_required
 
 from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion, ProductPriceTier
@@ -188,7 +189,11 @@ def api_manage_categories(request):
     page = request.GET.get('page', 1)
 
     # Updated ordering: Group > Display Order > Name
-    queryset = Category.objects.select_related('group').order_by('group__name', 'display_order', 'name')
+    queryset = (
+        Category.objects.select_related('group')
+        .annotate(product_count=Count('products', distinct=True))
+        .order_by('group__name', 'display_order', 'name')
+    )
 
     if search:
         queryset = queryset.filter(Q(name__icontains=search) | Q(code__icontains=search))
@@ -204,7 +209,8 @@ def api_manage_categories(request):
         'name': cat.name,
         'code': cat.code,
         'group': cat.group.name,
-        'display_order': cat.display_order, # --- NEW: Include display_order ---
+        'display_order': cat.display_order,
+        'product_count': cat.product_count,
         'description': cat.description or '',
         'page_title': cat.page_title or '',
         'edit_url': reverse('product:manage_category_edit', args=[cat.id])
@@ -827,6 +833,17 @@ def manage_product_edit(request, product_id):
     return redirect('core:manage_dashboard')
 
 
+def _parse_supplier_ids(raw: str | None) -> list[int]:
+    if not raw or not str(raw).strip():
+        return []
+    ids: list[int] = []
+    for part in str(raw).split(','):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    return list(dict.fromkeys(ids))
+
+
 @staff_required
 def api_manage_products(request):
     if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -835,8 +852,14 @@ def api_manage_products(request):
     search_query = request.GET.get('search', '')
     group_filter = request.GET.get('group', '')
     category_filter = request.GET.get('category', '')
+    supplier_ids = _parse_supplier_ids(request.GET.get('supplier', ''))
     page_number = request.GET.get('page', 1)
-    limit = request.GET.get('limit', 50)
+    try:
+        limit = int(request.GET.get('limit', 50))
+    except (TypeError, ValueError):
+        limit = 50
+    if limit not in (25, 50, 100, 200):
+        limit = 50
     sort_by = request.GET.get('sort_by', '').strip()
     sort_dir = request.GET.get('sort_dir', 'asc').strip().lower()
     if sort_dir not in ('asc', 'desc'):
@@ -854,7 +877,11 @@ def api_manage_products(request):
                                           .prefetch_related('quotation__items')
                                           .order_by('-quotation__date_quoted'),
             to_attr='latest_quotation_items'
-        )
+        ),
+        Prefetch(
+            'price_tiers',
+            queryset=ProductPriceTier.objects.order_by('min_quantity'),
+        ),
     )
 
     if search_query:
@@ -867,6 +894,11 @@ def api_manage_products(request):
         queryset = queryset.filter(categories__group__name=group_filter)
     if category_filter:
         queryset = queryset.filter(categories__name=category_filter)
+    if supplier_ids:
+        queryset = queryset.filter(
+            Q(suppliers__id__in=supplier_ids)
+            | Q(quotationitem__quotation__supplier_id__in=supplier_ids)
+        )
 
     use_profit_margin_sort = request.user.is_superuser and sort_by == 'profit_margin'
     use_profit_rm_sort = request.user.is_superuser and sort_by == 'profit_rm'
@@ -911,37 +943,10 @@ def api_manage_products(request):
 
         # Direct M2M suppliers attached to the product
         m2m_supplier_list = [s.name for s in product.suppliers.all()]
-        supplier_costs: list[dict] = []
-        seen_suppliers = set()
-
-        # When available, use the prefetched latest_quotation_items for performance.
-        # If not present (or empty), fall back to a direct query so that merged
-        # products still see ALL quotation items and supplier pricing.
-        if hasattr(product, "latest_quotation_items") and product.latest_quotation_items:
-            quotation_items = product.latest_quotation_items
-        else:
-            quotation_items = (
-                QuotationItem.objects.filter(product=product)
-                .select_related("quotation", "quotation__supplier")
-                .prefetch_related("quotation__items")
-                .order_by("-quotation__date_quoted")
-            )
-
-        for item in quotation_items:
-            sup_id = item.quotation.supplier_id
-            if sup_id in seen_suppliers:
-                continue
-            seen_suppliers.add(sup_id)
-            cost = item.landed_cost_per_unit
-            if cost is not None:
-                supplier_costs.append(
-                    {
-                        "supplier_id": sup_id,
-                        "supplier_name": item.quotation.supplier.name or "Unknown",
-                        "cost": cost,
-                        "date": item.quotation.date_quoted,
-                    }
-                )
+        supplier_costs = [
+            {k: v for k, v in sc.items() if k not in ('source', 'updated_at')}
+            for sc in get_product_supplier_costs(product)
+        ]
 
         reconcile_saved_base_cost_with_quotations(product, supplier_costs)
         product.refresh_from_db(
@@ -979,6 +984,10 @@ def api_manage_products(request):
             'base_cost': product.base_cost,
             'supplier_costs': supplier_costs,
             'suppliers': suppliers_display,
+            'price_tiers': [
+                {'min_quantity': tier.min_quantity, 'price': tier.price}
+                for tier in product.price_tiers.all()
+            ],
             'category_groups': sorted(list(set(group_list))),
             'categories': sorted(list(set(category_list))),
             'featured_image_url': product.featured_image.image.url if product.featured_image else None,
@@ -995,6 +1004,8 @@ def api_manage_products(request):
         'pagination': {
             'current_page': page_obj.number,
             'total_pages': paginator.num_pages,
+            'total_count': paginator.count,
+            'page_size': limit,
             'has_next': page_obj.has_next(),
             'has_previous': page_obj.has_previous(),
         }
@@ -1150,7 +1161,8 @@ def api_merge_products(request):
     Merge secondary products into a primary product.
     POST JSON: { \"primary_id\": int, \"merge_ids\": [int, ...] }
 
-    Moves key references (QuotationItem, InventoryBatch, OrderItem, ProductContentSection),
+    Moves key references (QuotationItem, InvoiceItem, InventoryBatch, OrderItem,
+    SupplierPriceMatrixEntry, ProductContentSection),
     merges categories/suppliers/gallery_images, then deletes the merged products.
     """
     if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
@@ -1177,6 +1189,8 @@ def api_merge_products(request):
 
     from order.models import OrderItem
     from product.models import ProductContentSection
+    from sales.models import InvoiceItem
+    from inventory.models import SupplierPriceMatrixEntry
 
     try:
         with transaction.atomic():
@@ -1186,16 +1200,42 @@ def api_merge_products(request):
                 primary.suppliers.add(*s.suppliers.all())
                 primary.gallery_images.add(*s.gallery_images.all())
 
-            # 2) Transfer all Supplier Quotations (QuotationItem) and other FKs to the master.
-            #    Master keeps its SKU and Name; merged products' quotation/cost data is retained on primary.
+            # 2) Transfer all FK references to the master.
             QuotationItem.objects.filter(product__in=secondaries).update(product=primary)
+            InvoiceItem.objects.filter(product__in=secondaries).update(product=primary)
             InventoryBatch.objects.filter(product__in=secondaries).update(product=primary)
             OrderItem.objects.filter(product__in=secondaries).update(product=primary)
             ProductContentSection.objects.filter(product__in=secondaries).update(product=primary)
 
+            for entry in SupplierPriceMatrixEntry.objects.filter(product__in=secondaries):
+                duplicate = SupplierPriceMatrixEntry.objects.filter(
+                    supplier_id=entry.supplier_id,
+                    line_medication=entry.line_medication,
+                    strength=entry.strength,
+                    size=entry.size,
+                    product=primary,
+                ).exclude(pk=entry.pk).exists()
+                if duplicate:
+                    entry.delete()
+                else:
+                    entry.product = primary
+                    entry.save(update_fields=['product', 'updated_at'])
+
             # 3) Delete secondary products (their SKUs/names disappear from the active catalog)
             Product.objects.filter(pk__in=[s.id for s in secondaries]).delete()
 
+    except ProtectedError:
+        logger.warning("Blocked product merge due to protected relations", exc_info=True)
+        return JsonResponse(
+            {
+                "success": False,
+                "error": (
+                    "Cannot merge: a secondary product is still linked to customer orders "
+                    "or other protected records that could not be moved automatically."
+                ),
+            },
+            status=400,
+        )
     except Exception as e:
         logger.exception("Error while merging products")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
@@ -1337,36 +1377,15 @@ def api_manage_pricing(request, product_id):
 
     # --- GET: return fresh pricing data for the modal (avoids frontend caching issues) ---
     if request.method == 'GET':
-        # Recompute supplier_costs exactly like manage-products does, so the modal
-        # always uses a fresh, server-side view of quotations.
-        supplier_costs: list[dict] = []
-        seen_suppliers = set()
-
-        if hasattr(product, "latest_quotation_items") and product.latest_quotation_items:
-            quotation_items = product.latest_quotation_items
-        else:
-            quotation_items = (
-                QuotationItem.objects.filter(product=product)
-                .select_related("quotation", "quotation__supplier")
-                .prefetch_related("quotation__items")
-                .order_by("-quotation__date_quoted")
-            )
-
-        for item in quotation_items:
-            sup_id = item.quotation.supplier_id
-            if sup_id in seen_suppliers:
-                continue
-            seen_suppliers.add(sup_id)
-            cost = item.landed_cost_per_unit
-            if cost is not None:
-                supplier_costs.append(
-                    {
-                        "supplier_id": sup_id,
-                        "supplier_name": item.quotation.supplier.name or "Unknown",
-                        "cost": cost,
-                        "date": item.quotation.date_quoted,
-                    }
-                )
+        from inventory.supplier_pricing import (
+            get_product_supplier_costs,
+            latest_invoice_cost_detail_for_product,
+        )
+        # Recompute supplier_costs from matrix + invoices + quotations for the pricing modal.
+        supplier_costs = [
+            {k: v for k, v in sc.items() if k not in ('source', 'updated_at')}
+            for sc in get_product_supplier_costs(product)
+        ]
 
         reconcile_saved_base_cost_with_quotations(product, supplier_costs)
         product.refresh_from_db(
@@ -1374,6 +1393,8 @@ def api_manage_pricing(request, product_id):
         )
 
         base_cost = product.base_cost
+        latest_invoice_cost = latest_invoice_cost_detail_for_product(product)
+
         # Price tiers: return min_quantity, price, and computed profit_margin for modal editing
         price_tiers_data = []
         for tier in product.price_tiers.order_by('min_quantity'):
@@ -1400,6 +1421,7 @@ def api_manage_pricing(request, product_id):
             'base_cost': str(base_cost) if base_cost is not None else None,
             'supplier_costs': supplier_costs,
             'price_tiers': price_tiers_data,
+            'latest_invoice_cost': latest_invoice_cost,
         })
 
     # --- POST: existing pricing update flow ---

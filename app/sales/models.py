@@ -133,6 +133,25 @@ class InvoiceItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Price per unit at the time of invoicing.")
     quantity_received = models.PositiveIntegerField(default=0, help_text="Total quantity received across all batches for this item.")
+    original_currency = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text="Original invoice currency code (e.g. USD) when imported from payable invoice detail.",
+    )
+    unit_price_source = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Unit price in original currency before MYR conversion.",
+    )
+    gross_source = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Line gross in original currency.",
+    )
 
     @property
     def total_price(self):

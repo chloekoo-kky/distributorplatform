@@ -7,6 +7,32 @@
             batches: [],
             isLoading: false,
             hasLoaded: false,
+            init() {
+                window.addEventListener('batch-details-saved', (e) => {
+                    if (e.detail?.productId === this.id && this.hasLoaded) {
+                        this.reloadBatches();
+                    }
+                });
+            },
+            formatPrice(value) {
+                if (value === null || value === undefined) return 'N/A';
+                return `RM ${Number(value).toFixed(2)}`;
+            },
+            async reloadBatches() {
+                this.isLoading = true;
+                try {
+                    const response = await fetch(`/inventory/api/product-batches/${this.id}/`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                    });
+                    if (!response.ok) throw new Error('Failed to fetch batch data.');
+                    const data = await response.json();
+                    this.batches = data.batches;
+                } catch (error) {
+                    console.error(`Failed to reload batches for product ${this.id}:`, error);
+                } finally {
+                    this.isLoading = false;
+                }
+            },
             async toggle() {
                 this.open = !this.open;
                 if (this.open && !this.hasLoaded) {
@@ -53,9 +79,14 @@
             items: [],
             isLoading: true,
             pagination: {},
+            pageSize: 50,
             filterText: '',
             filterGroup: '',
             filterCategory: '',
+            filterSuppliers: [],
+            supplierFilterOpen: false,
+            categoryFilterOpen: false,
+            allSuppliers: [],
             allCategories: [],
             groupCategoriesMap: {},
 
@@ -78,6 +109,7 @@
             init() {
                 this.allCategories = Alpine.store('globals').allCategoriesFlat;
                 this.groupCategoriesMap = Alpine.store('globals').groupCategoriesMap;
+                this.allSuppliers = Alpine.store('globals').allSuppliersList || [];
 
                 // Restore last-used filters from localStorage so the table
                 // comes back with the same search and filters after refresh.
@@ -89,6 +121,9 @@
                             this.filterText = saved.filterText || '';
                             this.filterGroup = saved.filterGroup || '';
                             this.filterCategory = saved.filterCategory || '';
+                            if (Array.isArray(saved.filterSuppliers)) {
+                                this.filterSuppliers = saved.filterSuppliers.map(String);
+                            }
                             if (saved.sortField && typeof saved.sortField === 'string') {
                                 this.sort.field = saved.sortField;
                             }
@@ -107,7 +142,18 @@
                 }
                 {% endif %}
 
+                const savedPageSize = parseInt(window.localStorage.getItem('products_page_size') || '50', 10);
+                if ([25, 50, 100, 200].includes(savedPageSize)) {
+                    this.pageSize = savedPageSize;
+                }
+
                 this.fetchProducts(1);
+                this.$watch('selectedIds', () => {
+                    this.$nextTick(() => this.syncSelectAllCheckbox());
+                }, { deep: true });
+                this.$watch('viewMode', () => {
+                    this.$nextTick(() => this.syncSelectAllCheckbox());
+                });
             },
             changeSort(field) {
                 if (this.sort.field === field) {
@@ -132,7 +178,14 @@
                 if (resetSelection) {
                     this.selectedIds = [];
                 }
-                const params = new URLSearchParams({ page, search: this.filterText, group: this.filterGroup, category: this.filterCategory });
+                const params = new URLSearchParams({
+                    page,
+                    search: this.filterText,
+                    group: this.filterGroup,
+                    category: this.filterCategory,
+                    supplier: this.filterSuppliers.join(','),
+                    limit: String(this.pageSize),
+                });
                 if (this.sort.field) {
                     params.set('sort_by', this.sort.field);
                     params.set('sort_dir', this.sort.direction);
@@ -151,12 +204,14 @@
                 } catch (error) { console.error('Failed to fetch products:', error); }
                 finally {
                     this.isLoading = false;
+                    this.$nextTick(() => this.syncSelectAllCheckbox());
                     // Persist current filters so they survive a full page reload.
                     try {
                         const payload = {
                             filterText: this.filterText || '',
                             filterGroup: this.filterGroup || '',
                             filterCategory: this.filterCategory || '',
+                            filterSuppliers: this.filterSuppliers || [],
                             sortField: this.sort.field || '',
                             sortDirection: this.sort.direction || 'asc',
                         };
@@ -167,7 +222,12 @@
                 }
             },
             clearFilters() {
-                this.filterText = ''; this.filterGroup = ''; this.filterCategory = '';
+                this.filterText = '';
+                this.filterGroup = '';
+                this.filterCategory = '';
+                this.filterSuppliers = [];
+                this.supplierFilterOpen = false;
+                this.categoryFilterOpen = false;
                 this.sort = { field: '', direction: 'asc' };
                 try {
                     window.localStorage.removeItem('manage_products_filters');
@@ -176,6 +236,28 @@
                 }
                 this.fetchProducts(1, { resetSelection: true });
             },
+            supplierFilterLabel() {
+                if (!this.filterSuppliers.length) {
+                    return 'All suppliers';
+                }
+                const names = this.filterSuppliers
+                    .map((id) => this.allSuppliers.find((s) => String(s.id) === id)?.name)
+                    .filter(Boolean);
+                return names.length ? names.join(', ') : 'All suppliers';
+            },
+            toggleSupplierFilter(supplierId) {
+                const key = String(supplierId);
+                if (this.filterSuppliers.includes(key)) {
+                    this.filterSuppliers = this.filterSuppliers.filter((id) => id !== key);
+                } else {
+                    this.filterSuppliers = [...this.filterSuppliers, key];
+                }
+                this.fetchProducts(1);
+            },
+            clearSupplierFilter() {
+                this.filterSuppliers = [];
+                this.fetchProducts(1);
+            },
             setGroupFilter(groupName) {
                 this.filterGroup = groupName;
                 this.filterCategory = '';
@@ -183,6 +265,22 @@
             },
             setCategoryFilter(categoryName) {
                 this.filterCategory = categoryName;
+                this.fetchProducts(1);
+            },
+            categoryFilterButtonLabel() {
+                if (!this.filterCategory) {
+                    return 'All categories';
+                }
+                return this.categoryFilterLabel(this.filterCategory) || 'All categories';
+            },
+            selectCategoryFilter(category) {
+                this.filterCategory = category;
+                this.categoryFilterOpen = false;
+                this.fetchProducts(1);
+            },
+            clearCategoryFilter() {
+                this.filterCategory = '';
+                this.categoryFilterOpen = false;
                 this.fetchProducts(1);
             },
             /** First segment before "|" for dual-language category names; filter value stays full string. */
@@ -194,6 +292,35 @@
             formatPrice(value) {
                 if (value === null || value === undefined) return 'N/A';
                 return `RM ${Number(value).toFixed(2)}`;
+            },
+            productCategoriesLabel(product) {
+                const cats = product?.categories || [];
+                const labels = cats.map((c) => this.categoryFilterLabel(c)).filter(Boolean);
+                return labels.length ? labels.join(', ') : '-';
+            },
+            formatPriceTierLine(tier) {
+                if (!tier) return '';
+                return `${tier.min_quantity}+ @ ${this.formatPrice(tier.price)}`;
+            },
+            productProfitLabel(product, priceOverride) {
+                if (!product || product.base_cost == null) return '';
+                const sell = priceOverride != null ? parseFloat(priceOverride) : parseFloat(product.selling_price);
+                const base = parseFloat(product.base_cost);
+                if (isNaN(sell) || isNaN(base)) return '';
+                const profit = sell - base;
+                let pct = null;
+                if (
+                    priceOverride == null
+                    && product.profit_margin != null
+                    && product.profit_margin !== ''
+                    && !isNaN(parseFloat(product.profit_margin))
+                ) {
+                    pct = Number(product.profit_margin);
+                } else if (sell > 0) {
+                    pct = ((sell - base) / sell) * 100;
+                }
+                const marginPart = pct != null && !isNaN(pct) ? ` (${pct.toFixed(2)}%)` : '';
+                return `${this.formatPrice(profit)}${marginPart}`;
             },
             normDisplayOrder(v) {
                 const n = parseInt(v, 10);
@@ -265,41 +392,54 @@
                     this.savingDisplayOrder = false;
                 }
             },
-            /** Grid card: "RM x.xx N%" = unit profit + margin (matches list view profit + margin columns). */
-            gridProfitCardLabel(product) {
-                if (!product || product.base_cost == null || product.selling_price == null) return '';
-                const sell = parseFloat(product.selling_price);
-                const base = parseFloat(product.base_cost);
-                if (isNaN(sell) || isNaN(base)) return '';
-                const profit = sell - base;
-                let pct = null;
-                if (product.profit_margin != null && product.profit_margin !== '' && !isNaN(parseFloat(product.profit_margin))) {
-                    pct = Number(product.profit_margin);
-                } else if (sell > 0) {
-                    pct = ((sell - base) / sell) * 100;
-                }
-                const marginPart = pct != null && !isNaN(pct) ? ` (${pct.toFixed(0)}%)` : '';
-                return `${this.formatPrice(profit)}${marginPart}`;
+
+            onPageSizeChange() {
+                window.localStorage.setItem('products_page_size', String(this.pageSize));
+                this.fetchProducts(1);
             },
 
             // --- Selection Methods (persist across category/search until Clear filters) ---
-            get productsSelectionAllVisibleChecked() {
+            isAllOnPageSelected() {
                 if (!this.items || !this.items.length) return false;
                 return this.items.every((item) => this.selectedIds.includes(item.id));
             },
-            get productsSelectionSomeVisibleChecked() {
+            isSomeOnPageSelected() {
                 if (!this.items || !this.items.length) return false;
-                const any = this.items.some((item) => this.selectedIds.includes(item.id));
-                return any && !this.productsSelectionAllVisibleChecked;
+                const some = this.items.some((item) => this.selectedIds.includes(item.id));
+                return some && !this.isAllOnPageSelected();
             },
-            toggleAll() {
-                const visibleIds = this.items.map((item) => item.id);
-                if (!visibleIds.length) return;
-                if (this.productsSelectionAllVisibleChecked) {
-                    this.selectedIds = this.selectedIds.filter((id) => !visibleIds.includes(id));
+            syncSelectAllCheckbox() {
+                const el = this.$refs.selectAllCheckbox;
+                if (!el) return;
+                const all = this.isAllOnPageSelected();
+                const some = this.isSomeOnPageSelected();
+                el.indeterminate = false;
+                if (all) {
+                    el.checked = true;
+                } else if (some) {
+                    el.checked = false;
+                    el.indeterminate = true;
                 } else {
-                    this.selectedIds = Array.from(new Set([...this.selectedIds, ...visibleIds]));
+                    el.checked = false;
                 }
+            },
+            deselectAllOnPage() {
+                const visibleIds = this.items.map((item) => item.id);
+                this.selectedIds = this.selectedIds.filter((id) => !visibleIds.includes(id));
+                this.syncSelectAllCheckbox();
+            },
+            selectAllOnPage() {
+                const visibleIds = this.items.map((item) => item.id);
+                this.selectedIds = Array.from(new Set([...this.selectedIds, ...visibleIds]));
+                this.syncSelectAllCheckbox();
+            },
+            toggleSelectAllOnPage() {
+                if (this.isAllOnPageSelected() || this.isSomeOnPageSelected()) {
+                    this.deselectAllOnPage();
+                } else {
+                    this.selectAllOnPage();
+                }
+                this.$nextTick(() => this.syncSelectAllCheckbox());
             },
             /** Toggle selection when clicking row/card blank area (not buttons, links, or form controls). */
             toggleProductRowSelect(productId, event) {
@@ -313,6 +453,7 @@
                 } else {
                     this.selectedIds = [...this.selectedIds, id];
                 }
+                this.$nextTick(() => this.syncSelectAllCheckbox());
             },
             exportSelectedPdf() {
                 if (this.selectedIds.length === 0) {
@@ -362,6 +503,7 @@
                         if (this.items.length === 0 && page > 1) {
                             await this.fetchProducts(page - 1);
                         }
+                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'inventory' } }));
                     } else {
                         Alpine.store('globals').showToast(data.error || 'Delete failed.', 'error');
                     }
@@ -559,6 +701,7 @@
             filterText: '',
             filterGroup: '',
             filterCategory: '',
+            categoryFilterOpen: false,
             allCategories: [],
             groupCategoriesMap: {},
             init() {
@@ -587,14 +730,41 @@
                 finally { this.isLoading = false; }
             },
             clearFilters() {
-                this.filterText = ''; this.filterGroup = ''; this.filterCategory = ''; this.fetchInventory(1);
+                this.filterText = '';
+                this.filterGroup = '';
+                this.filterCategory = '';
+                this.categoryFilterOpen = false;
+                this.fetchInventory(1);
             },
             setGroupFilter(groupName) {
-                this.filterGroup = groupName; this.filterCategory = ''; this.fetchInventory(1);
+                this.filterGroup = groupName;
+                this.filterCategory = '';
+                this.fetchInventory(1);
             },
             setCategoryFilter(categoryName) {
                 this.filterCategory = categoryName;
                 this.fetchInventory(1);
+            },
+            categoryFilterButtonLabel() {
+                if (!this.filterCategory) {
+                    return 'All categories';
+                }
+                return this.categoryFilterLabel(this.filterCategory) || 'All categories';
+            },
+            selectCategoryFilter(category) {
+                this.filterCategory = category;
+                this.categoryFilterOpen = false;
+                this.fetchInventory(1);
+            },
+            clearCategoryFilter() {
+                this.filterCategory = '';
+                this.categoryFilterOpen = false;
+                this.fetchInventory(1);
+            },
+            categoryFilterLabel(category) {
+                if (category === null || category === undefined || typeof category !== 'string') return '';
+                const i = category.indexOf('|');
+                return (i >= 0 ? category.slice(0, i) : category).trim();
             },
             formatPrice(value) {
                 if (value === null || value === undefined) return 'N/A';

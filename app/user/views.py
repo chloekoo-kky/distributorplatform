@@ -168,26 +168,71 @@ def handler403(request, exception=None):
     return redirect('product:product_list')
 
 
+def _serialize_user_group(g):
+    return {
+        'id': g.id,
+        'name': g.name,
+        'commission_type': g.commission_type,
+        'commission_percentage': float(g.commission_percentage),
+        'tier_commission_rates': g.tier_commission_rates or [],
+    }
+
+
+def _apply_commission_fields(group, data):
+    """Apply commission type, rate, and tier fields from POST data onto a UserGroup instance."""
+    commission_type = data.get('commission_type', UserGroup.COMMISSION_PROFIT)
+    if commission_type not in (UserGroup.COMMISSION_PROFIT, UserGroup.COMMISSION_SELLING):
+        commission_type = UserGroup.COMMISSION_PROFIT
+    group.commission_type = commission_type
+
+    if commission_type == UserGroup.COMMISSION_PROFIT:
+        commission_str = data.get('commission_percentage')
+        if commission_str is None:
+            raise ValueError("Commission percentage is required for the % of Profit type.")
+        group.commission_percentage = Decimal(str(commission_str))
+        group.tier_commission_rates = []
+    else:
+        rates = data.get('tier_commission_rates', [])
+        cleaned = []
+        for r in rates:
+            min_qty = int(r.get('min_quantity', 1))
+            rate = float(r.get('rate', 0))
+            if min_qty >= 1 and rate >= 0:
+                cleaned.append({'min_quantity': min_qty, 'rate': rate})
+        cleaned.sort(key=lambda x: x['min_quantity'])
+        group.tier_commission_rates = cleaned
+        group.commission_percentage = Decimal('0')
+
+
 @staff_required
 def api_manage_user_groups(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             group_id = data.get('id')
-            commission_str = data.get('commission_percentage')
-            if commission_str is None: raise ValueError("Commission percentage required.")
 
-            group = get_object_or_404(UserGroup, pk=group_id)
-            group.commission_percentage = Decimal(commission_str)
-            group.save(update_fields=['commission_percentage'])
+            if group_id:
+                # Update existing group
+                group = get_object_or_404(UserGroup, pk=group_id)
+                _apply_commission_fields(group, data)
+                group.save(update_fields=['commission_type', 'commission_percentage', 'tier_commission_rates'])
+            else:
+                # Create new group
+                name = (data.get('name') or '').strip()
+                if not name:
+                    raise ValueError("Group name is required.")
+                if UserGroup.objects.filter(name__iexact=name).exists():
+                    raise ValueError(f"A group named \"{name}\" already exists.")
+                group = UserGroup(name=name)
+                _apply_commission_fields(group, data)
+                group.save()
 
-            return JsonResponse({'success': True, 'group': {'id': group.id, 'name': group.name, 'commission_percentage': group.commission_percentage}})
+            return JsonResponse({'success': True, 'group': _serialize_user_group(group), 'created': not group_id})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
     groups = UserGroup.objects.all().order_by('name')
-    data = [{'id': g.id, 'name': g.name, 'commission_percentage': g.commission_percentage} for g in groups]
-    return JsonResponse({'groups': data})
+    return JsonResponse({'groups': [_serialize_user_group(g) for g in groups]})
 
 @staff_required
 def api_manage_users(request):

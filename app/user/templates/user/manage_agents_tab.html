@@ -4,26 +4,55 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         <div class="lg:col-span-1">
-            <h3 class="text-2xl font-semibold text-gray-700 mb-6">Agent Groups</h3>
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-2xl font-semibold text-gray-700">Agent Groups</h3>
+                <button type="button" @click="openGroupModal(null)"
+                        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    New Group
+                </button>
+            </div>
             <div class="bg-white shadow-lg rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission (%)</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commission Type</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             <template x-if="groups.length === 0">
-                                <tr><td colspan="3" class="px-6 py-4 text-center text-gray-500">No agent groups found.</td></tr>
+                                <tr><td colspan="4" class="px-4 py-4 text-center text-gray-500">No agent groups found.</td></tr>
                             </template>
                             <template x-for="group in groups" :key="group.id">
                                 <tr>
-                                    <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="group.name"></td>
-                                    <td class="px-6 py-4 text-sm text-gray-500" x-text="`${group.commission_percentage}%`"></td>
-                                    <td class="px-6 py-4 text-sm font-medium">
+                                    <td class="px-4 py-3 text-sm font-medium text-gray-900" x-text="group.name"></td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                              :class="group.commission_type === 'SELLING_PCT' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'"
+                                              x-text="group.commission_type === 'SELLING_PCT' ? '% of Selling Price' : '% of Profit'">
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">
+                                        <template x-if="group.commission_type === 'SELLING_PCT'">
+                                            <div class="space-y-0.5">
+                                                <template x-for="(t, i) in (group.tier_commission_rates || [])" :key="i">
+                                                    <div class="text-xs" x-text="`≥${t.min_quantity} qty: ${t.rate}%`"></div>
+                                                </template>
+                                                <span x-show="!group.tier_commission_rates || !group.tier_commission_rates.length"
+                                                      class="text-xs text-gray-400">No tiers set</span>
+                                            </div>
+                                        </template>
+                                        <template x-if="group.commission_type !== 'SELLING_PCT'">
+                                            <span x-text="`${group.commission_percentage}% of profit`"></span>
+                                        </template>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm font-medium">
                                         <button @click="openGroupModal(group)" class="text-indigo-600 hover:text-indigo-900">Edit</button>
                                     </td>
                                 </tr>
@@ -113,23 +142,112 @@
             <button @click="showGroupModal = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <h3 class="text-2xl font-bold text-gray-800 p-6 border-b">Edit Group: <span x-text="currentGroup.name" class="text-indigo-600"></span></h3>
+            <h3 class="text-xl font-bold text-gray-800 px-6 pt-6 pb-4 border-b">
+                <span x-show="currentGroup.id">Edit Group: <span x-text="currentGroup.name" class="text-indigo-600"></span></span>
+                <span x-show="!currentGroup.id" class="text-indigo-600">New Agent Group</span>
+            </h3>
 
             <form @submit.prevent="submitGroupEdit()">
-                <div class="p-6 space-y-4">
+                <div class="p-6 space-y-5 overflow-y-auto max-h-[60vh]">
+
+                    {# Group name — only when creating #}
+                    <div x-show="!currentGroup.id">
+                        <label for="group_name" class="text-sm font-semibold text-gray-700 block mb-1">Group Name</label>
+                        <input type="text" id="group_name" x-model="currentGroup.name"
+                               placeholder="e.g. Senior Agent, Regional Partner"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    </div>
+
+                    {# Commission type selector #}
                     <div>
-                        <label for="commission_percentage" class="font-semibold text-gray-700 block mb-1">Commission Percentage</label>
-                        <input type="number" id="commission_percentage" x-model.number="currentGroup.commission_percentage"
+                        <label class="font-semibold text-gray-700 block mb-2 text-sm">Commission Type</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer transition-all"
+                                   :class="currentGroup.commission_type === 'PROFIT_PCT' ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-400' : 'border-gray-200 hover:border-indigo-200'">
+                                <input type="radio" x-model="currentGroup.commission_type" value="PROFIT_PCT"
+                                       class="mt-0.5 h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 shrink-0">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-800">% of Profit</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Single rate applied to profit per unit</p>
+                                </div>
+                            </label>
+                            <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer transition-all"
+                                   :class="currentGroup.commission_type === 'SELLING_PCT' ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-400' : 'border-gray-200 hover:border-amber-200'">
+                                <input type="radio" x-model="currentGroup.commission_type" value="SELLING_PCT"
+                                       class="mt-0.5 h-4 w-4 text-amber-600 border-gray-300 focus:ring-amber-500 shrink-0">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-800">% of Selling Price</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Different rate per quantity tier</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    {# PROFIT_PCT fields #}
+                    <div x-show="currentGroup.commission_type === 'PROFIT_PCT'">
+                        <label for="commission_percentage" class="text-sm font-semibold text-gray-700 block mb-1">
+                            Commission Rate <span class="font-normal text-gray-400">(%)</span>
+                        </label>
+                        <input type="number" id="commission_percentage"
+                               x-model.number="currentGroup.commission_percentage"
                                step="0.01" min="0" max="100"
-                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <p class="text-xs text-gray-500 mt-1">Enter a value (e.g., 30 for 30%).</p>
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <p class="text-xs text-gray-400 mt-1">e.g. 30 means the agent earns 30% of profit per unit sold.</p>
+                    </div>
+
+                    {# SELLING_PCT tier rates editor #}
+                    <div x-show="currentGroup.commission_type === 'SELLING_PCT'" class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-700">Quantity Tier Rates</p>
+                                <p class="text-xs text-gray-400">Commission rate applied to the selling price at each quantity threshold.</p>
+                            </div>
+                            <button type="button"
+                                    @click="currentGroup.tier_commission_rates = [...(currentGroup.tier_commission_rates || []), {min_quantity: 1, rate: 0}]"
+                                    class="text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors">
+                                + Add tier
+                            </button>
+                        </div>
+
+                        <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-2 max-h-52 overflow-y-auto">
+                            <template x-if="!currentGroup.tier_commission_rates || currentGroup.tier_commission_rates.length === 0">
+                                <p class="text-xs text-gray-400 italic py-1 px-1">No tiers yet. Add at least one tier.</p>
+                            </template>
+                            <template x-for="(tier, idx) in (currentGroup.tier_commission_rates || [])" :key="idx">
+                                <div class="flex items-end gap-2 bg-white border border-gray-100 rounded-lg px-3 py-2 shadow-sm">
+                                    <div class="flex flex-col gap-1 w-28">
+                                        <label class="text-[11px] font-medium text-gray-500">Min qty</label>
+                                        <input type="number" x-model.number="tier.min_quantity" min="1"
+                                               class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-amber-400 focus:outline-none">
+                                    </div>
+                                    <div class="flex flex-col gap-1 flex-1">
+                                        <label class="text-[11px] font-medium text-gray-500">Rate (%)</label>
+                                        <input type="number" x-model.number="tier.rate" min="0" max="100" step="0.01"
+                                               class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-amber-400 focus:outline-none">
+                                    </div>
+                                    <button type="button"
+                                            @click="currentGroup.tier_commission_rates.splice(idx, 1)"
+                                            class="pb-1.5 text-xs font-semibold text-red-500 hover:text-red-700 shrink-0">
+                                        Remove
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="text-[11px] text-gray-400">
+                            Step-down logic applies: for a given order quantity the highest matching tier rate is used.
+                        </p>
                     </div>
                 </div>
-                <div class="p-6 bg-gray-50 border-t flex justify-end space-x-3">
-                    <button type="button" @click="showGroupModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
-                    <button type="submit" :disabled="isSubmitting" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
-                        <span x-show="!isSubmitting">Save Commission</span>
-                        <span x-show="isSubmitting">Saving...</span>
+
+                <div class="p-5 bg-gray-50 border-t flex justify-end gap-2">
+                    <button type="button" @click="showGroupModal = false"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" :disabled="isSubmitting"
+                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                        <span x-show="!isSubmitting" x-text="currentGroup.id ? 'Save Changes' : 'Create Group'"></span>
+                        <span x-show="isSubmitting">Saving…</span>
                     </button>
                 </div>
             </form>
@@ -225,7 +343,7 @@ function agentManagerData() {
         isResettingPassword: false,
 
         showGroupModal: false,
-        currentGroup: { id: null, name: '', commission_percentage: 0 },
+        currentGroup: { id: null, name: '', commission_type: 'PROFIT_PCT', commission_percentage: 0, tier_commission_rates: [] },
 
         showUserModal: false,
         currentUser: { id: null, username: '', groups: [] },
@@ -270,7 +388,15 @@ function agentManagerData() {
         },
 
         openGroupModal(group) {
-            this.currentGroup = { ...group }; // Clone the group object
+            if (group) {
+                this.currentGroup = {
+                    ...group,
+                    commission_type: group.commission_type || 'PROFIT_PCT',
+                    tier_commission_rates: JSON.parse(JSON.stringify(group.tier_commission_rates || [])),
+                };
+            } else {
+                this.currentGroup = { id: null, name: '', commission_type: 'PROFIT_PCT', commission_percentage: 0, tier_commission_rates: [] };
+            }
             this.showGroupModal = true;
         },
 
@@ -289,13 +415,15 @@ function agentManagerData() {
                 });
                 const data = await response.json();
                 if (response.ok && data.success) {
-                    // Update the group in the local list
-                    const index = this.groups.findIndex(g => g.id === data.group.id);
-                    if (index !== -1) {
-                        this.groups[index] = data.group;
+                    if (data.created) {
+                        // Insert new group alphabetically
+                        this.groups.push(data.group);
+                        this.groups.sort((a, b) => a.name.localeCompare(b.name));
+                    } else {
+                        const index = this.groups.findIndex(g => g.id === data.group.id);
+                        if (index !== -1) this.groups[index] = data.group;
                     }
                     this.showGroupModal = false;
-                    alert('Commission updated!');
                 } else {
                     throw new Error(data.error || 'Failed to update group.');
                 }

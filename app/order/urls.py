@@ -31,6 +31,9 @@ urlpatterns = [
     path('api/orders-breakdown/', views.api_orders_breakdown, name='api_orders_breakdown'),
     path('api/export-selected-orders/', views.export_selected_orders, name='export_selected_orders'),
     path('api/cash-bank-receipt/', views.api_cash_bank_receipt_create, name='api_cash_bank_receipt_create'),
+    path('api/cash-received-breakdown/', views.api_cash_received_breakdown, name='api_cash_received_breakdown'),
+    path('api/agent-commission-payment/', views.api_agent_commission_payment_create, name='api_agent_commission_payment_create'),
+    path('api/revenue-adjustment/', views.api_revenue_adjustment_create, name='api_revenue_adjustment_create'),
     path('api/bulk-update-status/', views.api_bulk_update_order_status, name='api_bulk_update_status'),
     path('export/orders-range/', views.export_orders_range, name='export_orders_range'),
 

@@ -193,6 +193,7 @@ def api_manage_posts(request):
             'created_at': post.created_at.strftime('%Y-%m-%d'),
             'user_groups': [group.name for group in post.user_groups.all()],
             'featured_image_id': post.featured_image_id,
+            'featured_image_url': post.featured_image.image.url if post.featured_image else '',
             'gallery_image_ids': list(post.gallery_images.all().values_list('id', flat=True)),
             'edit_url': reverse('blog:manage_post_edit', args=[post.id]),
             'view_url': post.get_absolute_url(),

@@ -2,6 +2,7 @@
 from import_export import resources, fields, widgets
 from .models import Quotation, QuotationItem, Supplier, InventoryBatch # <-- Add InventoryBatch
 from product.models import Product # Keep Product import here
+from sales.models import Invoice, InvoiceItem
 from django.utils.dateparse import parse_date
 from datetime import date, datetime
 from decimal import Decimal # Import Decimal
@@ -264,6 +265,234 @@ class QuotationResource(resources.ModelResource):
 
     def dehydrate_quotation__notes(self, item): # Match export_order field name
          return item.quotation.notes if item.quotation else ''
+
+
+class InvoiceImportResource(resources.ModelResource):
+    """Import standalone invoices (no linked purchase order) from spreadsheet rows."""
+
+    date_issued_field = fields.Field(
+        column_name='Date Issued',
+        widget=widgets.DateWidget(format='%Y-%m-%d'),
+    )
+
+    class Meta:
+        model = InvoiceItem
+        fields = ('id',)
+        import_id_fields = ()
+        skip_unchanged = True
+        report_skipped = True
+        use_bulk = False
+
+    def _clean_str(self, value, field_name, required=True):
+        if value is None:
+            if required:
+                raise ValueError(f"'{field_name}' is required and missing.")
+            return None
+        cleaned = str(value).strip()
+        if required and not cleaned:
+            raise ValueError(f"'{field_name}' is required and cannot be blank.")
+        return cleaned or None
+
+    @staticmethod
+    def _is_placeholder_product(value):
+        if value is None:
+            return True
+        s = str(value).strip().upper()
+        return s in ('', 'N/A', 'NA', '-', 'NONE')
+
+    def _parse_date(self, date_str, field_name):
+        try:
+            return self.date_issued_field.widget.clean(date_str)
+        except Exception:
+            pass
+        s = str(date_str).strip() if date_str is not None else ''
+        parsed = parse_date(s[:10]) if len(s) >= 8 else parse_date(s) if s else None
+        if parsed:
+            return parsed
+        raise ValueError(f"'{field_name}' ('{date_str}') is not a valid date (use YYYY-MM-DD).")
+
+    def _cell_to_date_str(self, raw, field_name):
+        if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+            raise ValueError(f"'{field_name}' is required and missing.")
+        if isinstance(raw, datetime):
+            return raw.date().isoformat()
+        if isinstance(raw, date):
+            return raw.isoformat()
+        return str(raw).strip()
+
+    def _get_or_create_supplier(self, name):
+        supplier, _ = Supplier.objects.get_or_create(name=name)
+        return supplier
+
+    def _resolve_product_from_row(self, row, product_name_required):
+        sku_raw = row.get('Product SKU')
+        sku = str(sku_raw).strip() if sku_raw is not None and str(sku_raw).strip() else ''
+        if sku:
+            product = Product.objects.filter(sku=sku).first()
+            if product:
+                return product
+        product = Product.objects.filter(name__iexact=product_name_required.strip()).first()
+        if product:
+            return product
+        product, _ = Product.objects.get_or_create(
+            name=product_name_required,
+            defaults={'description': 'Auto-imported'},
+        )
+        return product
+
+    def _row_unit_price_raw(self, row):
+        for key in ('Unit Price (MYR)', 'Quoted Price (MYR)', 'Quoted Price (Unit)'):
+            v = row.get(key)
+            if v is not None and str(v).strip():
+                return v
+        return None
+
+    def _row_date_raw(self, row):
+        for key in ('Date Issued', 'Date Quoted'):
+            v = row.get(key)
+            if v is not None and str(v).strip():
+                return v
+        return None
+
+    def _row_notes_raw(self, row):
+        for key in ('Invoice Notes', 'Quotation Notes'):
+            v = row.get(key)
+            if v is not None:
+                return v
+        return ''
+
+    def _get_or_create_invoice(self, invoice_id, supplier, date_issued, notes, transport_cost, status):
+        notes_val = notes if notes is not None else ''
+        valid_statuses = {c[0] for c in Invoice.InvoiceStatus.choices}
+        status_val = status if status in valid_statuses else Invoice.InvoiceStatus.DRAFT
+        try:
+            invoice = Invoice.objects.get(invoice_id=invoice_id)
+        except Invoice.DoesNotExist:
+            return Invoice.objects.create(
+                invoice_id=invoice_id,
+                supplier=supplier,
+                date_issued=date_issued,
+                notes=notes_val,
+                transportation_cost=transport_cost,
+                status=status_val,
+                quotation=None,
+            )
+        if invoice.quotation_id is not None:
+            raise ValueError(
+                f"Invoice '{invoice_id}' is linked to purchase order "
+                f"{invoice.quotation.quotation_id} and cannot be updated via import."
+            )
+        invoice.supplier = supplier
+        invoice.date_issued = date_issued
+        invoice.notes = notes_val
+        invoice.transportation_cost = transport_cost
+        if status in valid_statuses:
+            invoice.status = status
+        invoice.save()
+        return invoice
+
+    def before_import_row(self, row, row_number=None, **kwargs):
+        try:
+            supplier_name = self._clean_str(row.get('Supplier'), 'Supplier')
+            date_str = self._cell_to_date_str(self._row_date_raw(row), 'Date Issued')
+            invoice_id = self._clean_str(row.get('Invoice ID'), 'Invoice ID')
+            notes = self._clean_str(self._row_notes_raw(row), 'Invoice Notes', required=False) or ''
+            transport_cost_str = self._clean_str(row.get('Transportation Cost'), 'Transportation Cost', required=False) or '0'
+            status_raw = self._clean_str(row.get('Status'), 'Status', required=False)
+            status = status_raw.upper() if status_raw else None
+
+            cleaned_date = self._parse_date(date_str, 'Date Issued')
+            try:
+                transport_cost = Decimal(str(transport_cost_str).replace(',', '').strip())
+            except Exception:
+                raise ValueError(f"'Transportation Cost' ('{transport_cost_str}') is not a valid number.")
+
+            placeholder_name = None
+            for key in ('Invoice line product name', 'Quotation line product name', 'Product Name', 'Product', 'System product name'):
+                v = row.get(key)
+                if v is not None and str(v).strip():
+                    placeholder_name = v
+                    break
+            if self._is_placeholder_product(placeholder_name):
+                supplier = self._get_or_create_supplier(supplier_name)
+                invoice = self._get_or_create_invoice(
+                    invoice_id, supplier, cleaned_date, notes, transport_cost, status
+                )
+                row['_invoice_obj'] = invoice
+                row['_skip_item'] = True
+                return
+
+            name_cell = row.get('Product Name')
+            if name_cell is None or (isinstance(name_cell, str) and not str(name_cell).strip()):
+                name_cell = row.get('Product')
+            if name_cell is None or (isinstance(name_cell, str) and not str(name_cell).strip()):
+                name_cell = row.get('System product name')
+            product_name = self._clean_str(name_cell, 'Product Name')
+
+            line_cell = row.get('Invoice line product name') or row.get('Quotation line product name')
+            if line_cell is not None and str(line_cell).strip():
+                row['_source_line_label'] = str(line_cell).strip()[:255]
+            else:
+                row['_source_line_label'] = (str(name_cell).strip() if name_cell is not None else '')[:255]
+
+            self._clean_str(row.get('Quantity'), 'Quantity')
+            self._clean_str(self._row_unit_price_raw(row), 'Unit Price (MYR)')
+
+            supplier = self._get_or_create_supplier(supplier_name)
+            product = self._resolve_product_from_row(row, product_name)
+            invoice = self._get_or_create_invoice(
+                invoice_id, supplier, cleaned_date, notes, transport_cost, status
+            )
+
+            row['_product_obj'] = product
+            row['_invoice_obj'] = invoice
+
+        except ValueError as e:
+            raise ValueError(f"Row {row_number}: {e}")
+        except Exception as e:
+            raise ValueError(f"Row {row_number}: Unexpected error - {e}")
+
+    def skip_row(self, instance, original, row, import_validation_errors=None):
+        if row.get('_skip_item'):
+            return True
+        return super().skip_row(instance, original, row, import_validation_errors)
+
+    def get_instance(self, instance_loader, row):
+        if row.get('_skip_item'):
+            return None
+        try:
+            invoice = row['_invoice_obj']
+            product = row['_product_obj']
+            return InvoiceItem.objects.get(invoice=invoice, product=product)
+        except InvoiceItem.DoesNotExist:
+            return None
+        except Exception:
+            return None
+
+    def import_obj(self, instance, row, dry_run):
+        try:
+            instance.invoice = row['_invoice_obj']
+            instance.product = row['_product_obj']
+
+            quantity_str = self._clean_str(row.get('Quantity'), 'Quantity')
+            price_str = self._clean_str(self._row_unit_price_raw(row), 'Unit Price (MYR)')
+
+            try:
+                instance.quantity = int(quantity_str)
+            except (ValueError, TypeError):
+                raise ValueError(f"'Quantity' ('{quantity_str}') must be an integer.")
+            try:
+                instance.unit_price = Decimal(str(price_str).replace(',', '').strip())
+            except Exception:
+                raise ValueError(f"'Unit Price (MYR)' ('{price_str}') must be a valid number.")
+
+            lbl = (row.get('_source_line_label') or '').strip()[:255]
+            instance.description = lbl or (row['_product_obj'].name or '')
+
+        except ValueError as e:
+            raise ValueError(str(e))
+        except Exception as e:
+            raise ValueError(f"Unexpected error populating object: {e}")
 
 
 class InventoryBatchResource(resources.ModelResource):

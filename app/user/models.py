@@ -7,18 +7,37 @@ from phonenumber_field.modelfields import PhoneNumberField
 
 
 class UserGroup(models.Model):
+    COMMISSION_PROFIT = 'PROFIT_PCT'
+    COMMISSION_SELLING = 'SELLING_PCT'
+    COMMISSION_TYPE_CHOICES = [
+        (COMMISSION_PROFIT, '% of profit'),
+        (COMMISSION_SELLING, '% of selling price (by quantity tier)'),
+    ]
+
     name = models.CharField(max_length=100, unique=True, help_text="e.g., 'Agent Tiers', 'Customer Types'")
     product_categories = models.ManyToManyField('product.Category', blank=True, related_name="user_groups")
     is_default = models.BooleanField(default=False, help_text="Set this as the default group for new users.")
 
-    # --- START ADDITION ---
+    commission_type = models.CharField(
+        max_length=20,
+        choices=COMMISSION_TYPE_CHOICES,
+        default=COMMISSION_PROFIT,
+        help_text="How commission is calculated for agents in this group.",
+    )
     commission_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         default=0.00,
-        help_text="The percentage of the *profit* this group earns as commission (e.g., 50.00 for 50%)."
+        help_text="For PROFIT_PCT: percentage of profit per unit (e.g., 50.00 for 50%).",
     )
-    # --- END ADDITION ---
+    tier_commission_rates = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "For SELLING_PCT: list of {min_quantity, rate} objects defining commission rate "
+            "per quantity tier, e.g. [{\"min_quantity\": 1, \"rate\": 5.0}, {\"min_quantity\": 10, \"rate\": 4.0}]."
+        ),
+    )
 
     def __str__(self):
         return self.name

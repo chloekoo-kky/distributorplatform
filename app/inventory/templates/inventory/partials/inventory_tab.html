@@ -3,75 +3,78 @@
      @refresh-data.window="if ($event.detail.tab === 'inventory') fetchInventory()"
      id="inventory-table-wrapper"
 >
-    {# --- Header Section with Title, Search, and Action Buttons --- #}
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4">
-
-        {# Left Side: Title and Search Input #}
-        <div class="flex flex-col md:flex-row items-start md:items-center gap-4 flex-1 w-full">
-            <h3 class="text-2xl font-semibold text-gray-700 whitespace-nowrap">Current Inventory</h3>
-
-            <div class="relative w-full md:w-72">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-                    </svg>
-                </div>
-                <input type="text"
-                       x-model.debounce.500ms="filterText"
-                       @keydown.enter.prevent="fetchInventory(1)"
-                       placeholder="Search SKU or product..."
-                       class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-            </div>
-
-                        {# Filter: Clear Button #}
-            <div class="flex-shrink-0">
-                <button @click.prevent="clearFilters()" class="inline-flex justify-center items-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
-                    <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Clear Filters
-                </button>
-            </div>
-        </div>
-
-        {# Right Side: Action Buttons #}
-        <div class="flex space-x-2 shrink-0">
-            <button @click="$dispatch('open-upload-batch-modal')" class="px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors">
-                Upload Batches
-            </button>
-            <a href="{% url 'inventory:export_batches_csv' %}" class="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors">
-                Export All Batches
-            </a>
-        </div>
+    <div class="mb-2">
+        <h3 class="text-xl sm:text-2xl font-semibold text-gray-700">Current Inventory</h3>
     </div>
 
-    {# --- Filters Section --- #}
-    <div class="p-4 bg-gray-50 border-b border-gray-200">
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-
-            <div class="space-y-2 flex-1">
-
-
-                {# Filter: Categories #}
-                <div>
-                    <div class="flex flex-wrap gap-2">
-                        <button @click.prevent="setCategoryFilter('')" :class="{ 'bg-indigo-600 text-white': filterCategory === '', 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== '' }"
-                                class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium transition-colors">
-                            All Categories
+    {# --- Filters --- #}
+    <div class="p-3 sm:p-4 bg-gray-50 border-b border-gray-200">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-3 min-w-0">
+            <div class="relative w-full sm:w-56 shrink-0" @click.outside="categoryFilterOpen = false">
+                <button type="button"
+                        @click="categoryFilterOpen = !categoryFilterOpen"
+                        class="flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 h-10 text-sm text-gray-700 shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        aria-label="Filter by category">
+                    <span class="truncate" x-text="categoryFilterButtonLabel()"></span>
+                    <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform"
+                         :class="categoryFilterOpen ? 'rotate-180' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="categoryFilterOpen"
+                     x-cloak
+                     class="absolute z-30 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-60 overflow-y-auto">
+                    <button type="button"
+                            @click="clearCategoryFilter()"
+                            class="w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50 border-b border-gray-100">
+                        All categories
+                    </button>
+                    <template x-for="category in availableCategories" :key="category">
+                        <button type="button"
+                                @click="selectCategoryFilter(category)"
+                                class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 truncate"
+                                :class="filterCategory === category ? 'text-indigo-600 font-medium bg-indigo-50' : 'text-gray-700'">
+                            <span x-text="categoryFilterLabel(category)"></span>
                         </button>
-
-                        <template x-for="category in availableCategories" :key="category">
-                            <button @click.prevent="setCategoryFilter(category)"
-                                    :class="{ 'bg-indigo-600 text-white': filterCategory === category, 'bg-white text-gray-700 hover:bg-gray-50': filterCategory !== category }"
-                                    class="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium transition-colors"
-                                    x-text="category">
-                            </button>
-                        </template>
-                    </div>
+                    </template>
+                    <p x-show="availableCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">No categories found.</p>
                 </div>
             </div>
-
-
+            <div class="flex flex-row gap-2 items-center min-w-0 lg:flex-1">
+                <div class="relative flex-1 min-w-0">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <input type="text"
+                           x-model.debounce.500ms="filterText"
+                           @input.debounce.500ms="fetchInventory(1)"
+                           @keydown.enter.prevent="fetchInventory(1)"
+                           placeholder="Search SKU or product..."
+                           class="block w-full min-w-0 h-10 pl-10 pr-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm shadow-sm">
+                </div>
+                <button type="button"
+                        @click.prevent="clearFilters()"
+                        class="inline-flex justify-center items-center gap-1.5 h-10 px-2.5 sm:px-3 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors shrink-0 whitespace-nowrap">
+                    <svg class="h-4 w-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>Clear</span>
+                </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 lg:shrink-0">
+                <button type="button"
+                        @click="$dispatch('open-upload-batch-modal')"
+                        class="inline-flex items-center justify-center h-10 px-4 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm transition-colors">
+                    Upload Batches
+                </button>
+                <a href="{% url 'inventory:export_batches_csv' %}"
+                   class="inline-flex items-center justify-center h-10 px-4 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 shadow-sm transition-colors">
+                    Export All Batches
+                </a>
+            </div>
         </div>
     </div>
 
@@ -124,25 +127,38 @@
                                         <table x-show="!isLoading && batches.length > 0" class="min-w-full divide-y divide-gray-200">
                                             <thead class="bg-gray-100">
                                                 <tr>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Batch Number</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quotation ID</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Landed Cost (Unit)</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Expiry</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Invoice No.</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Landed Cost</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Batch No.</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Expiry</th>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                                                    <th class="px-3 py-2 w-10"></th>
                                                 </tr>
                                             </thead>
-                                            <tbody class="bg-white">
-                                                <template x-for="batch in batches" :key="batch.batch_number">
+                                            <tbody class="bg-white divide-y divide-gray-100">
+                                                <template x-for="batch in batches" :key="batch.id">
                                                     <tr>
-                                                        <td class="px-4 py-2 text-sm text-gray-900" x-text="batch.batch_number"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.supplier_name"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.quotation_id"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="formatPrice(batch.landed_cost)"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.quantity"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.received_date"></td>
-                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="batch.expiry_date"></td>
+                                                        <td class="px-3 py-2 text-sm text-gray-700 font-mono" x-text="batch.invoice_number"></td>
+                                                        <td class="px-3 py-2 text-sm text-gray-500" x-text="batch.supplier_name"></td>
+                                                        <td class="px-3 py-2 text-sm text-gray-500 tabular-nums" x-text="formatPrice(batch.landed_cost)"></td>
+                                                        <td class="px-3 py-2 text-sm font-mono"
+                                                            :class="batch.batch_number ? 'text-gray-900' : 'text-gray-300'"
+                                                            x-text="batch.batch_number || '—'"></td>
+                                                        <td class="px-3 py-2 text-sm"
+                                                            :class="batch.expiry_date ? 'text-gray-500' : 'text-gray-300'"
+                                                            x-text="batch.expiry_date || '—'"></td>
+                                                        <td class="px-3 py-2 text-sm text-gray-700 tabular-nums font-medium" x-text="batch.quantity"></td>
+                                                        <td class="px-3 py-2 text-right">
+                                                            <button type="button"
+                                                                    @click.stop="$dispatch('open-edit-batch-modal', { batch: batch, productId: id })"
+                                                                    class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-gray-500 bg-white hover:bg-gray-50 hover:text-indigo-600 hover:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                                    title="Edit batch details">
+                                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                                </svg>
+                                                            </button>
+                                                        </td>
                                                     </tr>
                                                 </template>
                                             </tbody>
@@ -171,3 +187,256 @@
         </div>
     </div>
 </div>
+
+{# ── Edit Batch Details Modal ──────────────────────────────────── #}
+<div x-data="editBatchModalData()"
+     @open-edit-batch-modal.window="open($event.detail)"
+     x-show="isOpen"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75"
+     style="display:none;">
+    <div @click.away="close()"
+         class="relative bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-4 max-h-[90vh] overflow-y-auto">
+        <button @click="close()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+
+        <h3 class="text-lg font-bold text-gray-800 mb-1" x-text="mode === 'group' ? 'Batch Details' : 'Edit Batch'"></h3>
+        <p class="text-xs text-gray-500 mb-4">
+            <span x-show="groupMeta.invoice_number">Invoice: <span class="font-mono" x-text="groupMeta.invoice_number"></span></span>
+            <span x-show="groupMeta.product_name"> · <span x-text="groupMeta.product_name"></span></span>
+        </p>
+
+        {# ── Group mode: multiple batches per receipt ── #}
+        <template x-if="mode === 'group'">
+            <div class="space-y-3">
+                <p class="text-xs text-gray-500">
+                    Split this receipt into multiple batches. Total quantity must stay
+                    <span class="font-semibold tabular-nums" x-text="groupMeta.total_quantity"></span>.
+                </p>
+                <template x-for="(row, idx) in groupRows" :key="row._key">
+                    <div class="rounded-lg border border-gray-200 p-3 space-y-2 bg-gray-50/50">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide" x-text="'Batch ' + (idx + 1)"></span>
+                            <button type="button"
+                                    x-show="groupRows.length > 1"
+                                    @click="removeGroupRow(idx)"
+                                    class="text-xs text-red-500 hover:text-red-700">Remove</button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="col-span-2">
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Batch No. <span class="text-gray-400 font-normal">(optional)</span></label>
+                                <input type="text" x-model="row.batch_number" placeholder="e.g. LOT-2026-001"
+                                       class="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Qty</label>
+                                <input type="number" x-model.number="row.quantity" min="1" step="1"
+                                       class="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm tabular-nums focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Expiry <span class="text-gray-400 font-normal">(opt.)</span></label>
+                                <input type="date" x-model="row.expiry_date"
+                                       class="w-full px-2.5 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <button type="button" @click="addGroupRow()"
+                        class="text-sm font-medium text-indigo-600 hover:text-indigo-800">+ Add batch</button>
+                <p class="text-xs tabular-nums"
+                   :class="groupQtyTotal() === groupMeta.total_quantity ? 'text-gray-500' : 'text-amber-600 font-medium'">
+                    Total: <span x-text="groupQtyTotal()"></span> / <span x-text="groupMeta.total_quantity"></span>
+                </p>
+            </div>
+        </template>
+
+        {# ── Single batch (no invoice link) ── #}
+        <template x-if="mode === 'single'">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Batch Number <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" x-model="singleForm.batch_number" placeholder="e.g. LOT-2026-001"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Quantity</label>
+                    <input type="number" x-model.number="singleForm.quantity" min="1" step="1"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 tabular-nums">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Expiry Date <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="date" x-model="singleForm.expiry_date"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <button type="button" x-show="singleForm.expiry_date" @click="singleForm.expiry_date = ''"
+                            class="mt-1 text-xs text-gray-400 hover:text-red-500">Clear expiry date</button>
+                </div>
+            </div>
+        </template>
+
+        <p x-show="errorMsg" x-text="errorMsg" class="mt-3 text-sm text-red-600"></p>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" @click="close()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="button" @click="save()" :disabled="isSaving"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                <span x-show="!isSaving">Save</span>
+                <span x-show="isSaving">Saving…</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('editBatchModalData', () => ({
+        isOpen: false,
+        isSaving: false,
+        errorMsg: '',
+        mode: 'single',
+        productId: null,
+        currentBatch: {},
+        groupMeta: { invoice_number: '', product_name: '', total_quantity: 0, invoice_item_id: null },
+        groupRows: [],
+        singleForm: { batch_number: '', expiry_date: '', quantity: 1 },
+        _rowKeySeq: 0,
+
+        async open({ batch, productId }) {
+            this.productId = productId;
+            this.currentBatch = batch;
+            this.errorMsg = '';
+            this.isOpen = true;
+
+            if (batch.invoice_item_id) {
+                this.mode = 'group';
+                await this.loadGroup(batch.invoice_item_id);
+            } else {
+                this.mode = 'single';
+                this.singleForm = {
+                    batch_number: batch.batch_number || '',
+                    expiry_date: batch.expiry_date || '',
+                    quantity: batch.quantity || 1,
+                };
+            }
+        },
+
+        async loadGroup(invoiceItemId) {
+            try {
+                const url = `{% url 'inventory:api_get_invoice_item_batches' 0 %}`.replace('/0/', `/${invoiceItemId}/`);
+                const resp = await fetch(url, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load batches');
+                this.groupMeta = {
+                    invoice_number: data.invoice_number,
+                    product_name: data.product_name,
+                    total_quantity: data.total_quantity,
+                    invoice_item_id: data.invoice_item_id,
+                };
+                this._rowKeySeq = 0;
+                this.groupRows = (data.batches || []).map((b) => ({
+                    _key: ++this._rowKeySeq,
+                    id: b.id,
+                    batch_number: b.batch_number || '',
+                    expiry_date: b.expiry_date || '',
+                    quantity: b.quantity,
+                }));
+            } catch (e) {
+                this.errorMsg = e.message || 'Could not load batch details.';
+            }
+        },
+
+        groupQtyTotal() {
+            return this.groupRows.reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0);
+        },
+
+        addGroupRow() {
+            const remaining = this.groupMeta.total_quantity - this.groupQtyTotal();
+            this.groupRows.push({
+                _key: ++this._rowKeySeq,
+                id: null,
+                batch_number: '',
+                expiry_date: '',
+                quantity: remaining > 0 ? remaining : 1,
+            });
+        },
+
+        removeGroupRow(idx) {
+            if (this.groupRows.length <= 1) return;
+            this.groupRows.splice(idx, 1);
+        },
+
+        close() {
+            this.isOpen = false;
+        },
+
+        async save() {
+            this.isSaving = true;
+            this.errorMsg = '';
+            try {
+                if (this.mode === 'group') {
+                    if (this.groupQtyTotal() !== this.groupMeta.total_quantity) {
+                        this.errorMsg = `Total quantity must stay ${this.groupMeta.total_quantity}.`;
+                        return;
+                    }
+                    const url = `{% url 'inventory:api_save_invoice_item_batches' 0 %}`.replace('/0/', `/${this.groupMeta.invoice_item_id}/save/`);
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: JSON.stringify({
+                            batches: this.groupRows.map((r) => ({
+                                id: r.id,
+                                batch_number: (r.batch_number || '').trim(),
+                                expiry_date: r.expiry_date || null,
+                                quantity: r.quantity,
+                            })),
+                        }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) {
+                        this.errorMsg = data.error || 'Could not save changes.';
+                        return;
+                    }
+                } else {
+                    const url = `{% url 'inventory:api_update_batch' 0 %}`.replace('/0/', `/${this.currentBatch.id}/`);
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: JSON.stringify({
+                            batch_number: (this.singleForm.batch_number || '').trim(),
+                            expiry_date: this.singleForm.expiry_date || null,
+                            quantity: this.singleForm.quantity,
+                        }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) {
+                        this.errorMsg = data.error || 'Could not save changes.';
+                        return;
+                    }
+                }
+                Alpine.store('globals').showToast('Batch details updated.', 'success');
+                window.dispatchEvent(new CustomEvent('batch-details-saved', {
+                    detail: { productId: this.productId },
+                }));
+                this.close();
+            } catch (e) {
+                this.errorMsg = 'Network error. Please try again.';
+            } finally {
+                this.isSaving = false;
+            }
+        },
+    }));
+});
+</script>

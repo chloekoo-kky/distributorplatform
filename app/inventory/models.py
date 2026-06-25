@@ -198,12 +198,141 @@ class QuotationItem(models.Model):
         return f"{self.quantity} x {self.product.name} @ ${self.quoted_price} in {self.quotation.quotation_id}"
 
 
+class SupplierPriceMatrixEntry(models.Model):
+    """
+    One supplier catalog row (medication + strength + size) from a price list upload.
+    Maps to a catalog Product when matched; holds tiered unit prices on related tiers.
+    """
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.CASCADE,
+        related_name='price_matrix_entries',
+    )
+    product = models.ForeignKey(
+        'product.Product',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supplier_price_matrix_entries',
+    )
+    line_medication = models.CharField(
+        max_length=255,
+        help_text="Medication / product name as shown on the supplier price list.",
+    )
+    strength = models.CharField(max_length=255, blank=True)
+    form = models.CharField(max_length=50, blank=True, help_text="e.g. INJ")
+    size = models.CharField(max_length=100, blank=True, help_text="e.g. 1 mL")
+    notes = models.TextField(blank=True)
+    price_currency = models.CharField(
+        max_length=3,
+        choices=[('MYR', 'MYR'), ('USD', 'USD'), ('EUR', 'EUR')],
+        default='MYR',
+        help_text="Currency of the uploaded price list (stored tiers are normalized to MYR).",
+    )
+    conversion_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Exchange rate used on last upload (1 unit of price_currency → MYR).",
+    )
+    effective_date = models.DateField(null=True, blank=True)
+    source_filename = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['line_medication', 'strength', 'size']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['supplier', 'line_medication', 'strength', 'size'],
+                name='uniq_supplier_matrix_line',
+            ),
+        ]
+        verbose_name = 'Supplier price matrix entry'
+        verbose_name_plural = 'Supplier price matrix entries'
+
+    def __str__(self):
+        parts = [self.line_medication]
+        if self.strength:
+            parts.append(self.strength)
+        if self.size:
+            parts.append(self.size)
+        return f"{self.supplier.name}: {' / '.join(parts)}"
+
+
+class SupplierPriceMatrixTier(models.Model):
+    """Volume-based unit price for a matrix entry (e.g. 1–999, 1000–1999, 2000+)."""
+    entry = models.ForeignKey(
+        SupplierPriceMatrixEntry,
+        on_delete=models.CASCADE,
+        related_name='tiers',
+    )
+    min_quantity = models.PositiveIntegerField(default=1)
+    max_quantity = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Null means open-ended (e.g. 2000+).",
+    )
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        ordering = ['min_quantity']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['entry', 'min_quantity'],
+                name='uniq_matrix_entry_tier_min_qty',
+            ),
+        ]
+
+    def __str__(self):
+        upper = f"{self.max_quantity}" if self.max_quantity else "+"
+        return f"{self.min_quantity}–{upper} @ RM {self.unit_price}"
+
+
+class SupplierPriceMatrixUploadRecord(models.Model):
+    """Snapshot of tier prices after each price-list upload for one matrix entry."""
+    entry = models.ForeignKey(
+        SupplierPriceMatrixEntry,
+        on_delete=models.CASCADE,
+        related_name='upload_records',
+    )
+    source_filename = models.CharField(max_length=255, blank=True)
+    price_currency = models.CharField(max_length=3, default='MYR')
+    conversion_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Exchange rate used for this upload (1 unit of price_currency → MYR).",
+    )
+    tiers = models.JSONField(
+        default=list,
+        help_text="Tier prices (MYR) after this upload: [{min_quantity, max_quantity, unit_price}, …]",
+    )
+    effective_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Business date for this price (e.g. invoice date from payable invoice import).",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-effective_date', '-uploaded_at']
+        verbose_name = 'Supplier price matrix upload record'
+        verbose_name_plural = 'Supplier price matrix upload records'
+
+    def __str__(self):
+        return f"{self.entry} @ {self.uploaded_at:%Y-%m-%d %H:%M}"
+
+
 class InventoryBatch(models.Model):
     product = models.ForeignKey('product.Product', on_delete=models.CASCADE, related_name='batches')
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True)
     batch_number = models.CharField(
         max_length=100,
-        help_text="A number for this batch, e.g., PO-123. Can be duplicated across different products/deliveries."
+        blank=True,
+        default='',
+        help_text="Optional lot/batch identifier. Can be set later when splitting a receipt.",
     )
     quantity = models.PositiveIntegerField(help_text="The actual quantity received.")
     received_date = models.DateField()
@@ -214,10 +343,10 @@ class InventoryBatch(models.Model):
     )
     quotation = models.ForeignKey(
         Quotation,
-        on_delete=models.CASCADE,
-        null=False,
-        blank=False,
-        help_text="The quotation this batch is based on."
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="The quotation this batch is based on (optional when receiving directly from an invoice)."
     )
     invoice_item = models.ForeignKey(
         'sales.InvoiceItem',
@@ -232,5 +361,6 @@ class InventoryBatch(models.Model):
         verbose_name_plural = "Inventory Batches"
 
     def __str__(self):
-        return f"Batch {self.batch_number} for {self.product.name}"
+        label = self.batch_number or f'#{self.pk}'
+        return f"Batch {label} for {self.product.name}"
 

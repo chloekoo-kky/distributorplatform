@@ -13,11 +13,27 @@
 
             // Edit Invoice Modal State
             editModalOpen: false,
+            invoiceEditSaving: false,
+            invoiceEditError: '',
             currentInvoice: {
-                invoice_id: '', status: '', payment_date: '', notes: '', update_url: ''
+                invoice_id: '', status: '', payment_date: '', notes: '',
+                transportation_cost: 0, items: [], update_url: ''
             },
 
             // --- Invoice Methods ---
+            invoiceStatusBarClass(status) {
+                const selected = this.currentInvoice.status === status;
+                const styles = {
+                    DRAFT: selected ? 'bg-yellow-500 text-white' : 'bg-white text-gray-700 hover:bg-yellow-50',
+                    SENT: selected ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-blue-50',
+                    PAID: selected ? 'bg-green-600 text-white' : 'bg-white text-gray-700 hover:bg-green-50',
+                    PARTIALLY_RECEIVED: selected ? 'bg-amber-500 text-white' : 'bg-white text-gray-700 hover:bg-amber-50',
+                    FULLY_RECEIVED: selected ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-emerald-50',
+                    CANCELLED: selected ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-red-50',
+                };
+                return styles[status] || (selected ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50');
+            },
+
             async fetchInvoiceData(invoiceId) {
                 try {
                     const url = `/sales/invoice/${invoiceId}/edit/`;
@@ -25,7 +41,13 @@
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
                     });
                     if (!response.ok) { throw new Error(`Network response error (${response.status})`); }
-                    this.currentInvoice = await response.json();
+                    const data = await response.json();
+                    this.currentInvoice = {
+                        ...data,
+                        transportation_cost: parseFloat(data.transportation_cost) || 0,
+                        items: (data.items || []).map(item => ({ ...item })),
+                    };
+                    this.invoiceEditError = '';
                     this.editModalOpen = true;
                 } catch (error) {
                     console.error('Fetch invoice data error:', error);
@@ -34,34 +56,51 @@
             },
 
             async submitInvoiceUpdate() {
-                const form = document.getElementById('edit-invoice-form'); if (!form) return;
-                const formData = new FormData(form);
+                const form = document.getElementById('edit-invoice-form');
+                if (!form) return;
+                this.invoiceEditSaving = true;
+                this.invoiceEditError = '';
                 const submitButton = form.querySelector('button[type=submit]');
-                submitButton.disabled = true; submitButton.innerHTML = 'Saving...';
+                if (submitButton) submitButton.disabled = true;
                 try {
+                    const payload = {
+                        status: this.currentInvoice.status,
+                        payment_date: this.currentInvoice.payment_date || '',
+                        notes: this.currentInvoice.notes || '',
+                        transportation_cost: this.currentInvoice.transportation_cost,
+                        items: (this.currentInvoice.items || []).map(item => ({
+                            id: item.id,
+                            quantity: item.quantity,
+                            unit_price: item.unit_price,
+                        })),
+                    };
                     const response = await fetch(this.currentInvoice.update_url, {
                         method: 'POST',
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': Alpine.store('globals').csrfToken },
-                        body: formData
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        },
+                        body: JSON.stringify(payload),
                     });
                     const data = await response.json();
                     if (response.ok && data.success) {
                         this.editModalOpen = false;
-                        Alpine.store('globals').showToast('Invoice updated successfully! Reloading...');
-                        setTimeout(() => window.location.reload(), 1000);
+                        Alpine.store('globals').showToast('Invoice updated successfully.');
+                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
                     } else {
-                        let errorMsg = 'Update failed:\n' + (data.error || '');
+                        this.invoiceEditError = data.error || 'Update failed.';
                         if (data.errors) {
                             for (const field in data.errors) {
-                                errorMsg += `- ${field}: ${data.errors[field].join(', ')}\n`;
+                                this.invoiceEditError += ` ${field}: ${data.errors[field].join(', ')}`;
                             }
                         }
-                        Alpine.store('globals').showToast(errorMsg, 'error');
                     }
                 } catch (error) {
-                    Alpine.store('globals').showToast('Network error during update.', 'error');
+                    this.invoiceEditError = 'Network error during update.';
                 } finally {
-                    submitButton.disabled = false; submitButton.innerHTML = 'Save Changes';
+                    this.invoiceEditSaving = false;
+                    if (submitButton) submitButton.disabled = false;
                 }
             },
 
@@ -80,7 +119,671 @@
                 };
                 this.receiveStockModalOpen = true;
             },
-            closeReceiveStockModal() { this.receiveStockModalOpen = false; }
+            closeReceiveStockModal() { this.receiveStockModalOpen = false; },
+
+            // --- Payable invoice import ---
+            invoiceImportStep: 'upload',
+            invoiceImportBusy: false,
+            invoiceImportError: '',
+            invoiceImportSourceFilename: '',
+            invoiceImportSummary: {},
+            invoiceImportSuppliers: [],
+            invoiceImportSuppliersList: [],
+            invoiceImportSelectedFile: null,
+
+            resetInvoiceImportModal() {
+                this.invoiceImportStep = 'upload';
+                this.invoiceImportBusy = false;
+                this.invoiceImportError = '';
+                this.invoiceImportSourceFilename = '';
+                this.invoiceImportSummary = {};
+                this.invoiceImportSuppliers = [];
+                this.invoiceImportSelectedFile = null;
+                if (this.$refs.invoiceImportFileInput) {
+                    this.$refs.invoiceImportFileInput.value = '';
+                }
+            },
+
+            openInvoiceImportModal() {
+                this.loadInvoiceImportSuppliers();
+                this.resetInvoiceImportModal();
+                this.uploadInvoiceModalOpen = true;
+            },
+
+            closeInvoiceImportModal() {
+                this.uploadInvoiceModalOpen = false;
+                this.resetInvoiceImportModal();
+            },
+
+            loadInvoiceImportSuppliers() {
+                const el = document.getElementById('invoice-import-suppliers');
+                if (!el) {
+                    this.invoiceImportSuppliersList = [];
+                    return;
+                }
+                try {
+                    this.invoiceImportSuppliersList = JSON.parse(el.textContent) || [];
+                } catch (e) {
+                    this.invoiceImportSuppliersList = [];
+                }
+            },
+
+            deriveInvoiceImportSupplierCode(fileSupplierName) {
+                const letters = (fileSupplierName || '').match(/[A-Za-z]/g) || [];
+                return letters.slice(0, 4).join('').toUpperCase();
+            },
+
+            invoiceImportPrefillSupplierCode(sup) {
+                const fromServer = (sup.suggested_supplier_code || '').trim();
+                if (fromServer) return fromServer;
+                return this.deriveInvoiceImportSupplierCode(sup.file_supplier_name);
+            },
+
+            applyInvoiceImportSupplierCodePrefill(sup) {
+                sup.new_supplier_code = this.invoiceImportPrefillSupplierCode(sup);
+            },
+
+            invoiceImportCreateGroupsWithCode(code) {
+                const c = (code || '').trim().toUpperCase();
+                if (!c) return [];
+                return this.invoiceImportSuppliers.filter(
+                    (s) => String(s.action || '').toLowerCase() === 'create'
+                        && (s.new_supplier_code || '').trim().toUpperCase() === c
+                );
+            },
+
+            onInvoiceImportSupplierCodeInput(sup, value) {
+                sup.new_supplier_code = value;
+            },
+
+            invoiceImportMergeHint(sup) {
+                if (String(sup.action || '').toLowerCase() !== 'create') return '';
+                const groups = this.invoiceImportCreateGroupsWithCode(sup.new_supplier_code);
+                if (groups.length < 2) return '';
+                const code = (sup.new_supplier_code || '').trim().toUpperCase();
+                return `${groups.length} file groups use code ${code} — one supplier will be created and all related invoices imported under it.`;
+            },
+
+            onInvoiceImportFileSelected(event) {
+                this.invoiceImportSelectedFile = event.target.files[0] || null;
+                this.invoiceImportError = '';
+            },
+
+            async parseInvoiceImportFile() {
+                if (!this.invoiceImportSelectedFile) {
+                    this.invoiceImportError = 'Choose an Excel file first.';
+                    return;
+                }
+                this.invoiceImportBusy = true;
+                this.invoiceImportError = '';
+                const form = new FormData();
+                form.append('file', this.invoiceImportSelectedFile);
+                try {
+                    const response = await fetch(`{% url 'inventory:upload_invoice_preview' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: form,
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.ok) {
+                        this.invoiceImportError = data.error || 'Could not parse file.';
+                        return;
+                    }
+                    this.invoiceImportSourceFilename = data.source_filename || '';
+                    this.invoiceImportSummary = data.parsed?.summary || {};
+                    this.invoiceImportSuppliers = (data.parsed?.suppliers || []).map((sup) => {
+                        const row = {
+                            ...sup,
+                            action: sup.suggested_supplier_id ? 'map' : 'create',
+                            supplier_id: sup.suggested_supplier_id || null,
+                            new_supplier_name: sup.file_supplier_name,
+                            new_supplier_code: '',
+                            _search: sup.suggested_supplier_name || '',
+                            _dropdownOpen: false,
+                        };
+                        row.suggested_supplier_code = (sup.suggested_supplier_code || '').trim()
+                            || this.deriveInvoiceImportSupplierCode(row.file_supplier_name);
+                        if (row.action === 'create') {
+                            row.new_supplier_code = row.suggested_supplier_code;
+                        }
+                        return row;
+                    });
+                    if (!this.invoiceImportSuppliers.length) {
+                        this.invoiceImportError = 'No suppliers found in file.';
+                        return;
+                    }
+                    this.invoiceImportStep = 'confirm';
+                    this.$nextTick(() => {
+                        this.invoiceImportSuppliers.forEach((sup) => {
+                            if (sup.action === 'create') {
+                                this.applyInvoiceImportSupplierCodePrefill(sup);
+                            }
+                        });
+                    });
+                } catch (e) {
+                    this.invoiceImportError = 'Failed to parse file.';
+                } finally {
+                    this.invoiceImportBusy = false;
+                }
+            },
+
+            setInvoiceImportSupplierAction(sup, action) {
+                sup.action = action;
+                if (action === 'map' && sup.suggested_supplier_id && !sup.supplier_id) {
+                    sup.supplier_id = sup.suggested_supplier_id;
+                }
+                if (action === 'create') {
+                    if (!sup.new_supplier_name) {
+                        sup.new_supplier_name = sup.file_supplier_name;
+                    }
+                    this.applyInvoiceImportSupplierCodePrefill(sup);
+                }
+            },
+
+            selectInvoiceImportSupplier(sup, sys) {
+                sup.supplier_id = sys.id;
+                sup.action = 'map';
+                sup._dropdownOpen = false;
+                sup._search = sys.name;
+            },
+
+            invoiceImportSupplierLabel(sup) {
+                if (!sup.supplier_id) {
+                    return 'Select supplier…';
+                }
+                const match = this.invoiceImportSuppliersList.find((s) => String(s.id) === String(sup.supplier_id));
+                return match?.name || 'Select supplier…';
+            },
+
+            filteredInvoiceImportSuppliers(sup) {
+                const q = (sup._search || '').trim().toLowerCase();
+                const list = this.invoiceImportSuppliersList || [];
+                if (!q) return list;
+                return list.filter((s) => (s.name || '').toLowerCase().includes(q));
+            },
+
+            async confirmInvoiceImport() {
+                const active = this.invoiceImportSuppliers.filter(
+                    (s) => String(s.action || '').trim().toLowerCase() !== 'ignore'
+                );
+                if (!active.length) {
+                    this.invoiceImportError = 'Enable at least one supplier or cancel.';
+                    return;
+                }
+                for (const sup of active) {
+                    const action = String(sup.action || '').trim().toLowerCase();
+                    if (action === 'map' && !sup.supplier_id) {
+                        this.invoiceImportError = `Select a system supplier for "${sup.file_supplier_name}".`;
+                        return;
+                    }
+                    if (action === 'create' && !(sup.new_supplier_name || '').trim()) {
+                        this.invoiceImportError = `Enter a name for new supplier "${sup.file_supplier_name}".`;
+                        return;
+                    }
+                    if (!Array.isArray(sup.invoices) || sup.invoices.length === 0) {
+                        this.invoiceImportError = `No invoice rows found for "${sup.file_supplier_name}".`;
+                        return;
+                    }
+                }
+                this.invoiceImportBusy = true;
+                this.invoiceImportError = '';
+                const payload = {
+                    source_filename: this.invoiceImportSourceFilename,
+                    suppliers: this.invoiceImportSuppliers.map((sup) => {
+                        const action = String(sup.action || 'map').trim().toLowerCase();
+                        return {
+                            key: sup.key,
+                            file_supplier_name: sup.file_supplier_name,
+                            action,
+                            supplier_id: action === 'map' ? Number(sup.supplier_id) : null,
+                            new_supplier_name: action === 'create' ? (sup.new_supplier_name || '').trim() : null,
+                            new_supplier_code: action === 'create' ? (sup.new_supplier_code || '').trim() : null,
+                            invoices: sup.invoices || [],
+                        };
+                    }),
+                };
+                try {
+                    const response = await fetch(`{% url 'inventory:upload_invoice_confirm' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        const msg = data.error || 'Import failed.';
+                        this.invoiceImportError = msg;
+                        Alpine.store('globals').showToast(msg, 'error');
+                        return;
+                    }
+                    Alpine.store('globals').showToast(data.message || 'Invoices imported.', 'success');
+                    this.closeInvoiceImportModal();
+                    window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
+                } catch (e) {
+                    this.invoiceImportError = 'Import failed.';
+                } finally {
+                    this.invoiceImportBusy = false;
+                }
+            },
+
+            // --- Supplier price matrix upload modal ---
+            supplierPriceMatrixStep: 'upload',
+            supplierPriceMatrixSupplierId: '',
+            supplierPriceMatrixSuppliers: [],
+            supplierPriceMatrixSupplierSearch: '',
+            supplierPriceMatrixSupplierOpen: false,
+            supplierPriceMatrixShowNewSupplier: false,
+            supplierPriceMatrixNewSupplierName: '',
+            supplierPriceMatrixNewSupplierCode: '',
+            supplierPriceMatrixCurrency: 'MYR',
+            supplierPriceMatrixRateUSD: 4.2,
+            supplierPriceMatrixRateEUR: 4.9,
+            supplierPriceMatrixRateUSDInput: '4.20',
+            supplierPriceMatrixRateEURInput: '4.90',
+            supplierPriceMatrixSelectedFile: null,
+            supplierPriceMatrixSourceFilename: '',
+            supplierPriceMatrixRows: [],
+            supplierPriceMatrixError: '',
+            supplierPriceMatrixBusy: false,
+            supplierPriceMatrixMappingRowIndex: null,
+            supplierPriceMatrixMappingProducts: [],
+            supplierPriceMatrixMappingQuery: '',
+            supplierPriceMatrixMappingStyle: '',
+            supplierPriceMatrixProductsMappingUrl: '{% url "inventory:api_products_for_mapping" %}',
+
+            filteredSupplierPriceMatrixSuppliers() {
+                const q = (this.supplierPriceMatrixSupplierSearch || '').trim().toLowerCase();
+                const list = this.supplierPriceMatrixSuppliers || [];
+                if (!q) return list;
+                return list.filter((s) => (s.name || '').toLowerCase().includes(q));
+            },
+
+            exactSupplierPriceMatrixMatch() {
+                const q = (this.supplierPriceMatrixSupplierSearch || '').trim().toLowerCase();
+                if (!q) return false;
+                return (this.supplierPriceMatrixSuppliers || []).some(
+                    (s) => (s.name || '').toLowerCase() === q
+                );
+            },
+
+            loadSupplierPriceMatrixSuppliers() {
+                const el = document.getElementById('supplier-price-matrix-suppliers')
+                    || document.getElementById('all-suppliers-list-data');
+                if (!el) {
+                    this.supplierPriceMatrixSuppliers = [];
+                    return;
+                }
+                try {
+                    this.supplierPriceMatrixSuppliers = JSON.parse(el.textContent) || [];
+                } catch (e) {
+                    this.supplierPriceMatrixSuppliers = [];
+                }
+            },
+
+            openSupplierPriceMatrixModal() {
+                this.loadSupplierPriceMatrixSuppliers();
+                try {
+                    const savedUsd = window.localStorage.getItem('quotation_rate_usd');
+                    if (savedUsd) this.supplierPriceMatrixRateUSD = parseFloat(savedUsd) || 4.2;
+                    const savedEur = window.localStorage.getItem('quotation_rate_eur');
+                    if (savedEur) this.supplierPriceMatrixRateEUR = parseFloat(savedEur) || 4.9;
+                } catch (e) { /* ignore */ }
+                this.formatSupplierPriceMatrixRateUSD();
+                this.formatSupplierPriceMatrixRateEUR();
+                this.resetSupplierPriceMatrixModal();
+                this.uploadSupplierPriceMatrixModalOpen = true;
+            },
+
+            closeSupplierPriceMatrixModal() {
+                this.uploadSupplierPriceMatrixModalOpen = false;
+                this.resetSupplierPriceMatrixModal();
+            },
+
+            resetSupplierPriceMatrixModal() {
+                this.supplierPriceMatrixStep = 'upload';
+                this.supplierPriceMatrixSupplierId = '';
+                this.supplierPriceMatrixSupplierSearch = '';
+                this.supplierPriceMatrixSupplierOpen = false;
+                this.supplierPriceMatrixShowNewSupplier = false;
+                this.supplierPriceMatrixNewSupplierName = '';
+                this.supplierPriceMatrixNewSupplierCode = '';
+                this.supplierPriceMatrixCurrency = 'MYR';
+                this.supplierPriceMatrixSelectedFile = null;
+                this.supplierPriceMatrixSourceFilename = '';
+                this.supplierPriceMatrixRows = [];
+                this.supplierPriceMatrixError = '';
+                this.supplierPriceMatrixBusy = false;
+                this.supplierPriceMatrixMappingRowIndex = null;
+                this.supplierPriceMatrixMappingProducts = [];
+                this.supplierPriceMatrixMappingQuery = '';
+                this.supplierPriceMatrixMappingStyle = '';
+                if (this.$refs.supplierPriceMatrixFileInput) {
+                    this.$refs.supplierPriceMatrixFileInput.value = '';
+                }
+            },
+
+            selectSupplierPriceMatrixSupplier(supplier) {
+                this.supplierPriceMatrixSupplierId = String(supplier.id);
+                this.supplierPriceMatrixSupplierSearch = supplier.name;
+                this.supplierPriceMatrixSupplierOpen = false;
+                this.supplierPriceMatrixShowNewSupplier = false;
+                this.supplierPriceMatrixError = '';
+            },
+
+            openCreateSupplierPriceMatrixPanel() {
+                this.supplierPriceMatrixShowNewSupplier = true;
+                this.supplierPriceMatrixNewSupplierName = (this.supplierPriceMatrixSupplierSearch || '').trim();
+                this.supplierPriceMatrixNewSupplierCode = '';
+                this.supplierPriceMatrixSupplierOpen = false;
+            },
+
+            async createSupplierPriceMatrixSupplier() {
+                const name = (this.supplierPriceMatrixNewSupplierName || '').trim();
+                if (!name) {
+                    this.supplierPriceMatrixError = 'Enter a supplier name.';
+                    return;
+                }
+                this.supplierPriceMatrixBusy = true;
+                this.supplierPriceMatrixError = '';
+                try {
+                    const response = await fetch(`{% url 'inventory:api_create_supplier' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            name,
+                            code: (this.supplierPriceMatrixNewSupplierCode || '').trim() || null,
+                        }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        this.supplierPriceMatrixError = data.error || 'Could not create supplier.';
+                        return;
+                    }
+                    const sup = { id: data.id, name: data.name };
+                    const exists = this.supplierPriceMatrixSuppliers.some((s) => s.id === sup.id);
+                    if (!exists) {
+                        this.supplierPriceMatrixSuppliers.push(sup);
+                        this.supplierPriceMatrixSuppliers.sort((a, b) => a.name.localeCompare(b.name));
+                    }
+                    this.selectSupplierPriceMatrixSupplier(sup);
+                    Alpine.store('globals').showToast(
+                        data.existing ? `Using existing supplier "${sup.name}".` : `Supplier "${sup.name}" created.`,
+                        'success'
+                    );
+                } catch (e) {
+                    this.supplierPriceMatrixError = 'Could not create supplier.';
+                } finally {
+                    this.supplierPriceMatrixBusy = false;
+                }
+            },
+
+            onSupplierPriceMatrixFileSelected(event) {
+                this.supplierPriceMatrixSelectedFile = event.target.files[0] || null;
+                this.supplierPriceMatrixError = '';
+            },
+
+            supplierPriceMatrixCurrencySymbol() {
+                const c = this.supplierPriceMatrixCurrency;
+                if (c === 'USD') return '$';
+                if (c === 'EUR') return '€';
+                return 'RM';
+            },
+
+            formatSupplierPriceMatrixTier(tier) {
+                const upper = tier.max_quantity != null ? tier.max_quantity : '+';
+                const sym = this.supplierPriceMatrixCurrencySymbol();
+                const price = Number(tier.unit_price).toFixed(2);
+                const label = this.supplierPriceMatrixCurrency === 'MYR' ? `RM ${price}` : `${sym} ${price}`;
+                return `${tier.min_quantity}–${upper} @ ${label}`;
+            },
+
+            formatSupplierPriceMatrixRateUSD() {
+                this.supplierPriceMatrixRateUSD = parseFloat(this.supplierPriceMatrixRateUSDInput) || 0.01;
+                if (isNaN(this.supplierPriceMatrixRateUSD) || this.supplierPriceMatrixRateUSD <= 0) {
+                    this.supplierPriceMatrixRateUSD = 0.01;
+                }
+                this.supplierPriceMatrixRateUSD = parseFloat(Number(this.supplierPriceMatrixRateUSD).toFixed(2));
+                this.supplierPriceMatrixRateUSDInput = this.supplierPriceMatrixRateUSD.toFixed(2);
+            },
+
+            formatSupplierPriceMatrixRateEUR() {
+                this.supplierPriceMatrixRateEUR = parseFloat(this.supplierPriceMatrixRateEURInput) || 0.01;
+                if (isNaN(this.supplierPriceMatrixRateEUR) || this.supplierPriceMatrixRateEUR <= 0) {
+                    this.supplierPriceMatrixRateEUR = 0.01;
+                }
+                this.supplierPriceMatrixRateEUR = parseFloat(Number(this.supplierPriceMatrixRateEUR).toFixed(2));
+                this.supplierPriceMatrixRateEURInput = this.supplierPriceMatrixRateEUR.toFixed(2);
+            },
+
+            syncSupplierPriceMatrixRatesFromInput() {
+                this.formatSupplierPriceMatrixRateUSD();
+                this.formatSupplierPriceMatrixRateEUR();
+            },
+
+            persistSupplierPriceMatrixRates() {
+                this.syncSupplierPriceMatrixRatesFromInput();
+                try {
+                    window.localStorage.setItem('quotation_rate_usd', String(this.supplierPriceMatrixRateUSD));
+                    window.localStorage.setItem('quotation_rate_eur', String(this.supplierPriceMatrixRateEUR));
+                } catch (e) { /* ignore */ }
+            },
+
+            async parseSupplierPriceMatrixFile() {
+                if (!this.supplierPriceMatrixSupplierId || !this.supplierPriceMatrixSelectedFile) return;
+                this.persistSupplierPriceMatrixRates();
+                this.supplierPriceMatrixBusy = true;
+                this.supplierPriceMatrixError = '';
+                const form = new FormData();
+                form.append('file', this.supplierPriceMatrixSelectedFile);
+                try {
+                    const response = await fetch(`{% url 'inventory:upload_supplier_price_matrix_preview' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: form,
+                    });
+                    let data;
+                    try {
+                        data = await response.json();
+                    } catch (parseErr) {
+                        if (response.status === 504) {
+                            this.supplierPriceMatrixError = 'Upload timed out. Try Excel/CSV, or split a large PDF into smaller files.';
+                        } else {
+                            this.supplierPriceMatrixError = 'Unexpected server response. Please try again.';
+                        }
+                        return;
+                    }
+                    if (!response.ok || !data.ok) {
+                        this.supplierPriceMatrixError = data.error || 'Failed to parse file.';
+                        return;
+                    }
+                    this.supplierPriceMatrixRows = (data.rows || []).map((row) => ({
+                        ...row,
+                        new_product_name: row.new_product_name || row.match_name || row.medication || '',
+                        new_product_sku: row.new_product_sku || row.sku || '',
+                    }));
+                    this.supplierPriceMatrixMappingRowIndex = null;
+                    this.supplierPriceMatrixSourceFilename = data.source_filename || this.supplierPriceMatrixSelectedFile.name;
+                    this.supplierPriceMatrixStep = 'preview';
+                } catch (e) {
+                    this.supplierPriceMatrixError = 'Failed to parse file.';
+                } finally {
+                    this.supplierPriceMatrixBusy = false;
+                }
+            },
+
+            supplierPriceMatrixMatchLabel(matchType) {
+                const labels = {
+                    matched_sku: 'Matched by SKU',
+                    matched_name_exact: 'Matched by name',
+                    manual: 'Mapped manually',
+                    new: 'New product',
+                };
+                return labels[matchType] || matchType || '';
+            },
+
+            closeSupplierPriceMatrixMappingPicker() {
+                this.supplierPriceMatrixMappingRowIndex = null;
+                this.supplierPriceMatrixMappingProducts = [];
+                this.supplierPriceMatrixMappingQuery = '';
+                this.supplierPriceMatrixMappingStyle = '';
+            },
+
+            positionSupplierPriceMatrixMappingPicker(anchorEl) {
+                if (!anchorEl) return;
+                const rect = anchorEl.getBoundingClientRect();
+                const panelW = 320;
+                const panelH = 288;
+                const margin = 8;
+                let top = rect.bottom + margin;
+                let left = rect.left;
+                if (left + panelW > window.innerWidth - margin) {
+                    left = window.innerWidth - panelW - margin;
+                }
+                if (left < margin) left = margin;
+                if (top + panelH > window.innerHeight - margin) {
+                    top = rect.top - panelH - margin;
+                }
+                if (top < margin) top = margin;
+                this.supplierPriceMatrixMappingStyle = `top:${top}px;left:${left}px;width:${panelW}px;`;
+            },
+
+            openSupplierPriceMatrixMappingSearch(row, idx, event) {
+                if (this.supplierPriceMatrixMappingRowIndex === idx) {
+                    this.closeSupplierPriceMatrixMappingPicker();
+                    return;
+                }
+                this.supplierPriceMatrixMappingRowIndex = idx;
+                this.supplierPriceMatrixMappingProducts = [];
+                this.supplierPriceMatrixMappingQuery = '';
+                this.positionSupplierPriceMatrixMappingPicker(event?.currentTarget);
+                const seed = row.medication || row.match_name || row.new_product_name || '';
+                this.$nextTick(() => {
+                    const input = this.$refs.supplierPriceMatrixMappingInput;
+                    if (input) {
+                        input.value = seed;
+                        this.fetchSupplierPriceMatrixProducts(seed);
+                        input.focus();
+                    }
+                });
+            },
+
+            async fetchSupplierPriceMatrixProducts(q) {
+                this.supplierPriceMatrixMappingQuery = q || '';
+                const url = this.supplierPriceMatrixProductsMappingUrl
+                    + (q ? '?q=' + encodeURIComponent(q) : '');
+                try {
+                    const response = await fetch(url, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                    });
+                    const data = await response.json();
+                    this.supplierPriceMatrixMappingProducts = data.products || [];
+                } catch (e) {
+                    this.supplierPriceMatrixMappingProducts = [];
+                }
+            },
+
+            applySupplierPriceMatrixMapping(row, product) {
+                row.product_id = product.id;
+                row.product_name = product.name;
+                row.product_sku = product.sku || '';
+                row.new_product_name = null;
+                row.new_product_sku = null;
+                row.match_type = 'manual';
+                this.closeSupplierPriceMatrixMappingPicker();
+            },
+
+            setSupplierPriceMatrixCreateNew(row) {
+                row.product_id = null;
+                row.product_name = null;
+                row.product_sku = null;
+                row.match_type = 'new';
+                const base = (row.new_product_name || row.match_name || row.medication || '').trim();
+                row.new_product_name = base || 'New product';
+                if (!row.new_product_sku) {
+                    row.new_product_sku = '';
+                }
+                this.closeSupplierPriceMatrixMappingPicker();
+            },
+
+            async confirmSupplierPriceMatrixImport() {
+                this.persistSupplierPriceMatrixRates();
+                const unmapped = this.supplierPriceMatrixRows.find(
+                    (row) => !row.product_id && !(row.new_product_name || '').trim()
+                );
+                if (unmapped) {
+                    this.supplierPriceMatrixError = 'Each row needs a catalog product or a new product name.';
+                    return;
+                }
+                this.supplierPriceMatrixBusy = true;
+                this.supplierPriceMatrixError = '';
+                const payload = {
+                    supplier_id: Number(this.supplierPriceMatrixSupplierId),
+                    currency: this.supplierPriceMatrixCurrency,
+                    rate_usd: this.supplierPriceMatrixRateUSD,
+                    rate_eur: this.supplierPriceMatrixRateEUR,
+                    source_filename: this.supplierPriceMatrixSourceFilename,
+                    rows: this.supplierPriceMatrixRows.map((row) => ({
+                        medication: row.medication,
+                        strength: row.strength,
+                        form: row.form,
+                        size: row.size,
+                        notes: row.notes,
+                        product_id: row.product_id || null,
+                        new_product_name: row.product_id ? null : (row.new_product_name || '').trim() || null,
+                        new_product_sku: row.product_id ? null : (row.new_product_sku || '').trim() || null,
+                        tiers: row.tiers,
+                    })),
+                };
+                try {
+                    const response = await fetch(`{% url 'inventory:upload_supplier_price_matrix_confirm' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    let data;
+                    try {
+                        data = await response.json();
+                    } catch (parseErr) {
+                        if (response.status === 504) {
+                            this.supplierPriceMatrixError = 'Upload timed out. Try Excel/CSV, or split a large PDF into smaller files.';
+                        } else {
+                            this.supplierPriceMatrixError = 'Unexpected server response. Please try again.';
+                        }
+                        return;
+                    }
+                    if (!response.ok || !data.success) {
+                        this.supplierPriceMatrixError = (data.errors && data.errors.join(' ')) || data.error || 'Import failed.';
+                        return;
+                    }
+                    Alpine.store('globals').showToast(data.message || 'Price matrix updated.', 'success');
+                    this.closeSupplierPriceMatrixModal();
+                    window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'quotations' } }));
+                } catch (e) {
+                    this.supplierPriceMatrixError = 'Import failed.';
+                } finally {
+                    this.supplierPriceMatrixBusy = false;
+                }
+            },
         };
     }
 </script>

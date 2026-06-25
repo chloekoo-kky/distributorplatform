@@ -1,20 +1,31 @@
-<div x-data="invoicesTableData()"
+<div x-data="procurementTableData()"
      x-init="init()"
-     @refresh-data.window="if ($event.detail.tab === 'invoices') fetchInvoices()">
+     @refresh-data.window="if ($event.detail.tab === 'invoices') fetchProcurement(1)">
 
-    {# --- Header --- #}
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-            <h3 class="text-2xl font-semibold text-gray-700">All Invoices</h3>
-            <p class="text-sm text-gray-500 mt-1">Manage supplier invoices and receive stock.</p>
+            <h3 class="text-2xl font-semibold text-gray-700">Invoices &amp; Purchase Orders</h3>
+            <p class="text-sm text-gray-500 mt-1">Open orders, convert to invoices, and receive stock — all in one place.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" @click="$dispatch('open-create-quotation-modal')"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 shadow-sm">
+                + Create PO
+            </button>
+            <a href="{% url 'inventory:export_quotations_xlsx' %}"
+               class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shadow-sm">
+                Export xlsx
+            </a>
+            <button type="button" @click="$dispatch('open-upload-invoice-modal')"
+                    class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shadow-sm">
+                Import invoice
+            </button>
         </div>
     </div>
 
     {# --- Filters --- #}
     <div class="bg-white rounded-lg shadow mb-6 p-4">
         <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-
-            {# 1. Period Selector (Month/Year) #}
             <div class="md:col-span-3">
                 <div class="flex justify-between items-center mb-1">
                     <label class="block text-sm font-medium text-gray-700">Period</label>
@@ -22,42 +33,48 @@
                             x-show="filters.month !== 0"
                             @click="resetPeriod()"
                             class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
-                            x-cloak>
-                        Reset
-                    </button>
+                            x-cloak>Reset</button>
                 </div>
                 <div class="flex items-center justify-between bg-white border border-gray-300 rounded-md h-10 px-2 hover:border-gray-400 transition-colors">
-                    <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Previous Month">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    <button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600" title="Previous month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
                     </button>
                     <span class="text-sm font-semibold text-gray-700 select-none min-w-[8rem] text-center" x-text="currentMonthLabel"></span>
-                    <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600 focus:outline-none" title="Next Month">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    <button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-indigo-600" title="Next month">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                     </button>
                 </div>
             </div>
-
-            {# 2. Search #}
-            <div class="md:col-span-5">
+            <div class="md:col-span-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
                 <div class="relative rounded-md shadow-sm">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                     </div>
                     <input type="text" x-model.debounce.500ms="filters.search"
                            class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md h-10"
-                           placeholder="Invoice ID or Supplier...">
+                           placeholder="Document ID, supplier, or product…">
                 </div>
             </div>
-
-            {# 3. Status Filter #}
-            <div class="md:col-span-4">
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select x-model="filters.type"
+                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm h-10">
+                    <option value="">All</option>
+                    <option value="po">Open orders</option>
+                    <option value="invoice">Invoices</option>
+                </select>
+            </div>
+            <div class="md:col-span-3">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select x-model="filters.status"
-                        class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md h-10">
-                    <option value="">All Statuses</option>
+                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm h-10">
+                    <option value="">All statuses</option>
+                    <option value="OPEN">Open order</option>
                     <option value="DRAFT">Draft</option>
-                    <option value="ISSUED">Issued</option>
+                    <option value="SENT">Sent</option>
+                    <option value="PARTIALLY_RECEIVED">Partially received</option>
+                    <option value="FULLY_RECEIVED">Fully received</option>
                     <option value="PAID">Paid</option>
                     <option value="CANCELLED">Cancelled</option>
                 </select>
@@ -65,255 +82,370 @@
         </div>
     </div>
 
-    {# --- Loading State --- #}
     <div x-show="isLoading" class="p-12 text-center">
         <svg class="animate-spin h-8 w-8 text-indigo-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <span class="text-gray-500">Loading invoices...</span>
+        <span class="text-gray-500">Loading…</span>
     </div>
 
-    {# --- Table --- #}
     <div x-show="!isLoading" class="bg-white shadow-lg rounded-lg overflow-hidden">
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice ID</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Original Quotation</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Issued</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transport Cost</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                        <th class="px-2 py-3 w-10"></th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <template x-if="items.length === 0">
-                         <tr>
-                             <td colspan="9" class="px-6 py-8 text-center text-gray-500">
-                                 No invoices found for <span x-text="currentMonthLabel"></span> matching your filters.
-                             </td>
-                         </tr>
-                    </template>
-
-                    <template x-for="invoice in items" :key="invoice.invoice_id">
-                         <tr x-data="{ open: false }" class="bg-white group hover:bg-gray-50 transition-colors">
-                            <td colspan="9" class="p-0">
-                                <table class="min-w-full divide-y divide-gray-200">
-                                    <tr @click="open = !open" class="cursor-pointer">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 w-12">
-                                            <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <button type="button" @click.stop="fetchInvoiceData(invoice.invoice_id)" class="text-indigo-600 hover:text-indigo-900 hover:underline focus:outline-none" x-text="invoice.invoice_id">
-                                            </button>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="invoice.supplier_name"></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <template x-if="invoice.quotation_id">
-                                                <a :href="'/inventory/quotation/' + invoice.quotation_id + '/'" @click.stop class="text-indigo-600 hover:text-indigo-900" x-text="invoice.quotation_id"></a>
-                                            </template>
-                                            <template x-if="!invoice.quotation_id">
-                                                <span>-</span>
-                                            </template>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="invoice.date_issued"></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="invoice.payment_date"></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
-                                                  :class="{
-                                                      'bg-yellow-100 text-yellow-800': invoice.status_code === 'DRAFT',
-                                                      'bg-blue-100 text-blue-800': invoice.status_code === 'SENT',
-                                                      'bg-amber-100 text-amber-800': invoice.status_code === 'PARTIALLY_RECEIVED',
-                                                      'bg-emerald-100 text-emerald-800': invoice.status_code === 'FULLY_RECEIVED',
-                                                      'bg-green-100 text-green-800': invoice.status_code === 'PAID',
-                                                      'bg-red-100 text-red-800': invoice.status_code === 'CANCELLED'
-                                                  }"
-                                                  x-text="invoice.status">
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatMoney(invoice.transportation_cost)"></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="formatMoney(invoice.total_amount)"></td>
-                                    </tr>
-
-                                    <tr x-show="open" x-transition class="bg-gray-50 shadow-inner">
-                                        <td colspan="9" class="p-0">
-                                            <div class="p-6 pl-12 border-l-2 border-indigo-200">
-                                                <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Invoice Items</h4>
-                                                <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
-                                                    <thead class="bg-gray-100">
-                                                        <tr>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product / Description</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity (Rcvd/Total)</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Price</th>
-                                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody class="bg-white">
-                                                        <template x-for="item in invoice.items" :key="item.id">
-                                                            <tr>
-                                                                <td class="px-4 py-2 text-sm text-gray-500" x-text="item.sku"></td>
-                                                                <td class="px-4 py-2 text-sm text-gray-900" x-text="item.product_name"></td>
-                                                                <td class="px-4 py-2 text-sm text-gray-500">
-                                                                    <span x-text="item.quantity_received"></span> / <span x-text="item.quantity"></span>
-                                                                </td>
-                                                                <td class="px-4 py-2 text-sm text-gray-500" x-text="formatMoney(item.unit_price)"></td>
-                                                                <td class="px-4 py-2 text-sm text-gray-500" x-text="formatMoney(item.total_price)"></td>
-                                                                <td class="px-4 py-2 text-sm">
-                                                                    <template x-if="!item.is_fully_received">
-                                                                        <button @click.stop="openReceiveStockModal({
-                                                                                invoiceItemId: item.id,
-                                                                                invoiceId: invoice.invoice_id,
-                                                                                productId: item.product_id,
-                                                                                productName: item.product_name,
-                                                                                productSku: item.sku,
-                                                                                quantity: item.quantity_remaining,
-                                                                                supplierId: invoice.supplier_id,
-                                                                                supplierName: invoice.supplier_name,
-                                                                                quotationId: invoice.quotation_pk
-                                                                            })"
-                                                                            class="px-2 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-green-500">
-                                                                            Receive Stock
-                                                                        </button>
-                                                                    </template>
-                                                                    <template x-if="item.is_fully_received">
-                                                                        <span class="px-2 py-1 text-xs font-medium text-gray-500 bg-gray-100 rounded cursor-not-allowed">
-                                                                            Fully Received
-                                                                        </span>
-                                                                    </template>
-                                                                </td>
-                                                            </tr>
-                                                        </template>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </table>
+                        <tr>
+                            <td colspan="10" class="px-6 py-10 text-center text-gray-500">
+                                No documents found for <span x-text="currentMonthLabel"></span> matching your filters.
                             </td>
                         </tr>
+                    </template>
+                    <template x-for="row in items" :key="row.key">
+                        <tbody x-data="procurementAccordionRow(row)" class="contents group">
+                            <tr @click="toggle()" class="cursor-pointer hover:bg-gray-50 transition-colors">
+                                <td class="px-2 py-3 text-center text-gray-400">
+                                    <svg class="w-5 h-5 mx-auto transition-transform duration-200" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span class="px-2 py-0.5 text-xs font-semibold rounded-full"
+                                          :class="row.record_type === 'purchase_order' ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800'"
+                                          x-text="row.record_type === 'purchase_order' ? 'Order' : 'Invoice'"></span>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium" @click.stop>
+                                    <template x-if="row.record_type === 'purchase_order'">
+                                        <a :href="row.detail_url" class="text-indigo-600 hover:text-indigo-900 underline" x-text="row.document_id"></a>
+                                    </template>
+                                    <template x-if="row.record_type === 'invoice'">
+                                        <button type="button" @click="fetchInvoiceData(row.document_id)"
+                                                class="text-indigo-600 hover:text-indigo-900 hover:underline" x-text="row.document_id"></button>
+                                    </template>
+                                    <span x-show="row.quotation_id && row.record_type === 'invoice'"
+                                          class="block text-xs text-gray-400 mt-0.5">
+                                        PO: <a :href="'/inventory/quotation/' + row.quotation_id + '/'" @click.stop class="hover:text-indigo-600" x-text="row.quotation_id"></a>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700" x-text="row.supplier_name"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="formatDate(row.date)"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                          :class="statusBadgeClass(row)"
+                                          x-text="row.status"></span>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="row.item_count"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 tabular-nums" x-text="formatMoney(row.transportation_cost)"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 tabular-nums" x-text="formatMoney(row.total_amount)"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-right" @click.stop>
+                                    <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                    <template x-if="row.create_invoice_url">
+                                        <form :action="row.create_invoice_url" method="post" class="inline-flex"
+                                              @submit="if (!confirm('Convert to invoice? Items cannot be changed after this.')) $event.preventDefault()">
+                                            <input type="hidden" name="csrfmiddlewaretoken" :value="$store.globals.csrfToken">
+                                            <button type="submit"
+                                                    class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-green-600 bg-white hover:bg-green-50 hover:border-green-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                    title="Convert to invoice"
+                                                    aria-label="Convert to invoice">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
+                                                </svg>
+                                            </button>
+                                        </form>
+                                    </template>
+                                    <template x-if="row.record_type === 'purchase_order' && row.delete_quotation_url">
+                                        <form :action="row.delete_quotation_url" method="post" class="inline-flex"
+                                              @submit="if (row.item_count > 0 && !confirm('Delete this purchase order permanently? This cannot be undone.')) $event.preventDefault()">
+                                            <input type="hidden" name="csrfmiddlewaretoken" :value="$store.globals.csrfToken">
+                                            <button type="submit"
+                                                    class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-rose-600 bg-white hover:bg-rose-50 hover:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                                    title="Delete purchase order"
+                                                    aria-label="Delete purchase order">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                </svg>
+                                            </button>
+                                        </form>
+                                    </template>
+                                    <template x-if="row.record_type === 'invoice'">
+                                        <button type="button"
+                                                @click="$dispatch('open-edit-invoice', row.document_id)"
+                                                class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-gray-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                :title="'Edit invoice ' + row.document_id"
+                                                :aria-label="'Edit invoice ' + row.document_id">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        </button>
+                                    </template>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr x-show="open" x-transition class="bg-gray-50 shadow-inner">
+                                <td colspan="10" class="p-0">
+                                    <div class="p-5 pl-10 border-l-2 border-indigo-200">
+                                        <div x-show="isLoading" class="text-center text-gray-500 text-sm py-4">Loading line items…</div>
+                                        <template x-if="!isLoading && visibleLineItems().length === 0">
+                                            <p class="text-sm text-gray-500 text-center py-4">No line items.</p>
+                                        </template>
+                                        <table x-show="!isLoading && visibleLineItems().length > 0" class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md overflow-hidden">
+                                            <thead class="bg-gray-100">
+                                                <tr>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-show="row.record_type === 'invoice'">Received</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit price</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase" x-show="row.record_type === 'invoice'">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="bg-white divide-y divide-gray-100">
+                                                <template x-for="(item, idx) in visibleLineItems()" :key="idx">
+                                                    <tr>
+                                                        <td class="px-4 py-2 text-sm text-gray-500" x-text="item.sku || item.product_sku || '-'"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-900" x-text="item.product_name"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-700 tabular-nums font-medium"
+                                                            x-text="item.quantity"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500 tabular-nums"
+                                                            x-show="row.record_type === 'invoice'"
+                                                            x-text="item.quantity_received || 0"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-700 tabular-nums font-medium"
+                                                            x-text="formatLineUnitPrice(item)"></td>
+                                                        <td class="px-4 py-2 text-sm text-gray-500 tabular-nums"
+                                                            x-text="formatLineTotal(item)"></td>
+                                                        <td class="px-4 py-2 text-sm" x-show="row.record_type === 'invoice'">
+                                                            <template x-if="!item.is_fully_received">
+                                                                <button type="button"
+                                                                        @click.stop="openReceiveStockModal({
+                                                                        invoiceItemId: item.id,
+                                                                        invoiceId: row.document_id,
+                                                                        productId: item.product_id,
+                                                                        productName: item.product_name,
+                                                                        productSku: item.sku,
+                                                                        quantity: item.quantity_remaining,
+                                                                        supplierId: row.supplier_id,
+                                                                        supplierName: row.supplier_name,
+                                                                        quotationId: row.quotation_pk
+                                                                    })"
+                                                                    class="inline-flex items-center justify-center p-1.5 border border-gray-300 rounded-md text-green-600 bg-white hover:bg-green-50 hover:border-green-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                                    title="Receive stock"
+                                                                    :aria-label="'Receive stock for ' + item.product_name">
+                                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                                                    </svg>
+                                                                </button>
+                                                            </template>
+                                                            <template x-if="item.is_fully_received">
+                                                                <span class="text-xs text-gray-400">Received</span>
+                                                            </template>
+                                                        </td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
                     </template>
                 </tbody>
             </table>
         </div>
-
-        {# --- Pagination --- #}
         <div x-show="!isLoading && items.length > 0" class="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-            <button @click="fetchInvoices(pagination.current_page - 1)" :disabled="!pagination.has_previous"
-                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                Previous
-            </button>
-            <span class="text-sm text-gray-700">
-                Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span>
-            </span>
-            <button @click="fetchInvoices(pagination.current_page + 1)" :disabled="!pagination.has_next"
-                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                Next
-            </button>
+            <button @click="fetchProcurement(pagination.current_page - 1)" :disabled="!pagination.has_previous"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">Previous</button>
+            <span class="text-sm text-gray-700">Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span></span>
+            <button @click="fetchProcurement(pagination.current_page + 1)" :disabled="!pagination.has_next"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">Next</button>
         </div>
     </div>
 </div>
 
 <script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.data('invoicesTableData', () => ({
-            items: [],
-            isLoading: true,
-            pagination: {},
-            filters: {
-                search: '',
-                status: '',
-                // Default to 0 (All Time) to prevent empty table on load
-                month: 0,
-                year: 0
-            },
+document.addEventListener('alpine:init', () => {
+    Alpine.data('procurementAccordionRow', (row) => ({
+        row,
+        open: false,
+        lineItems: [],
+        isLoading: false,
+        hasLoaded: false,
 
-            init() {
-                // Initial fetch
-                this.fetchInvoices(1);
+        visibleLineItems() {
+            return (this.lineItems || []).filter(item => (parseInt(item.quantity, 10) || 0) > 0);
+        },
 
-                // Watch for filter changes and trigger fetch automatically
-                this.$watch('filters.search', () => this.fetchInvoices(1));
-                this.$watch('filters.status', () => this.fetchInvoices(1));
-                this.$watch('filters.month', () => this.fetchInvoices(1));
-                this.$watch('filters.year', () => this.fetchInvoices(1));
-            },
+        formatMoney(value) {
+            if (value === null || value === undefined) return 'RM 0.00';
+            return `RM ${Number(value).toFixed(2)}`;
+        },
 
-            // --- Date Navigation ---
-            get currentMonthLabel() {
-                if (this.filters.month === 0 || this.filters.year === 0) return 'All Periods';
-                const date = new Date(this.filters.year, this.filters.month - 1, 1);
-                return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-            },
+        formatSourceMoney(currency, value) {
+            if (value === null || value === undefined || !currency) return null;
+            const code = String(currency).toUpperCase();
+            if (code === 'MYR') return this.formatMoney(value);
+            return `${code} ${Number(value).toFixed(2)}`;
+        },
 
-            prevMonth() {
-                if (this.filters.month === 0) {
-                     const now = new Date();
-                     this.filters.month = now.getMonth() + 1;
-                     this.filters.year = now.getFullYear();
-                } else if (this.filters.month === 1) {
-                    this.filters.month = 12;
-                    this.filters.year--;
-                } else {
-                    this.filters.month--;
-                }
-            },
-
-            nextMonth() {
-                if (this.filters.month === 0) {
-                     const now = new Date();
-                     this.filters.month = now.getMonth() + 1;
-                     this.filters.year = now.getFullYear();
-                } else if (this.filters.month === 12) {
-                    this.filters.month = 1;
-                    this.filters.year++;
-                } else {
-                    this.filters.month++;
-                }
-            },
-
-            resetPeriod() {
-                this.filters.month = 0;
-                this.filters.year = 0;
-            },
-
-            async fetchInvoices(page = 1) {
-                this.isLoading = true;
-                const params = new URLSearchParams({
-                    page: page,
-                    search: this.filters.search,
-                    status: this.filters.status,
-                    month: this.filters.month,
-                    year: this.filters.year
-                });
-
-                try {
-                    const response = await fetch(`{% url 'sales:api_manage_invoices' %}?${params.toString()}`, {
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-                    });
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    const data = await response.json();
-                    this.items = data.items;
-                    this.pagination = data.pagination;
-                } catch (error) {
-                    console.error('Failed to fetch invoices:', error);
-                    Alpine.store('globals').showToast('Error loading invoices', 'error');
-                }
-                finally {
-                    this.isLoading = false;
-                }
-            },
-
-            formatMoney(value) {
-                if (value === null || value === undefined) return 'RM 0.00';
-                return `RM ${Number(value).toFixed(2)}`;
+        formatLineUnitPrice(item) {
+            const myr = this.formatMoney(item.unit_price ?? item.quoted_price);
+            const src = this.formatSourceMoney(item.original_currency, item.unit_price_source);
+            if (!src || String(item.original_currency || '').toUpperCase() === 'MYR') {
+                return myr;
             }
-        }));
-    });
+            return `${src} (${myr})`;
+        },
+
+        formatLineTotal(item) {
+            const myr = this.formatMoney(item.total_price ?? item.gross_myr);
+            const src = this.formatSourceMoney(item.original_currency, item.gross_source);
+            if (!src || String(item.original_currency || '').toUpperCase() === 'MYR') {
+                return myr;
+            }
+            return `${src} (${myr})`;
+        },
+
+        async toggle() {
+            this.open = !this.open;
+            if (!this.open || this.hasLoaded) return;
+            if (this.row.record_type === 'invoice' && this.row.items) {
+                this.lineItems = this.row.items;
+                this.hasLoaded = true;
+                return;
+            }
+            this.isLoading = true;
+            try {
+                const response = await fetch(`/inventory/api/quotation-items/${this.row.document_id}/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                if (!response.ok) throw new Error('Failed to load items');
+                const data = await response.json();
+                this.lineItems = data.items || [];
+                this.hasLoaded = true;
+            } catch (e) {
+                Alpine.store('globals').showToast('Could not load line items', 'error');
+            } finally {
+                this.isLoading = false;
+            }
+        },
+    }));
+
+    Alpine.data('procurementTableData', () => ({
+        items: [],
+        isLoading: true,
+        pagination: {},
+        filters: {
+            search: '',
+            type: '',
+            status: '',
+            month: 0,
+            year: 0,
+        },
+
+        init() {
+            this.fetchProcurement(1);
+            this.$watch('filters.search', () => this.fetchProcurement(1));
+            this.$watch('filters.type', () => this.fetchProcurement(1));
+            this.$watch('filters.status', () => this.fetchProcurement(1));
+            this.$watch('filters.month', () => this.fetchProcurement(1));
+            this.$watch('filters.year', () => this.fetchProcurement(1));
+        },
+
+        get currentMonthLabel() {
+            if (this.filters.month === 0 || this.filters.year === 0) return 'All periods';
+            return new Date(this.filters.year, this.filters.month - 1, 1)
+                .toLocaleString('default', { month: 'long', year: 'numeric' });
+        },
+
+        prevMonth() {
+            if (this.filters.month === 0) {
+                const now = new Date();
+                this.filters.month = now.getMonth() + 1;
+                this.filters.year = now.getFullYear();
+            } else if (this.filters.month === 1) {
+                this.filters.month = 12;
+                this.filters.year--;
+            } else {
+                this.filters.month--;
+            }
+        },
+
+        nextMonth() {
+            if (this.filters.month === 0) {
+                const now = new Date();
+                this.filters.month = now.getMonth() + 1;
+                this.filters.year = now.getFullYear();
+            } else if (this.filters.month === 12) {
+                this.filters.month = 1;
+                this.filters.year++;
+            } else {
+                this.filters.month++;
+            }
+        },
+
+        resetPeriod() {
+            this.filters.month = 0;
+            this.filters.year = 0;
+        },
+
+        statusBadgeClass(row) {
+            const code = row.status_code;
+            const map = {
+                OPEN: 'bg-blue-100 text-blue-800',
+                DRAFT: 'bg-yellow-100 text-yellow-800',
+                SENT: 'bg-blue-100 text-blue-800',
+                PARTIALLY_RECEIVED: 'bg-amber-100 text-amber-800',
+                FULLY_RECEIVED: 'bg-emerald-100 text-emerald-800',
+                PAID: 'bg-green-100 text-green-800',
+                CANCELLED: 'bg-red-100 text-red-800',
+            };
+            return map[code] || 'bg-gray-100 text-gray-800';
+        },
+
+        formatDate(value) {
+            if (!value) return '—';
+            return new Date(value).toLocaleDateString();
+        },
+
+        formatMoney(value) {
+            if (value === null || value === undefined) return 'RM 0.00';
+            return `RM ${Number(value).toFixed(2)}`;
+        },
+
+        async fetchProcurement(page = 1) {
+            this.isLoading = true;
+            const params = new URLSearchParams({
+                page: String(page),
+                search: this.filters.search,
+                type: this.filters.type,
+                status: this.filters.status,
+                month: String(this.filters.month),
+                year: String(this.filters.year),
+            });
+            try {
+                const response = await fetch(`{% url 'inventory:api_manage_procurement' %}?${params}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                if (!response.ok) throw new Error('Network error');
+                const data = await response.json();
+                this.items = data.items || [];
+                this.pagination = data.pagination || {};
+            } catch (e) {
+                Alpine.store('globals').showToast('Error loading documents', 'error');
+            } finally {
+                this.isLoading = false;
+            }
+        },
+    }));
+});
 </script>

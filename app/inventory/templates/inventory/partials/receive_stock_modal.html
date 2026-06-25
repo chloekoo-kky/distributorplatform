@@ -23,39 +23,41 @@
         <form method="POST" action="{% url 'inventory:receive_stock' %}" id="receive-stock-form">
             {% csrf_token %}
             <div class="space-y-4">
-                {% for field in receive_stock_form %}
-                    {% if not field.is_hidden %}
-                    <div>
-                        <label for="{{ field.id_for_label }}" class="font-semibold text-gray-700 block mb-1">
-                            {{ field.label }}
-                        </label>
-                        {# --- START MODIFICATION (Problem 1 Fix) --- #}
-                        {% if field.name == 'quantity' %}
-                            <input type="{{ field.widget_type }}"
-                                name="{{ field.name }}"
-                                id="{{ field.id_for_label }}"
-                                x-model="receiveStockData.quantity_to_receive"
-                                :max="receiveStockData.max_receivable"
-                                min="0"
-                                required
-                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                placeholder="{{ field.field.widget.attrs.placeholder|default:'' }}">
-                        {% else %}
-                            {# Render other fields normally #}
-                            {{ field }}
-                        {% endif %}
-                        {# --- END MODIFICATION --- #}
-                        {% if field.help_text %}<p class="text-xs text-gray-500 mt-1">{{ field.help_text }}</p>{% endif %}
-                        {% for error in field.errors %}<p class="text-sm text-red-600 mt-1">{{ error }}</p>{% endfor %}
-                    </div>
-                    {% endif %}
-                {% endfor %}
+                <div>
+                    <label for="rs_quantity" class="font-semibold text-gray-700 block mb-1">
+                        Quantity Received
+                    </label>
+                    <input type="number"
+                           name="quantity"
+                           id="rs_quantity"
+                           x-model="receiveStockData.quantity_to_receive"
+                           :max="receiveStockData.max_receivable"
+                           min="1"
+                           required
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Maximum receivable: <span x-text="receiveStockData.max_receivable"></span>
+                    </p>
+                </div>
+                <div>
+                    <label for="rs_received_date" class="font-semibold text-gray-700 block mb-1">
+                        Received Date
+                    </label>
+                    <input type="date"
+                           name="received_date"
+                           id="rs_received_date"
+                           value="{{ today_date|date:'Y-m-d' }}"
+                           required
+                           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <p class="text-xs text-gray-400">
+                    Batch number and expiry can be set later from Inventory when splitting a receipt into multiple batches.
+                </p>
 
-                {# Hidden fields remain the same #}
                 <input type="hidden" name="product" :value="receiveStockData.productId">
                 <input type="hidden" name="supplier" :value="receiveStockData.supplierId">
                 <input type="hidden" name="quotation" :value="receiveStockData.quotationId">
-                <input type="hidden" name="invoice_item" :value="receiveStockData.invoiceItemId"> {# Ensure name is invoice_item #}
+                <input type="hidden" name="invoice_item" :value="receiveStockData.invoiceItemId">
             </div>
 
             <div id="receive-stock-error-container" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">

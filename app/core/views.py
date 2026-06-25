@@ -12,7 +12,7 @@ import json
 import logging
 
 from inventory.forms import (
-    InventoryBatchForm, QuotationUploadForm,
+    InventoryBatchForm, QuotationUploadForm, InvoiceUploadForm,
     QuotationCreateForm, InventoryBatchUploadForm
 )
 from sales.forms import InvoiceUpdateForm
@@ -77,7 +77,13 @@ def manage_dashboard(request):
 
     all_user_groups = UserGroup.objects.all().order_by('name')
     all_user_groups_list = [
-        {'id': g.id, 'name': g.name, 'commission_percentage': g.commission_percentage}
+        {
+            'id': g.id,
+            'name': g.name,
+            'commission_type': g.commission_type,
+            'commission_percentage': float(g.commission_percentage),
+            'tier_commission_rates': g.tier_commission_rates or [],
+        }
         for g in all_user_groups
     ]
 
@@ -117,6 +123,7 @@ def manage_dashboard(request):
 
         # Modal Forms
         'quotation_upload_form': QuotationUploadForm(),
+        'invoice_upload_form': InvoiceUploadForm(),
         'quotation_create_form': QuotationCreateForm(),
         'inventory_batch_upload_form': InventoryBatchUploadForm(),
         'receive_stock_form': InventoryBatchForm(),

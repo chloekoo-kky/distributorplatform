@@ -255,20 +255,69 @@ class Product(models.Model):
         ):
             return self.saved_base_cost
 
-        # Import here to avoid circular dependency
+        from inventory.supplier_pricing import latest_matrix_unit_price_for_product
+
+        matrix_cost = latest_matrix_unit_price_for_product(self)
+        if matrix_cost is not None:
+            return matrix_cost
+
+        from inventory.supplier_pricing import latest_invoice_landed_cost_for_product
+
+        invoice_cost = latest_invoice_landed_cost_for_product(self)
+        if invoice_cost is not None:
+            return invoice_cost
+
+        from decimal import Decimal
+
+        from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum
+
         from inventory.models import QuotationItem
 
         # Check if data was prefetched by an API view
         if hasattr(self, 'latest_quotation_items'):
-            # This attribute is created by the Prefetch in the API views
             latest_item = self.latest_quotation_items[0] if self.latest_quotation_items else None
-        else:
-            latest_item = QuotationItem.objects.filter(
-                product=self
-            ).select_related('quotation').prefetch_related('quotation__items').order_by('-quotation__date_quoted').first()
+            if latest_item:
+                return latest_item.landed_cost_per_unit
+            return None
 
-        if latest_item:
-            return latest_item.landed_cost_per_unit
+        # Use a correlated subquery to get the quotation total inline — avoids
+        # prefetch_related('quotation__items') which loads all sibling rows.
+        quotation_total_sq = (
+            QuotationItem.objects.filter(quotation_id=OuterRef('quotation_id'))
+            .values('quotation_id')
+            .annotate(
+                total=Sum(
+                    ExpressionWrapper(
+                        F('quantity') * F('quoted_price'),
+                        output_field=DecimalField(max_digits=20, decimal_places=4),
+                    )
+                )
+            )
+            .values('total')
+        )
+        latest_item = (
+            QuotationItem.objects.filter(product=self)
+            .select_related('quotation')
+            .annotate(
+                _quotation_total=Subquery(
+                    quotation_total_sq,
+                    output_field=DecimalField(max_digits=20, decimal_places=4),
+                )
+            )
+            .order_by('-quotation__date_quoted', '-pk')
+            .first()
+        )
+        if latest_item and latest_item.quantity and latest_item.quoted_price:
+            qty = Decimal(str(latest_item.quantity))
+            price = latest_item.quoted_price
+            transport = latest_item.quotation.transportation_cost or Decimal('0')
+            quotation_total = latest_item._quotation_total or Decimal('0')
+            if quotation_total > 0 and transport > 0:
+                item_total = qty * price
+                landed = (item_total + transport * (item_total / quotation_total)) / qty
+            else:
+                landed = price
+            return landed
 
         return None
 

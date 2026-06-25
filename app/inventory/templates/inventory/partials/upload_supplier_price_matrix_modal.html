@@ -1,0 +1,324 @@
+{{ all_suppliers_list|json_script:"supplier-price-matrix-suppliers" }}
+
+<div x-show="uploadSupplierPriceMatrixModalOpen" x-cloak
+     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-800 bg-opacity-75"
+     x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+     x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+     style="display: none;"
+     @keydown.escape.window="if (uploadSupplierPriceMatrixModalOpen) closeSupplierPriceMatrixModal()">
+
+    <div @click.away="closeSupplierPriceMatrixModal()"
+         class="relative bg-white rounded-t-lg sm:rounded-lg shadow-xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col m-0 sm:m-4"
+         x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+         x-transition:enter-end="opacity-100 transform scale-100">
+
+        <div class="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b">
+            <div>
+                <h3 class="text-xl font-bold text-gray-800">Upload Supplier Price List</h3>
+                <p class="text-sm text-gray-500 mt-1">
+                    Parse Excel/CSV and update the centralized price matrix for one supplier.
+                </p>
+            </div>
+            <button type="button" @click="closeSupplierPriceMatrixModal()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="px-4 sm:px-6 py-4 overflow-y-auto flex-1 space-y-4">
+            <div x-show="supplierPriceMatrixStep === 'upload'" class="space-y-4">
+                {# Searchable supplier combobox #}
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-sm font-medium text-gray-700">Supplier</label>
+                        <button type="button" @click="openCreateSupplierPriceMatrixPanel()"
+                                class="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                            + New supplier
+                        </button>
+                    </div>
+                    <div class="relative" @click.outside="supplierPriceMatrixSupplierOpen = false">
+                        <div class="relative rounded-lg border bg-white shadow-sm transition-colors duration-150"
+                             :class="supplierPriceMatrixSupplierOpen
+                                 ? 'border-indigo-400 ring-2 ring-indigo-500/20'
+                                 : supplierPriceMatrixSupplierId
+                                     ? 'border-indigo-200 bg-indigo-50/30'
+                                     : 'border-gray-300 hover:border-gray-400'">
+                            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            </div>
+                            <input type="text"
+                                   x-model="supplierPriceMatrixSupplierSearch"
+                                   @focus="supplierPriceMatrixSupplierOpen = true"
+                                   @input="supplierPriceMatrixSupplierId = ''; supplierPriceMatrixSupplierOpen = true"
+                                   placeholder="Search suppliers…"
+                                   autocomplete="off"
+                                   class="block w-full rounded-lg border-0 bg-transparent py-2.5 pl-9 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0">
+                            <button type="button"
+                                    x-show="supplierPriceMatrixSupplierId"
+                                    @click="supplierPriceMatrixSupplierId = ''; supplierPriceMatrixSupplierSearch = ''; supplierPriceMatrixSupplierOpen = true"
+                                    class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                                    title="Clear selection">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                        <div x-show="supplierPriceMatrixSupplierOpen"
+                             x-cloak
+                             class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-52 overflow-y-auto">
+                            <template x-if="filteredSupplierPriceMatrixSuppliers().length === 0 && !supplierPriceMatrixSupplierSearch">
+                                <p class="px-3 py-2 text-sm text-gray-500">No suppliers yet. Create one below.</p>
+                            </template>
+                            <template x-for="sup in filteredSupplierPriceMatrixSuppliers()" :key="sup.id">
+                                <button type="button"
+                                        @click="selectSupplierPriceMatrixSupplier(sup)"
+                                        class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none"
+                                        :class="String(supplierPriceMatrixSupplierId) === String(sup.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-800'">
+                                    <span x-text="sup.name"></span>
+                                </button>
+                            </template>
+                            <template x-if="supplierPriceMatrixSupplierSearch.trim() && !exactSupplierPriceMatrixMatch()">
+                                <button type="button"
+                                        @click="openCreateSupplierPriceMatrixPanel()"
+                                        class="w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border-t border-gray-100">
+                                    + Create supplier "<span x-text="supplierPriceMatrixSupplierSearch.trim()"></span>"
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                {# New supplier inline form #}
+                <div x-show="supplierPriceMatrixShowNewSupplier" x-cloak
+                     class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4 space-y-4">
+                    <p class="text-sm font-medium text-gray-800">Create new supplier</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                            <div class="rounded-lg border border-gray-300 bg-white shadow-sm transition-colors duration-150 hover:border-gray-400 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                                <input type="text"
+                                       x-model="supplierPriceMatrixNewSupplierName"
+                                       placeholder="Supplier name"
+                                       autocomplete="off"
+                                       class="block w-full rounded-lg border-0 bg-transparent py-2.5 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0">
+                            </div>
+                        </div>
+                        <div class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Code <span class="font-normal text-gray-500">(optional)</span></label>
+                            <div class="rounded-lg border border-gray-300 bg-white shadow-sm transition-colors duration-150 hover:border-gray-400 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                                <input type="text"
+                                       x-model="supplierPriceMatrixNewSupplierCode"
+                                       placeholder="e.g. SUP001"
+                                       autocomplete="off"
+                                       class="block w-full rounded-lg border-0 bg-transparent py-2.5 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 font-mono">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" @click="createSupplierPriceMatrixSupplier()" :disabled="supplierPriceMatrixBusy"
+                                class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                            Save supplier
+                        </button>
+                        <button type="button" @click="supplierPriceMatrixShowNewSupplier = false"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                {# Currency + conversion rate #}
+                <div>
+                    <div class="grid grid-cols-1 gap-4 items-end"
+                         :class="supplierPriceMatrixCurrency !== 'MYR' ? 'sm:grid-cols-2' : ''">
+                        <div class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Currency in file</label>
+                            <div class="inline-flex rounded-md shadow-sm border border-gray-300 overflow-hidden">
+                                <template x-for="cur in ['MYR', 'USD', 'EUR']" :key="cur">
+                                    <button type="button"
+                                            @click="supplierPriceMatrixCurrency = cur"
+                                            class="px-4 py-2 text-sm font-medium border-r border-gray-300 last:border-r-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                                            :class="supplierPriceMatrixCurrency === cur ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                                            x-text="cur"></button>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="min-w-0" x-show="supplierPriceMatrixCurrency !== 'MYR'" x-cloak>
+                            <label class="block text-sm font-medium text-gray-700 mb-1"
+                                   x-text="'Rate (1 ' + supplierPriceMatrixCurrency + ' → MYR)'"></label>
+                            <div class="flex rounded-md border border-gray-300 shadow-sm overflow-hidden bg-white focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                                <input type="text"
+                                       inputmode="decimal"
+                                       x-show="supplierPriceMatrixCurrency === 'USD'"
+                                       x-model="supplierPriceMatrixRateUSDInput"
+                                       @blur="formatSupplierPriceMatrixRateUSD()"
+                                       class="block w-full min-w-0 border-0 bg-transparent py-2 px-3 text-sm text-gray-900 tabular-nums focus:outline-none focus:ring-0"
+                                       placeholder="4.20">
+                                <input type="text"
+                                       inputmode="decimal"
+                                       x-show="supplierPriceMatrixCurrency === 'EUR'"
+                                       x-model="supplierPriceMatrixRateEURInput"
+                                       @blur="formatSupplierPriceMatrixRateEUR()"
+                                       class="block w-full min-w-0 border-0 bg-transparent py-2 px-3 text-sm text-gray-900 tabular-nums focus:outline-none focus:ring-0"
+                                       placeholder="4.60">
+                                <span class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-gray-50 border-l border-gray-300 shrink-0">MYR</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2" x-show="supplierPriceMatrixCurrency === 'MYR'">
+                        Prices are stored as MYR.
+                    </p>
+                    <p class="text-xs text-gray-500 mt-2" x-show="supplierPriceMatrixCurrency !== 'MYR'">
+                        File prices are converted to MYR on save using the rate above.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Price list file (.csv, .xlsx, .pdf)</label>
+                    <input type="file" x-ref="supplierPriceMatrixFileInput" accept=".csv,.xls,.xlsx,.pdf"
+                           @change="onSupplierPriceMatrixFileSelected($event)"
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                </div>
+                <div class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-md p-3 space-y-1">
+                    <p><strong>Expected columns:</strong> Medication (or Product), Strength, Size, Form, Notes.</p>
+                    <p><strong>Tier prices:</strong> columns like <code class="bg-white px-1 rounded">1-999</code>, <code class="bg-white px-1 rounded">1000-1999</code>, <code class="bg-white px-1 rounded">2000+</code>, or a single <code class="bg-white px-1 rounded">Quoted Price (Unit)</code>.</p>
+                    <p>PDF files should use a clear table layout (not a scanned image). Excel/CSV is most reliable if parsing fails.</p>
+                    <p>No quantities required — this updates the supplier price matrix, not a purchase order.</p>
+                </div>
+            </div>
+
+            <div x-show="supplierPriceMatrixStep === 'preview'">
+                <p class="text-sm text-gray-600 mb-1">
+                    Review <span x-text="supplierPriceMatrixRows.length"></span> row(s).
+                    Unmatched medications can be linked to an existing catalog product or saved as a new product on import.
+                </p>
+                <p class="text-xs text-gray-500 mb-3" x-show="supplierPriceMatrixCurrency !== 'MYR'">
+                    Preview prices shown in <span x-text="supplierPriceMatrixCurrency"></span>; saved to matrix as MYR.
+                </p>
+                <div class="overflow-x-auto border border-gray-200 rounded-md max-h-[50vh] overflow-y-auto">
+                    <table class="min-w-full table-fixed text-xs divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0 z-[1]">
+                            <tr>
+                                <th class="px-2 py-2 text-left font-medium text-gray-500 w-[30%]">Medication</th>
+                                <th class="px-2 py-2 text-left font-medium text-gray-500 w-[14%]">Strength</th>
+                                <th class="px-2 py-2 text-left font-medium text-gray-500 w-[10%]">Size</th>
+                                <th class="px-2 py-2 text-left font-medium text-gray-500 w-[30%]">Catalog product</th>
+                                <th class="px-2 py-2 text-left font-medium text-gray-500 w-[16%]">Tiers</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100">
+                            <template x-for="(row, idx) in supplierPriceMatrixRows" :key="idx">
+                                <tr :class="!row.product_id ? 'bg-amber-50/50' : ''">
+                                    <td class="px-2 py-2 align-top" x-text="row.medication"></td>
+                                    <td class="px-2 py-2 align-top" x-text="row.strength || '-'"></td>
+                                    <td class="px-2 py-2 align-top" x-text="row.size || '-'"></td>
+                                    <td class="px-2 py-2 align-top min-w-0">
+                                        <template x-if="row.product_id">
+                                            <div class="space-y-1">
+                                                <div class="flex items-start gap-1">
+                                                    <span class="text-green-700 font-medium min-w-0 truncate"
+                                                          x-text="`${row.product_name}${row.product_sku ? ' (' + row.product_sku + ')' : ''}`"></span>
+                                                    <button type="button"
+                                                            @click="openSupplierPriceMatrixMappingSearch(row, idx, $event)"
+                                                            class="shrink-0 p-0.5 text-gray-400 hover:text-indigo-600 rounded"
+                                                            title="Change mapping">
+                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                <span class="block text-[10px] text-gray-400"
+                                                      x-text="supplierPriceMatrixMatchLabel(row.match_type)"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="!row.product_id">
+                                            <div class="space-y-1.5">
+                                                <span class="text-emerald-700 text-[11px] font-semibold uppercase tracking-wide">Create new</span>
+                                                <input type="text" x-model="row.new_product_name"
+                                                       class="w-full border-gray-300 rounded text-xs"
+                                                       placeholder="New product name">
+                                                <input type="text" x-model="row.new_product_sku"
+                                                       class="w-full border-gray-300 rounded text-xs font-mono"
+                                                       placeholder="SKU (optional)">
+                                                <button type="button"
+                                                        @click="openSupplierPriceMatrixMappingSearch(row, idx, $event)"
+                                                        class="text-indigo-600 hover:text-indigo-800 text-[11px] font-medium">
+                                                    Map to existing product instead
+                                                </button>
+                                            </div>
+                                        </template>
+                                    </td>
+                                    <td class="px-2 py-2 align-top whitespace-nowrap tabular-nums">
+                                        <template x-for="(tier, tIdx) in row.tiers" :key="tIdx">
+                                            <div x-text="formatSupplierPriceMatrixTier(tier)"></div>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                {# Floating mapping picker — fixed size, does not affect table layout #}
+                <template x-if="supplierPriceMatrixMappingRowIndex !== null">
+                    <div>
+                        <div class="fixed inset-0 z-[60]"
+                             @click="closeSupplierPriceMatrixMappingPicker()"></div>
+                        <div class="fixed z-[61] flex flex-col max-h-72 bg-white border border-gray-200 rounded-lg shadow-2xl p-2"
+                             :style="supplierPriceMatrixMappingStyle"
+                             @click.stop
+                             @keydown.escape.window="closeSupplierPriceMatrixMappingPicker()">
+                            <p class="text-[11px] font-medium text-gray-700 px-1 pb-2 truncate border-b border-gray-100"
+                               x-text="supplierPriceMatrixRows[supplierPriceMatrixMappingRowIndex]?.medication || 'Map to catalog product'"></p>
+                            <input type="text"
+                                   x-ref="supplierPriceMatrixMappingInput"
+                                   @input.debounce.200ms="fetchSupplierPriceMatrixProducts($event.target.value)"
+                                   placeholder="Search catalog by name or SKU…"
+                                   class="w-full rounded border border-gray-300 px-2 py-1.5 text-xs mt-2 mb-2 focus:border-indigo-500 focus:ring-indigo-500">
+                            <div class="overflow-y-auto min-h-0 flex-1 space-y-0.5">
+                                <button type="button"
+                                        @click="setSupplierPriceMatrixCreateNew(supplierPriceMatrixRows[supplierPriceMatrixMappingRowIndex])"
+                                        class="w-full text-left px-2 py-1.5 hover:bg-emerald-50 rounded text-xs text-emerald-700 font-medium">
+                                    — Create new product —
+                                </button>
+                                <template x-for="p in supplierPriceMatrixMappingProducts" :key="p.id">
+                                    <button type="button"
+                                            @click="applySupplierPriceMatrixMapping(supplierPriceMatrixRows[supplierPriceMatrixMappingRowIndex], p)"
+                                            class="w-full text-left px-2 py-1.5 hover:bg-indigo-50 rounded text-xs text-gray-800 truncate"
+                                            x-text="(p.sku ? p.sku + ' — ' : '') + p.name"></button>
+                                </template>
+                                <p x-show="supplierPriceMatrixMappingProducts.length === 0 && supplierPriceMatrixMappingQuery"
+                                   class="text-gray-500 text-[11px] px-2 py-1">No products found</p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <p x-show="supplierPriceMatrixError" x-text="supplierPriceMatrixError" class="text-sm text-red-600"></p>
+        </div>
+
+        <div class="px-4 sm:px-6 py-4 border-t bg-gray-50 flex flex-wrap gap-2 justify-end">
+            <button type="button" @click="closeSupplierPriceMatrixModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="button" x-show="supplierPriceMatrixStep === 'upload'"
+                    @click="parseSupplierPriceMatrixFile()"
+                    :disabled="supplierPriceMatrixBusy || !supplierPriceMatrixSupplierId || !supplierPriceMatrixSelectedFile"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                <span x-show="!supplierPriceMatrixBusy">Preview import</span>
+                <span x-show="supplierPriceMatrixBusy">Parsing…</span>
+            </button>
+            <button type="button" x-show="supplierPriceMatrixStep === 'preview'"
+                    @click="supplierPriceMatrixStep = 'upload'"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Back
+            </button>
+            <button type="button" x-show="supplierPriceMatrixStep === 'preview'"
+                    @click="confirmSupplierPriceMatrixImport()"
+                    :disabled="supplierPriceMatrixBusy"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                <span x-show="!supplierPriceMatrixBusy">Update price matrix</span>
+                <span x-show="supplierPriceMatrixBusy">Saving…</span>
+            </button>
+        </div>
+    </div>
+</div>
