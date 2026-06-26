@@ -26,6 +26,7 @@ import urllib.parse
 
 from inventory.models import QuotationItem
 from product.models import Product, Category
+from commission.models import CommissionLedger
 from .models import (
     Order,
     OrderItem,
@@ -35,8 +36,19 @@ from .models import (
     CashBankReceiptEntry,
     AgentCommissionPaymentEntry,
     RevenueAdjustmentEntry,
+    finance_entry_transaction_id,
 )
 from .forms import ManualOrderForm
+from .finance_entry_import import (
+    CASH_BANK_TYPE_EXPORT_LABELS,
+    cash_bank_receipt_template_bytes,
+    cash_received_transactions_export_bytes,
+    commission_payment_template_bytes,
+    parse_cash_bank_receipt_upload,
+    parse_commission_payment_upload,
+    parse_revenue_adjustment_upload,
+    revenue_adjustment_template_bytes,
+)
 from core.models import SiteSetting, PaymentOption
 
 ORDER_EXPORT_HEADERS = [
@@ -72,16 +84,21 @@ def _cash_bank_receipt_export_rows(receipts_qs):
         CashBankReceiptEntry.PaymentType.LOAN: 'Loan repayment',
     }
     rows = []
-    for rec in receipts_qs.select_related('recorded_by'):
+    for rec in receipts_qs.select_related('recorded_by', 'collected_by'):
         product_label = type_labels.get(rec.payment_type, rec.get_payment_type_display())
-        salesteam = rec.recorded_by.username if rec.recorded_by_id else ''
+        if rec.collected_by_id:
+            salesteam = rec.collected_by.username
+        elif rec.recorded_by_id:
+            salesteam = rec.recorded_by.username
+        else:
+            salesteam = ''
         d = rec.transaction_date
         month_key = d.strftime('%Y-%m')
         amt = rec.amount
         rows.append({
             'month_key': month_key,
             'values': [
-                f'CB-{rec.pk}',
+                rec.transaction_id or finance_entry_transaction_id('CB', rec.pk),
                 d.strftime('%Y-%m-%d'),
                 salesteam,
                 _title_case_received_from(rec.received_from),
@@ -113,7 +130,7 @@ def _revenue_adjustment_export_rows(adjustments_qs):
         rows.append({
             'month_key': month_key,
             'values': [
-                f'RA-{adj.pk}',
+                adj.transaction_id or finance_entry_transaction_id('RA', adj.pk),
                 d.strftime('%Y-%m-%d'),
                 salesteam,
                 adj.reference.strip(),
@@ -140,7 +157,7 @@ def _agent_commission_payment_export_rows(payments_qs):
         rows.append({
             'month_key': month_key,
             'values': [
-                f'CP-{pay.pk}',
+                pay.transaction_id or finance_entry_transaction_id('CP', pay.pk),
                 d.strftime('%Y-%m-%d'),
                 salesteam,
                 pay.paid_to.strip(),
@@ -225,6 +242,28 @@ def _excel_response_for_order_rows(filename, rows):
     )
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+def _excel_attachment_response(content_bytes, filename):
+    response = HttpResponse(
+        content_bytes,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _read_uploaded_xlsx(request):
+    upload = request.FILES.get('file')
+    if not upload:
+        return None, JsonResponse({'success': False, 'error': 'file is required'}, status=400)
+    name = (upload.name or '').lower()
+    if not name.endswith('.xlsx'):
+        return None, JsonResponse({'success': False, 'error': 'Upload an .xlsx Excel file.'}, status=400)
+    try:
+        return upload.read(), None
+    except Exception:
+        return None, JsonResponse({'success': False, 'error': 'Could not read uploaded file.'}, status=400)
 
 
 def salesperson_required(view_func):
@@ -1491,20 +1530,150 @@ def _manage_orders_search_q(search_query: str) -> Q:
     return search_q
 
 
-def _order_financial_summary():
-    """Global order financial figures (not scoped to list filters)."""
+def _apply_order_status_agent_filters(qs, status_filter='', agent_filter=''):
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if agent_filter:
+        try:
+            qs = qs.filter(agent_id=int(agent_filter))
+        except (ValueError, TypeError):
+            pass
+    return qs
+
+
+def _resolve_order_agent_user(agent_id=None, agent_username=''):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    if agent_id is not None and str(agent_id).strip():
+        try:
+            user = User.objects.filter(pk=int(agent_id)).first()
+            if user:
+                return user
+        except (ValueError, TypeError):
+            pass
+    name = (agent_username or '').strip()
+    if name:
+        return User.objects.filter(username__iexact=name).first()
+    return None
+
+
+def _agent_match_names(agent_user, order_qs=None):
+    names = set()
+    if not agent_user:
+        return names
+    names.add(agent_user.username)
+    full = agent_user.get_full_name()
+    if full and full.strip():
+        names.add(full.strip())
+    if order_qs is not None:
+        for customer_name in order_qs.values_list('customer_name', flat=True):
+            cleaned = (customer_name or '').strip()
+            if cleaned:
+                names.add(cleaned)
+    return names
+
+
+def _filter_cash_receipts_for_agent(qs, agent_filter='', order_qs=None):
+    """Scope cash receipts to an agent (collected_by or legacy received_from match)."""
+    if not agent_filter:
+        return qs
+    try:
+        agent_id = int(agent_filter)
+    except (ValueError, TypeError):
+        return qs
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    agent_user = User.objects.filter(pk=agent_id).first()
+    if not agent_user:
+        return qs.none()
+    if order_qs is None:
+        order_qs = Order.objects.filter(agent_id=agent_id).exclude(
+            status=Order.OrderStatus.CANCELLED
+        )
+    names = _agent_match_names(agent_user, order_qs)
+    legacy_q = _finance_name_match_q('received_from', names) if names else Q(pk__in=[])
+    return qs.filter(Q(collected_by_id=agent_id) | (Q(collected_by__isnull=True) & legacy_q))
+
+
+def _finance_name_match_q(field_name, names):
+    q = Q()
+    for name in names:
+        cleaned = (name or '').strip()
+        if not cleaned:
+            continue
+        q |= Q(**{f'{field_name}__iexact': cleaned})
+        titled = _title_case_received_from(cleaned)
+        if titled and titled != cleaned:
+            q |= Q(**{f'{field_name}__iexact': titled})
+    return q
+
+
+def _cash_received_for_agent(agent_user, order_qs):
+    if not agent_user:
+        return Decimal('0')
+    qs = _filter_cash_receipts_for_agent(
+        CashBankReceiptEntry.objects.all(),
+        agent_filter=str(agent_user.pk),
+        order_qs=order_qs,
+    )
+    agg = qs.aggregate(t=Sum('amount'))
+    return agg['t'] or Decimal('0')
+
+
+def _commission_paid_for_agent(agent_user):
+    if not agent_user:
+        return Decimal('0')
+    names = {agent_user.username}
+    full = agent_user.get_full_name()
+    if full and full.strip():
+        names.add(full.strip())
+    agg = AgentCommissionPaymentEntry.objects.filter(
+        _finance_name_match_q('paid_to', names)
+    ).aggregate(t=Sum('amount'))
+    return agg['t'] or Decimal('0')
+
+
+def _bulk_create_finance_entries(model_cls, prefix, entries):
+    created = model_cls.objects.bulk_create(entries)
+    for entry in created:
+        if entry.pk and not entry.transaction_id:
+            entry.transaction_id = finance_entry_transaction_id(prefix, entry.pk)
+    model_cls.objects.bulk_update(created, ['transaction_id'])
+    return created
+
+
+def _order_financial_summary(agent_filter=''):
+    """Order financial figures. When agent_filter is set, scopes to that agent's orders and related cash/commission."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    order_qs = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
+    agent_user = None
+    if agent_filter:
+        try:
+            agent_user = User.objects.filter(pk=int(agent_filter)).first()
+            if agent_user:
+                order_qs = order_qs.filter(agent_id=agent_user.pk)
+            else:
+                agent_filter = ''
+        except (ValueError, TypeError):
+            agent_filter = ''
+
     rev_agg = (
         OrderItem.objects
-        .exclude(order__status=Order.OrderStatus.CANCELLED)
+        .filter(order__in=order_qs)
         .aggregate(t=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()))
     )
     all_time_revenue = rev_agg['t'] or Decimal('0')
 
-    cash_agg = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))
-    total_cash_received = cash_agg['t'] or Decimal('0')
-
-    comm_agg = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))
-    total_commission_paid = comm_agg['t'] or Decimal('0')
+    if agent_filter and agent_user:
+        total_cash_received = _cash_received_for_agent(agent_user, order_qs)
+        total_commission_paid = _commission_paid_for_agent(agent_user)
+    else:
+        cash_agg = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))
+        total_cash_received = cash_agg['t'] or Decimal('0')
+        comm_agg = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))
+        total_commission_paid = comm_agg['t'] or Decimal('0')
 
     pending = all_time_revenue - total_cash_received - total_commission_paid
 
@@ -1513,6 +1682,7 @@ def _order_financial_summary():
         'total_cash_received': float(total_cash_received),
         'total_commission_paid': float(total_commission_paid),
         'pending_cash_receivable': float(pending),
+        'agent_scoped': bool(agent_filter and agent_user),
     }
 
 
@@ -1625,15 +1795,7 @@ def api_manage_orders(request):
         )
 
     # 2. Apply Status Filter
-    if status_filter:
-        orders = orders.filter(status=status_filter)
-
-    # 2b. Apply Agent Filter
-    if agent_filter:
-        try:
-            orders = orders.filter(agent_id=int(agent_filter))
-        except (ValueError, TypeError):
-            pass
+    orders = _apply_order_status_agent_filters(orders, status_filter, agent_filter)
 
     # 3. Apply Search Filter: ID, customer (name/phone), agent, product name on any line item
     if search_query:
@@ -1686,7 +1848,7 @@ def api_manage_orders(request):
         'revenue': revenue,
     }
 
-    financial = _order_financial_summary() if request.user.is_superuser else None
+    financial = _order_financial_summary(agent_filter=agent_filter) if request.user.is_superuser else None
 
     # --- Pagination & Serialization ---
     orders = orders.select_related('created_by')
@@ -1964,13 +2126,130 @@ def api_get_order_items(request, order_id):
     return JsonResponse({'items': data})
 
 
+def _serialize_order_item_for_edit(item):
+    unit_price = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+    return {
+        'id': item.id,
+        'product_id': item.product_id,
+        'name': item.product.order_display_name,
+        'sku': item.product.sku or '',
+        'quantity': item.quantity,
+        'unit_price': str(unit_price),
+        'platform_price': str(item.platform_price) if item.platform_price is not None else '',
+    }
+
+
+def _superuser_update_order_items(order, items_payload):
+    """Replace/update order lines for superuser edit. Raises ValueError on validation failure."""
+    if order.status == Order.OrderStatus.CANCELLED:
+        raise ValueError('Cannot edit items on a cancelled order.')
+
+    if not items_payload:
+        raise ValueError('At least one order item is required.')
+
+    product_ids = []
+    for row in items_payload:
+        try:
+            product_ids.append(int(row.get('product_id')))
+        except (TypeError, ValueError):
+            continue
+    if not product_ids:
+        raise ValueError('Invalid order items.')
+
+    products = Product.objects.filter(id__in=product_ids)
+    product_map = {p.id: p for p in products}
+
+    kept_item_ids = set()
+    items_to_create = []
+
+    for row in items_payload:
+        try:
+            product_id = int(row.get('product_id'))
+        except (TypeError, ValueError):
+            continue
+        if product_id not in product_map:
+            continue
+
+        quantity = int(row.get('quantity') or 0)
+        if quantity <= 0:
+            continue
+
+        product = product_map[product_id]
+        try:
+            unit_price = Decimal(str(row.get('unit_price') or row.get('actual_unit_price') or 0))
+        except Exception:
+            unit_price = product.selling_price or Decimal('0.00')
+        if unit_price < 0:
+            unit_price = Decimal('0.00')
+
+        platform_price = None
+        if row.get('platform_price') not in (None, ''):
+            try:
+                platform_price = Decimal(str(row.get('platform_price')))
+            except Exception:
+                platform_price = None
+            if platform_price is not None and platform_price < 0:
+                platform_price = None
+
+        landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+
+        item_id = row.get('id')
+        existing_item = None
+        if item_id not in (None, ''):
+            try:
+                existing_item = order.items.select_related('product').get(pk=int(item_id))
+            except (OrderItem.DoesNotExist, ValueError, TypeError):
+                existing_item = None
+
+        if existing_item and existing_item.product_id == product_id:
+            existing_item.quantity = quantity
+            existing_item.selling_price = unit_price
+            existing_item.actual_unit_price = unit_price
+            existing_item.platform_price = platform_price
+            existing_item.landed_cost = landed_cost
+            existing_item.save()
+            kept_item_ids.add(existing_item.id)
+            continue
+
+        items_to_create.append(
+            OrderItem(
+                order=order,
+                product=product,
+                quantity=quantity,
+                selling_price=unit_price,
+                landed_cost=landed_cost,
+                platform_price=platform_price,
+                actual_unit_price=unit_price,
+            )
+        )
+
+    if not kept_item_ids and not items_to_create:
+        raise ValueError('No valid order items.')
+
+    for item in order.items.select_related('product').all():
+        if item.id in kept_item_ids:
+            continue
+        if CommissionLedger.objects.filter(order_item=item).exists():
+            raise ValueError(
+                f'Cannot remove "{item.product.order_display_name}" — commission already recorded for this line.'
+            )
+        item.delete()
+
+    for item in items_to_create:
+        item.save()
+
+
 @staff_member_required
 def api_manage_order_edit_details(request, order_id):
     """
     GET: order header fields for the manage-orders edit modal.
     POST: update customer snapshot, channel, transaction date, payment, remarks (staff).
+    Superusers may also update order items via an `items` array in the POST body.
     """
-    order = get_object_or_404(Order, pk=order_id)
+    order = get_object_or_404(
+        Order.objects.prefetch_related('items__product'),
+        pk=order_id,
+    )
 
     if request.method == 'GET':
         data = {
@@ -1978,6 +2257,7 @@ def api_manage_order_edit_details(request, order_id):
             'status': order.status,
             'status_display': order.get_status_display(),
             'is_manual_order': bool(order.created_by_id),
+            'can_edit_items': request.user.is_superuser and order.status != Order.OrderStatus.CANCELLED,
             'sales_channel': order.sales_channel or '',
             'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
             'company_name': order.company_name or '',
@@ -1987,6 +2267,8 @@ def api_manage_order_edit_details(request, order_id):
             'remarks': order.remarks or '',
             'payment_method': order.payment_method or '',
         }
+        if data['can_edit_items']:
+            data['items'] = [_serialize_order_item_for_edit(item) for item in order.items.all()]
         return JsonResponse({'success': True, 'order': data})
 
     if request.method == 'POST':
@@ -1995,28 +2277,35 @@ def api_manage_order_edit_details(request, order_id):
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
 
-        sc = payload.get('sales_channel', order.sales_channel)
-        if sc not in dict(Order.SalesChannel.choices):
-            sc = Order.SalesChannel.OTHER
+        try:
+            with transaction.atomic():
+                if request.user.is_superuser and 'items' in payload:
+                    _superuser_update_order_items(order, payload.get('items') or [])
 
-        td_raw = payload.get('transaction_date')
-        if td_raw in (None, '', False):
-            new_td = None
-        else:
-            try:
-                new_td = datetime.strptime(str(td_raw)[:10], '%Y-%m-%d').date()
-            except (ValueError, TypeError):
-                new_td = order.transaction_date
+                sc = payload.get('sales_channel', order.sales_channel)
+                if sc not in dict(Order.SalesChannel.choices):
+                    sc = Order.SalesChannel.OTHER
 
-        order.sales_channel = sc
-        order.transaction_date = new_td
-        order.company_name = (payload.get('company_name') or '').strip() or None
-        order.customer_name = (payload.get('customer_name') or '').strip() or None
-        order.customer_phone = (payload.get('customer_phone') or '').strip() or None
-        order.shipping_address = (payload.get('shipping_address') or '').strip() or None
-        order.remarks = (payload.get('remarks') or '').strip() or None
-        order.payment_method = (payload.get('payment_method') or '').strip() or None
-        order.save()
+                td_raw = payload.get('transaction_date')
+                if td_raw in (None, '', False):
+                    new_td = None
+                else:
+                    try:
+                        new_td = datetime.strptime(str(td_raw)[:10], '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        new_td = order.transaction_date
+
+                order.sales_channel = sc
+                order.transaction_date = new_td
+                order.company_name = (payload.get('company_name') or '').strip() or None
+                order.customer_name = (payload.get('customer_name') or '').strip() or None
+                order.customer_phone = (payload.get('customer_phone') or '').strip() or None
+                order.shipping_address = (payload.get('shipping_address') or '').strip() or None
+                order.remarks = (payload.get('remarks') or '').strip() or None
+                order.payment_method = (payload.get('payment_method') or '').strip() or None
+                order.save()
+        except ValueError as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
 
         return JsonResponse({'success': True, 'message': 'Order updated'})
 
@@ -2106,9 +2395,17 @@ def api_cash_bank_receipt_create(request):
     if amount <= 0:
         return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
 
+    collected_by = _resolve_order_agent_user(
+        agent_id=data.get('collected_by_id'),
+        agent_username=data.get('collected_by'),
+    )
+    if not collected_by:
+        return JsonResponse({'success': False, 'error': 'collected_by agent is required'}, status=400)
+
     entry = CashBankReceiptEntry.objects.create(
         payment_type=ptype,
         received_from=received_from,
+        collected_by=collected_by,
         transaction_date=tx_date,
         amount=amount,
         recorded_by=request.user,
@@ -2117,11 +2414,85 @@ def api_cash_bank_receipt_create(request):
         'success': True,
         'entry': {
             'id': entry.pk,
+            'transaction_id': entry.transaction_id,
             'payment_type': entry.payment_type,
             'received_from': entry.received_from,
+            'collected_by_id': entry.collected_by_id,
+            'collected_by': entry.collected_by.username if entry.collected_by_id else '',
             'transaction_date': entry.transaction_date.isoformat(),
             'amount': str(entry.amount),
         },
+    }
+    if request.user.is_superuser:
+        payload['financial'] = _order_financial_summary()
+    return JsonResponse(payload)
+
+
+@staff_member_required
+def api_cash_bank_receipt_bulk_template(request):
+    return _excel_attachment_response(
+        cash_bank_receipt_template_bytes(),
+        'cash_bank_receipt_upload_template.xlsx',
+    )
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+@transaction.atomic
+def api_cash_bank_receipt_bulk_upload(request):
+    file_bytes, error_response = _read_uploaded_xlsx(request)
+    if error_response:
+        return error_response
+
+    rows, errors = parse_cash_bank_receipt_upload(file_bytes)
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    entries = []
+    row_errors = []
+    updated = 0
+    for row in rows:
+        collected_by = _resolve_order_agent_user(agent_username=row.get('collected_by', ''))
+        if not collected_by:
+            row_errors.append(f'Unknown collected by agent: {row.get("collected_by") or "(empty)"}')
+            continue
+        if row.get('is_update'):
+            entry = CashBankReceiptEntry.objects.filter(transaction_id=row['transaction_id']).first()
+            if not entry:
+                row_errors.append(f'Unknown transaction ID: {row["transaction_id"]}')
+                continue
+            if entry.collected_by_id != collected_by.pk:
+                entry.collected_by = collected_by
+                entry.save(update_fields=['collected_by'])
+                updated += 1
+            continue
+        entries.append(CashBankReceiptEntry(
+            payment_type=row['payment_type'],
+            received_from=_title_case_received_from(row['received_from']),
+            collected_by=collected_by,
+            transaction_date=row['transaction_date'],
+            amount=row['amount'],
+            recorded_by=request.user,
+        ))
+    if row_errors:
+        return JsonResponse({'success': False, 'errors': row_errors}, status=400)
+    if entries:
+        _bulk_create_finance_entries(CashBankReceiptEntry, 'CB', entries)
+
+    created = len(entries)
+    if not created and not updated:
+        return JsonResponse({'success': False, 'errors': ['No rows to import or update.']}, status=400)
+
+    parts = []
+    if updated:
+        parts.append(f'updated {updated}')
+    if created:
+        parts.append(f'imported {created}')
+    payload = {
+        'success': True,
+        'created': created,
+        'updated': updated,
+        'message': f'{" and ".join(parts).capitalize()} receipt(s).',
     }
     if request.user.is_superuser:
         payload['financial'] = _order_financial_summary()
@@ -2212,15 +2583,17 @@ def api_cash_received_transactions(request):
         CashBankReceiptEntry.PaymentType.BANK: 'Bank transfer',
         CashBankReceiptEntry.PaymentType.LOAN: 'Loan repayment',
     }
-    entries = CashBankReceiptEntry.objects.order_by('-transaction_date', '-id')
+    entries = CashBankReceiptEntry.objects.select_related('collected_by').order_by('-transaction_date', '-id')
     transactions = []
     for entry in entries:
         transactions.append({
             'id': entry.pk,
+            'transaction_id': entry.transaction_id or finance_entry_transaction_id('CB', entry.pk),
             'transaction_date': entry.transaction_date.isoformat(),
             'type': type_labels.get(entry.payment_type, entry.get_payment_type_display()),
             'type_code': entry.payment_type,
             'received_from': _title_case_received_from(entry.received_from or ''),
+            'collected_by': entry.collected_by.username if entry.collected_by_id else '',
             'amount': float(entry.amount),
         })
     total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
@@ -2228,6 +2601,31 @@ def api_cash_received_transactions(request):
         'total': float(total),
         'transactions': transactions,
     })
+
+
+@staff_member_required
+def export_cash_received_transactions(request):
+    """Export all cash/bank receipt entries for bulk edit (e.g. update collected by). Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    entries = CashBankReceiptEntry.objects.select_related('collected_by').order_by('-transaction_date', '-id')
+    data_rows = []
+    for entry in entries:
+        data_rows.append([
+            entry.transaction_id or finance_entry_transaction_id('CB', entry.pk),
+            CASH_BANK_TYPE_EXPORT_LABELS.get(entry.payment_type, entry.get_payment_type_display()),
+            entry.received_from,
+            entry.collected_by.username if entry.collected_by_id else '',
+            entry.transaction_date.isoformat(),
+            float(entry.amount),
+        ])
+
+    filename = f'cash_received_transactions_{timezone.now().strftime("%Y%m%d")}.xlsx'
+    return _excel_attachment_response(
+        cash_received_transactions_export_bytes(data_rows),
+        filename,
+    )
 
 
 @staff_member_required
@@ -2260,6 +2658,7 @@ def api_commission_paid_transactions(request):
     for entry in entries:
         transactions.append({
             'id': entry.pk,
+            'transaction_id': entry.transaction_id or finance_entry_transaction_id('CP', entry.pk),
             'payment_date': entry.payment_date.isoformat(),
             'paid_to': _title_case_received_from(entry.paid_to or ''),
             'notes': entry.notes or '',
@@ -2287,6 +2686,7 @@ def api_revenue_adjustment_transactions(request):
     for entry in entries:
         transactions.append({
             'id': entry.pk,
+            'transaction_id': entry.transaction_id or finance_entry_transaction_id('RA', entry.pk),
             'transaction_date': entry.transaction_date.isoformat(),
             'type': type_labels.get(entry.adjustment_type, entry.get_adjustment_type_display()),
             'type_code': entry.adjustment_type,
@@ -2347,6 +2747,7 @@ def api_agent_commission_payment_create(request):
         'success': True,
         'entry': {
             'id': entry.pk,
+            'transaction_id': entry.transaction_id,
             'paid_to': entry.paid_to,
             'payment_date': entry.payment_date.isoformat(),
             'amount': str(entry.amount),
@@ -2408,11 +2809,101 @@ def api_revenue_adjustment_create(request):
         'success': True,
         'entry': {
             'id': entry.pk,
+            'transaction_id': entry.transaction_id,
             'adjustment_type': entry.adjustment_type,
             'reference': entry.reference,
             'transaction_date': entry.transaction_date.isoformat(),
             'amount': str(entry.amount),
         },
+    })
+
+
+@staff_member_required
+def api_agent_commission_payment_bulk_template(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    return _excel_attachment_response(
+        commission_payment_template_bytes(),
+        'commission_paid_upload_template.xlsx',
+    )
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+@transaction.atomic
+def api_agent_commission_payment_bulk_upload(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    file_bytes, error_response = _read_uploaded_xlsx(request)
+    if error_response:
+        return error_response
+
+    rows, errors = parse_commission_payment_upload(file_bytes)
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    entries = [
+        AgentCommissionPaymentEntry(
+            paid_to=_title_case_received_from(row['paid_to']),
+            payment_date=row['payment_date'],
+            amount=row['amount'],
+            notes=row['notes'],
+            recorded_by=request.user,
+        )
+        for row in rows
+    ]
+    _bulk_create_finance_entries(AgentCommissionPaymentEntry, 'CP', entries)
+
+    return JsonResponse({
+        'success': True,
+        'created': len(entries),
+        'message': f'Imported {len(entries)} commission payment(s).',
+        'financial': _order_financial_summary(),
+    })
+
+
+@staff_member_required
+def api_revenue_adjustment_bulk_template(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    return _excel_attachment_response(
+        revenue_adjustment_template_bytes(),
+        'revenue_adjustment_upload_template.xlsx',
+    )
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+@transaction.atomic
+def api_revenue_adjustment_bulk_upload(request):
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    file_bytes, error_response = _read_uploaded_xlsx(request)
+    if error_response:
+        return error_response
+
+    rows, errors = parse_revenue_adjustment_upload(file_bytes)
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    entries = [
+        RevenueAdjustmentEntry(
+            adjustment_type=row['adjustment_type'],
+            reference=row['reference'],
+            transaction_date=row['transaction_date'],
+            amount=row['amount'],
+            recorded_by=request.user,
+        )
+        for row in rows
+    ]
+    _bulk_create_finance_entries(RevenueAdjustmentEntry, 'RA', entries)
+
+    return JsonResponse({
+        'success': True,
+        'created': len(entries),
+        'message': f'Imported {len(entries)} revenue line(s).',
     })
 
 
@@ -2426,6 +2917,7 @@ def export_selected_orders(request):
     try:
         data = json.loads(request.body)
         order_ids = data.get('order_ids') or []
+        agent_filter = (data.get('agent') or '').strip()
     except (json.JSONDecodeError, TypeError):
         return JsonResponse({'success': False, 'error': 'Invalid JSON or missing order_ids'}, status=400)
 
@@ -2484,6 +2976,7 @@ def export_selected_orders(request):
             transaction_date__gte=d_min,
             transaction_date__lte=d_max,
         )
+        receipts = _filter_cash_receipts_for_agent(receipts, agent_filter)
         adjustments = RevenueAdjustmentEntry.objects.filter(
             transaction_date__gte=d_min,
             transaction_date__lte=d_max,
@@ -2513,9 +3006,12 @@ def export_orders_range(request):
     falls within the given date range.
     GET params:
         start_date, end_date in YYYY-MM-DD format (at least one required).
+        status, agent — optional; same as Order Management list filters.
     """
     start_str = request.GET.get('start_date') or ''
     end_str = request.GET.get('end_date') or ''
+    status_filter = (request.GET.get('status') or '').strip()
+    agent_filter = (request.GET.get('agent') or '').strip()
 
     if not start_str and not end_str:
         return HttpResponse("start_date or end_date is required.", status=400)
@@ -2544,6 +3040,8 @@ def export_orders_range(request):
             |
             Q(transaction_date__isnull=True, created_at__date__lte=end_date)
         )
+
+    orders = _apply_order_status_agent_filters(orders, status_filter, agent_filter)
 
     # Sort by logical order date oldest -> newest
     # (transaction_date when present, otherwise created_at)
@@ -2601,6 +3099,7 @@ def export_orders_range(request):
         receipts = receipts.filter(transaction_date__gte=start_date)
     if end_date:
         receipts = receipts.filter(transaction_date__lte=end_date)
+    receipts = _filter_cash_receipts_for_agent(receipts, agent_filter)
 
     adjustments = RevenueAdjustmentEntry.objects.all()
     if start_date:
@@ -2937,15 +3436,17 @@ def export_order_statement(request):
     try:
         month = int(request.GET.get('month', timezone.now().month))
         year = int(request.GET.get('year', timezone.now().year))
-        status = request.GET.get('status', '')
+        status_filter = (request.GET.get('status') or '').strip()
+        agent_filter = (request.GET.get('agent') or '').strip()
 
         orders = Order.objects.filter(
-            created_at__year=year,
-            created_at__month=month
-        ).select_related('agent', 'created_by').prefetch_related('items__product').order_by('created_at')
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        ).select_related('agent', 'created_by').prefetch_related('items__product')
 
-        if status:
-            orders = orders.filter(status=status)
+        orders = _apply_order_status_agent_filters(orders, status_filter, agent_filter)
+        orders = orders.order_by('transaction_date', 'created_at', 'id')
 
         rows = []
 
@@ -2990,6 +3491,7 @@ def export_order_statement(request):
             transaction_date__year=year,
             transaction_date__month=month,
         )
+        receipts = _filter_cash_receipts_for_agent(receipts, agent_filter)
         adjustments = RevenueAdjustmentEntry.objects.filter(
             transaction_date__year=year,
             transaction_date__month=month,

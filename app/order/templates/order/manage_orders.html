@@ -112,7 +112,8 @@
                 <div class="px-4 py-5 sm:p-6 pr-20 sm:pr-24 h-full flex flex-col">
                     <dt class="text-sm font-medium text-gray-500 truncate">Pending Cash Receivable</dt>
                     <dd class="mt-1 text-2xl font-semibold text-amber-700" x-text="formatRevenue(financial.pending_cash_receivable)"></dd>
-                    <p class="mt-auto pt-1 text-xs text-gray-500">All-time revenue &minus; cash received &minus; commission paid</p>
+                    <p class="mt-auto pt-1 text-xs text-gray-500"
+                       x-text="financial.agent_scoped ? (selectedAgentLabel() + ' revenue − cash received − commission paid') : 'All-time revenue − cash received − commission paid'"></p>
                 </div>
                 <div class="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-1.5">
                     <button type="button"
@@ -381,8 +382,10 @@
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50 sticky top-0">
                                 <tr>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collected By</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
                                     <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                                     <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-16"><span class="sr-only">Actions</span></th>
@@ -391,6 +394,7 @@
                             <tbody class="bg-white divide-y divide-gray-100">
                                 <template x-for="tx in cashReceivedTransactions" :key="tx.id">
                                     <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600" x-text="tx.transaction_id || '—'"></td>
                                         <td class="px-4 py-3 whitespace-nowrap text-gray-700 tabular-nums" x-text="formatTransactionDate(tx.transaction_date)"></td>
                                         <td class="px-4 py-3 text-gray-700">
                                             <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
@@ -401,6 +405,7 @@
                                                   }"
                                                   x-text="tx.type"></span>
                                         </td>
+                                        <td class="px-4 py-3 text-gray-900 break-words max-w-xs" x-text="tx.collected_by || '—'"></td>
                                         <td class="px-4 py-3 text-gray-900 break-words max-w-xs" x-text="tx.received_from ? formatTitleCase(tx.received_from) : '—'"></td>
                                         <td class="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums whitespace-nowrap" x-text="formatRevenue(tx.amount)"></td>
                                         <td class="px-4 py-3 text-right whitespace-nowrap">
@@ -424,6 +429,17 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+                <div class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+                    <button type="button"
+                            @click="exportCashReceivedTransactions()"
+                            :disabled="cashReceivedTransactionsLoading || cashReceivedTransactions.length === 0"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-400 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Export Excel
+                    </button>
                 </div>
             </div>
         </div>
@@ -459,6 +475,7 @@
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50 sticky top-0">
                                 <tr>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paid To</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
@@ -468,6 +485,7 @@
                             <tbody class="bg-white divide-y divide-gray-100">
                                 <template x-for="tx in commissionPaidTransactions" :key="tx.id">
                                     <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600" x-text="tx.transaction_id || '—'"></td>
                                         <td class="px-4 py-3 whitespace-nowrap text-gray-700 tabular-nums" x-text="formatTransactionDate(tx.payment_date)"></td>
                                         <td class="px-4 py-3 text-gray-900 break-words max-w-xs" x-text="tx.paid_to ? formatTitleCase(tx.paid_to) : '—'"></td>
                                         <td class="px-4 py-3 text-gray-600 break-words max-w-xs" x-text="tx.notes || '—'"></td>
@@ -512,6 +530,7 @@
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50 sticky top-0">
                                 <tr>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                     <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
@@ -521,6 +540,7 @@
                             <tbody class="bg-white divide-y divide-gray-100">
                                 <template x-for="tx in revenueAdjustmentTransactions" :key="tx.id">
                                     <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600" x-text="tx.transaction_id || '—'"></td>
                                         <td class="px-4 py-3 whitespace-nowrap text-gray-700 tabular-nums" x-text="formatTransactionDate(tx.transaction_date)"></td>
                                         <td class="px-4 py-3 text-gray-700">
                                             <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
@@ -1147,10 +1167,12 @@
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" @click.away="showExportModal = false">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">Export Order Statement</h3>
-                <p class="mt-1 text-sm text-gray-500">Download a CSV of orders for a specific month.</p>
+                <p class="mt-1 text-sm text-gray-500">Download orders for a specific month. Uses the current <strong class="font-medium text-gray-700">Status</strong> and <strong class="font-medium text-gray-700">Agent</strong> filters from the toolbar.</p>
             </div>
 
             <form action="{% url 'order:export_order_statement' %}" method="GET" class="p-6">
+                <input type="hidden" name="status" :value="filters.status || ''">
+                <input type="hidden" name="agent" :value="filters.agent || ''">
                 {# USE SEPARATE EXPORT FILTERS #}
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     <div>
@@ -1177,14 +1199,12 @@
                     </div>
                 </div>
 
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
-                    <select name="status" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="">All Statuses (Recommended)</option>
-                        <option value="COMPLETED">Completed Only</option>
-                        <option value="PENDING">Pending Only</option>
-                    </select>
-                </div>
+                <p class="mb-6 text-xs text-gray-500"
+                   x-show="filters.status || filters.agent"
+                   x-cloak>
+                    Active filters:
+                    <span x-show="filters.status" x-text="'Status = ' + filters.status"></span><span x-show="filters.status && filters.agent"> · </span><span x-show="filters.agent">Agent selected</span>
+                </p>
 
                 <div class="flex justify-end space-x-3">
                     <button type="button" @click="showExportModal = false"
@@ -1244,6 +1264,42 @@
                     </div>
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Collected by (agent)</label>
+                    <div class="relative" @click.away="cashBankCollectedBySearchOpen = false">
+                        <input type="text"
+                               x-model="cashBankForm.collected_by"
+                               @focus="cashBankCollectedBySearchOpen = true; cashBankCollectedByHighlightIndex = -1"
+                               @input="cashBankForm.collected_by_id = ''; cashBankCollectedBySearchOpen = true; cashBankCollectedByHighlightIndex = -1"
+                               @keydown="handleCashBankCollectedByKeydown($event)"
+                               placeholder="Search agent name..."
+                               autocomplete="off"
+                               role="combobox"
+                               aria-autocomplete="list"
+                               :aria-expanded="cashBankCollectedBySearchOpen && filteredCashBankCollectedByAgents.length > 0"
+                               class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                        <div x-show="cashBankCollectedBySearchOpen && filteredCashBankCollectedByAgents.length > 0"
+                             x-cloak
+                             x-transition
+                             role="listbox"
+                             class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-44 overflow-y-auto py-1">
+                            <template x-for="(agent, idx) in filteredCashBankCollectedByAgents" :key="agent.id">
+                                <button type="button"
+                                        @mousedown.prevent="selectCashBankCollectedByAgent(agent)"
+                                        @mouseenter="cashBankCollectedByHighlightIndex = idx"
+                                        :class="idx === cashBankCollectedByHighlightIndex ? 'bg-indigo-100 text-indigo-900' : 'text-gray-900 hover:bg-indigo-50'"
+                                        class="w-full text-left px-3 py-2 text-sm">
+                                    <span x-text="agent.username"></span>
+                                </button>
+                            </template>
+                        </div>
+                        <p x-show="cashBankCollectedBySearchOpen && cashBankForm.collected_by.trim() && filteredCashBankCollectedByAgents.length === 0"
+                           class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg px-3 py-2 text-sm text-gray-500"
+                           x-cloak>
+                            No matching agents.
+                        </p>
+                    </div>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Received from</label>
                     <div class="relative" @click.away="cashBankReceivedFromSearchOpen = false">
                         <input type="text"
@@ -1290,6 +1346,23 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
                     <input type="number" step="0.01" min="0.01" x-model="cashBankForm.amount" placeholder="0.00"
                            class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+                <div class="border-t border-gray-200 pt-4">
+                    <p class="text-sm font-medium text-gray-700">Bulk upload from Excel</p>
+                    <p class="mt-1 text-xs text-gray-500">Use Transaction Details export to update Collected By (keep Transaction ID). Leave Transaction ID blank for new rows.</p>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <a href="{% url 'order:api_cash_bank_receipt_bulk_template' %}"
+                           class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                            Download template
+                        </a>
+                        <label class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                               :class="cashBankBulkUploading ? 'opacity-50 pointer-events-none' : ''">
+                            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="sr-only"
+                                   @change="uploadCashBankBulk($event)" :disabled="cashBankBulkUploading">
+                            <span x-text="cashBankBulkUploading ? 'Uploading…' : 'Choose Excel file'"></span>
+                        </label>
+                    </div>
+                    <p x-show="cashBankBulkUploadError" x-cloak class="mt-2 text-xs text-red-600 whitespace-pre-line" x-text="cashBankBulkUploadError"></p>
                 </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
@@ -1377,6 +1450,23 @@
                     <input type="text" x-model="commissionPaymentForm.notes" placeholder="Reference or remarks"
                            class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
+                <div class="border-t border-gray-200 pt-4">
+                    <p class="text-sm font-medium text-gray-700">Bulk upload from Excel</p>
+                    <p class="mt-1 text-xs text-gray-500">Columns: Paid To, Payment Date, Amount, Notes (.xlsx)</p>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <a href="{% url 'order:api_agent_commission_payment_bulk_template' %}"
+                           class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                            Download template
+                        </a>
+                        <label class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                               :class="commissionBulkUploading ? 'opacity-50 pointer-events-none' : ''">
+                            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="sr-only"
+                                   @change="uploadCommissionBulk($event)" :disabled="commissionBulkUploading">
+                            <span x-text="commissionBulkUploading ? 'Uploading…' : 'Choose Excel file'"></span>
+                        </label>
+                    </div>
+                    <p x-show="commissionBulkUploadError" x-cloak class="mt-2 text-xs text-red-600 whitespace-pre-line" x-text="commissionBulkUploadError"></p>
+                </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
                 <button type="button" @click="showCommissionPaymentModal = false"
@@ -1443,6 +1533,23 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
                     <input type="number" step="0.01" min="0.01" x-model="revenueAdjustmentForm.amount" placeholder="0.00"
                            class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+                <div class="border-t border-gray-200 pt-4">
+                    <p class="text-sm font-medium text-gray-700">Bulk upload from Excel</p>
+                    <p class="mt-1 text-xs text-gray-500">Columns: Type, Reference, Transaction Date, Amount (.xlsx)</p>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <a href="{% url 'order:api_revenue_adjustment_bulk_template' %}"
+                           class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+                            Download template
+                        </a>
+                        <label class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 cursor-pointer"
+                               :class="revenueAdjustmentBulkUploading ? 'opacity-50 pointer-events-none' : ''">
+                            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="sr-only"
+                                   @change="uploadRevenueAdjustmentBulk($event)" :disabled="revenueAdjustmentBulkUploading">
+                            <span x-text="revenueAdjustmentBulkUploading ? 'Uploading…' : 'Choose Excel file'"></span>
+                        </label>
+                    </div>
+                    <p x-show="revenueAdjustmentBulkUploadError" x-cloak class="mt-2 text-xs text-red-600 whitespace-pre-line" x-text="revenueAdjustmentBulkUploadError"></p>
                 </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
@@ -1731,6 +1838,7 @@
                 total_cash_received: 0,
                 total_commission_paid: 0,
                 pending_cash_receivable: 0,
+                agent_scoped: false,
             },
             csrfToken: '{{ csrf_token }}',
 
@@ -1769,18 +1877,26 @@
             revenueAdjustmentTotal: 0,
             showCashBankModal: false,
             cashBankSaving: false,
+            cashBankBulkUploading: false,
+            cashBankBulkUploadError: '',
             cashBankReceivedFromOptions: [],
             cashBankReceivedFromSearchOpen: false,
             cashBankReceivedFromHighlightIndex: -1,
+            cashBankCollectedBySearchOpen: false,
+            cashBankCollectedByHighlightIndex: -1,
             orderFormModalBackdropArmed: false,
             cashBankForm: {
                 payment_type: 'CASH',
+                collected_by_id: '',
+                collected_by: '',
                 received_from: '',
                 transaction_date: '',
                 amount: '',
             },
             showCommissionPaymentModal: false,
             commissionPaymentSaving: false,
+            commissionBulkUploading: false,
+            commissionBulkUploadError: '',
             commissionAgentSearchOpen: false,
             commissionAgentHighlightIndex: -1,
             orderAgents: [],
@@ -1792,6 +1908,8 @@
             },
             showRevenueAdjustmentModal: false,
             revenueAdjustmentSaving: false,
+            revenueAdjustmentBulkUploading: false,
+            revenueAdjustmentBulkUploadError: '',
             revenueAdjustmentForm: {
                 adjustment_type: 'COMMISSION_RELEASED',
                 reference: '',
@@ -1814,6 +1932,13 @@
                 payment_method: ''
             },
             editDetailsMeta: { status_display: '', is_manual_order: false },
+            editDetailsCanEditItems: false,
+            editDetailsItems: [],
+            editDetailsProductSearch: '',
+            editDetailsProductSearchOpen: false,
+            editDetailsProductSearchResults: [],
+            editDetailsProductsLoading: false,
+            editDetailsProductSearchRequestId: 0,
             editingOrder: null,
             newStatus: '',
             isUpdating: false,
@@ -1877,10 +2002,26 @@
                 return filtered.slice(0, 10);
             },
 
+            get filteredCashBankCollectedByAgents() {
+                const q = (this.cashBankForm.collected_by || '').trim().toLowerCase();
+                const list = this.orderAgents || [];
+                const filtered = q
+                    ? list.filter(a => (a.username || '').toLowerCase().includes(q))
+                    : list;
+                return filtered.slice(0, 10);
+            },
+
             selectCommissionAgent(agent) {
                 this.commissionPaymentForm.paid_to = agent.username;
                 this.commissionAgentSearchOpen = false;
                 this.commissionAgentHighlightIndex = -1;
+            },
+
+            selectCashBankCollectedByAgent(agent) {
+                this.cashBankForm.collected_by_id = agent.id;
+                this.cashBankForm.collected_by = agent.username;
+                this.cashBankCollectedBySearchOpen = false;
+                this.cashBankCollectedByHighlightIndex = -1;
             },
 
             handleCommissionAgentKeydown(e) {
@@ -1907,6 +2048,33 @@
                 } else if (e.key === 'Escape') {
                     this.commissionAgentSearchOpen = false;
                     this.commissionAgentHighlightIndex = -1;
+                }
+            },
+
+            handleCashBankCollectedByKeydown(e) {
+                const list = this.filteredCashBankCollectedByAgents;
+                if (e.key === 'ArrowDown') {
+                    if (!list.length) return;
+                    e.preventDefault();
+                    this.cashBankCollectedBySearchOpen = true;
+                    this.cashBankCollectedByHighlightIndex = this.cashBankCollectedByHighlightIndex < list.length - 1
+                        ? this.cashBankCollectedByHighlightIndex + 1
+                        : 0;
+                } else if (e.key === 'ArrowUp') {
+                    if (!list.length) return;
+                    e.preventDefault();
+                    this.cashBankCollectedBySearchOpen = true;
+                    this.cashBankCollectedByHighlightIndex = this.cashBankCollectedByHighlightIndex > 0
+                        ? this.cashBankCollectedByHighlightIndex - 1
+                        : list.length - 1;
+                } else if (e.key === 'Enter') {
+                    if (this.cashBankCollectedBySearchOpen && this.cashBankCollectedByHighlightIndex >= 0 && list[this.cashBankCollectedByHighlightIndex]) {
+                        e.preventDefault();
+                        this.selectCashBankCollectedByAgent(list[this.cashBankCollectedByHighlightIndex]);
+                    }
+                } else if (e.key === 'Escape') {
+                    this.cashBankCollectedBySearchOpen = false;
+                    this.cashBankCollectedByHighlightIndex = -1;
                 }
             },
 
@@ -2235,8 +2403,19 @@
                 const y = t.getFullYear();
                 const m = String(t.getMonth() + 1).padStart(2, '0');
                 const d = String(t.getDate()).padStart(2, '0');
+                let collectedById = '';
+                let collectedBy = '';
+                if (this.filters.agent) {
+                    const match = (this.orderAgents || []).find(a => String(a.id) === String(this.filters.agent));
+                    if (match) {
+                        collectedById = match.id;
+                        collectedBy = match.username;
+                    }
+                }
                 this.cashBankForm = {
                     payment_type: 'CASH',
+                    collected_by_id: collectedById,
+                    collected_by: collectedBy,
                     received_from: '',
                     transaction_date: `${y}-${m}-${d}`,
                     amount: '',
@@ -2244,12 +2423,19 @@
                 this.orderFormModalBackdropArmed = false;
                 this.cashBankReceivedFromSearchOpen = false;
                 this.cashBankReceivedFromHighlightIndex = -1;
+                this.cashBankCollectedBySearchOpen = false;
+                this.cashBankCollectedByHighlightIndex = -1;
+                this.cashBankBulkUploadError = '';
                 this.showCashBankModal = true;
                 this.loadCashBankReceivedFromOptions();
             },
 
             async saveCashBankReceipt() {
                 const amt = String(this.cashBankForm.amount || '').trim();
+                if (!this.cashBankForm.collected_by.trim()) {
+                    alert('Please select the agent who collected this receipt.');
+                    return;
+                }
                 if (!this.cashBankForm.received_from.trim()) {
                     alert('Please enter received from.');
                     return;
@@ -2272,6 +2458,8 @@
                         },
                         body: JSON.stringify({
                             payment_type: this.cashBankForm.payment_type,
+                            collected_by_id: this.cashBankForm.collected_by_id || null,
+                            collected_by: this.cashBankForm.collected_by.trim(),
                             received_from: this.formatTitleCase(this.cashBankForm.received_from),
                             transaction_date: this.cashBankForm.transaction_date,
                             amount: amt,
@@ -2296,6 +2484,80 @@
                 }
             },
 
+            async uploadFinanceEntryBulk(event, config) {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                this[config.uploadingKey] = true;
+                this[config.errorKey] = '';
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const response = await fetch(config.url, {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': this.csrfToken },
+                        body: formData,
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data.success) {
+                        const msg = (data.errors && data.errors.length)
+                            ? data.errors.join('\n')
+                            : (data.error || 'Upload failed');
+                        throw new Error(msg);
+                    }
+                    if (data.financial) {
+                        this.financial = data.financial;
+                    } else if (config.refreshOrders) {
+                        await this.fetchOrders(this.pagination.current_page || 1);
+                    }
+                    if (config.reloadTransactions) {
+                        await config.reloadTransactions();
+                    }
+                    if (config.closeModal) {
+                        config.closeModal();
+                    }
+                    alert(data.message || `Imported ${data.created} row(s).`);
+                } catch (error) {
+                    console.error('Bulk upload error:', error);
+                    this[config.errorKey] = error.message || 'Upload failed';
+                } finally {
+                    this[config.uploadingKey] = false;
+                    event.target.value = '';
+                }
+            },
+
+            uploadCashBankBulk(event) {
+                return this.uploadFinanceEntryBulk(event, {
+                    uploadingKey: 'cashBankBulkUploading',
+                    errorKey: 'cashBankBulkUploadError',
+                    url: '{% url "order:api_cash_bank_receipt_bulk_upload" %}',
+                    refreshOrders: true,
+                    reloadTransactions: () => {
+                        if (this.showCashReceivedTransactionsModal) {
+                            return this.openCashReceivedDetails();
+                        }
+                    },
+                    closeModal: () => { this.showCashBankModal = false; },
+                });
+            },
+
+            uploadCommissionBulk(event) {
+                return this.uploadFinanceEntryBulk(event, {
+                    uploadingKey: 'commissionBulkUploading',
+                    errorKey: 'commissionBulkUploadError',
+                    url: '{% url "order:api_agent_commission_payment_bulk_upload" %}',
+                    closeModal: () => { this.showCommissionPaymentModal = false; },
+                });
+            },
+
+            uploadRevenueAdjustmentBulk(event) {
+                return this.uploadFinanceEntryBulk(event, {
+                    uploadingKey: 'revenueAdjustmentBulkUploading',
+                    errorKey: 'revenueAdjustmentBulkUploadError',
+                    url: '{% url "order:api_revenue_adjustment_bulk_upload" %}',
+                    closeModal: () => { this.showRevenueAdjustmentModal = false; },
+                });
+            },
+
             openCommissionPaymentModal() {
                 const t = new Date();
                 const y = t.getFullYear();
@@ -2310,6 +2572,7 @@
                 this.commissionAgentSearchOpen = false;
                 this.commissionAgentHighlightIndex = -1;
                 this.orderFormModalBackdropArmed = false;
+                this.commissionBulkUploadError = '';
                 this.showCommissionPaymentModal = true;
             },
 
@@ -2371,6 +2634,7 @@
                     amount: '',
                 };
                 this.orderFormModalBackdropArmed = false;
+                this.revenueAdjustmentBulkUploadError = '';
                 this.showRevenueAdjustmentModal = true;
             },
 
@@ -2457,6 +2721,10 @@
                 } finally {
                     this.cashReceivedTransactionsLoading = false;
                 }
+            },
+
+            exportCashReceivedTransactions() {
+                window.location = '{% url "order:export_cash_received_transactions" %}';
             },
 
             async openCommissionPaidDetails() {
@@ -2551,7 +2819,10 @@
                             'Content-Type': 'application/json',
                             'X-CSRFToken': this.csrfToken
                         },
-                        body: JSON.stringify({ order_ids: this.selectedOrderIds })
+                        body: JSON.stringify({
+                            order_ids: this.selectedOrderIds,
+                            agent: this.filters.agent || '',
+                        })
                     });
                     if (!response.ok) {
                         const err = await response.json().catch(() => ({}));
@@ -2736,6 +3007,8 @@
                 const params = new URLSearchParams();
                 if (this.filters.start_date) params.append('start_date', this.filters.start_date);
                 if (this.filters.end_date) params.append('end_date', this.filters.end_date);
+                if (this.filters.status) params.append('status', this.filters.status);
+                if (this.filters.agent) params.append('agent', this.filters.agent);
                 const url = '{% url "order:export_orders_range" %}';
                 if (!this.filters.start_date && !this.filters.end_date) {
                     alert('Please select at least a start or end date for export.');
@@ -2777,6 +3050,12 @@
                 this.showEditDetailsModal = true;
                 this.editDetailsLoading = true;
                 this.editDetailsMeta = { status_display: '', is_manual_order: false };
+                this.editDetailsCanEditItems = false;
+                this.editDetailsItems = [];
+                this.editDetailsProductSearch = '';
+                this.editDetailsProductSearchOpen = false;
+                this.editDetailsProductSearchResults = [];
+                this.editDetailsProductsLoading = false;
                 try {
                     const r = await fetch(this.orderEditDetailsApiUrl(order.id), {
                         headers: { 'Accept': 'application/json' }
@@ -2790,6 +3069,7 @@
                         status_display: o.status_display || '',
                         is_manual_order: !!o.is_manual_order
                     };
+                    this.editDetailsCanEditItems = !!o.can_edit_items;
                     this.editDetailsForm = {
                         company_name: o.company_name || '',
                         customer_name: o.customer_name || '',
@@ -2800,6 +3080,17 @@
                         remarks: o.remarks || '',
                         payment_method: o.payment_method || ''
                     };
+                    if (this.editDetailsCanEditItems) {
+                        this.editDetailsItems = (o.items || []).map(item => ({
+                            id: item.id,
+                            product_id: item.product_id,
+                            name: item.name,
+                            sku: item.sku || '',
+                            quantity: item.quantity,
+                            unit_price: item.unit_price,
+                            platform_price: item.platform_price || '',
+                        }));
+                    }
                 } catch (e) {
                     console.error(e);
                     alert(e.message || 'Failed to load order details');
@@ -2809,24 +3100,118 @@
                 }
             },
 
+            async searchEditDetailsProducts() {
+                const q = (this.editDetailsProductSearch || '').trim();
+                if (q.length < 2) {
+                    this.editDetailsProductSearchResults = [];
+                    this.editDetailsProductsLoading = false;
+                    return;
+                }
+                const requestId = ++this.editDetailsProductSearchRequestId;
+                this.editDetailsProductsLoading = true;
+                try {
+                    const params = new URLSearchParams({ search: q, limit: '20' });
+                    const r = await fetch(`{% url 'product:api_product_search' %}?${params.toString()}`, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+                    const d = await r.json().catch(() => ({}));
+                    if (requestId !== this.editDetailsProductSearchRequestId) return;
+                    if (!r.ok) {
+                        this.editDetailsProductSearchResults = [];
+                        return;
+                    }
+                    this.editDetailsProductSearchResults = (d.products || []).map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        display_name: p.name,
+                        sku: p.sku || '',
+                        selling_price: p.selling_price,
+                    }));
+                } catch (e) {
+                    if (requestId === this.editDetailsProductSearchRequestId) {
+                        console.error('Failed to search products for edit details', e);
+                        this.editDetailsProductSearchResults = [];
+                    }
+                } finally {
+                    if (requestId === this.editDetailsProductSearchRequestId) {
+                        this.editDetailsProductsLoading = false;
+                    }
+                }
+            },
+
+            filteredEditDetailsProducts() {
+                return this.editDetailsProductSearchResults || [];
+            },
+
+            addEditDetailsItem(product) {
+                if (!product || !product.id) return;
+                const price = product.selling_price || '0';
+                this.editDetailsItems.push({
+                    id: null,
+                    product_id: product.id,
+                    name: product.display_name || product.name,
+                    sku: product.sku || '',
+                    quantity: 1,
+                    unit_price: price,
+                    platform_price: '',
+                });
+            },
+
+            removeEditDetailsItem(index) {
+                this.editDetailsItems.splice(index, 1);
+            },
+
+            editDetailsLineSubtotal(line) {
+                const qty = parseFloat(line.quantity) || 0;
+                const unit = parseFloat(line.unit_price) || 0;
+                return 'RM ' + (qty * unit).toFixed(2);
+            },
+
+            buildEditDetailsItemsPayload() {
+                return this.editDetailsItems.map(line => ({
+                    id: line.id || null,
+                    product_id: line.product_id,
+                    quantity: line.quantity,
+                    unit_price: line.unit_price,
+                    platform_price: line.platform_price,
+                }));
+            },
+
             closeEditDetailsModal() {
                 this.showEditDetailsModal = false;
                 this.editDetailsRowOrder = null;
                 this.editDetailsLoading = false;
                 this.editDetailsSaving = false;
+                this.editDetailsCanEditItems = false;
+                this.editDetailsItems = [];
+                this.editDetailsProductSearch = '';
+                this.editDetailsProductSearchOpen = false;
+                this.editDetailsProductSearchResults = [];
+                this.editDetailsProductsLoading = false;
             },
 
             async saveEditDetails() {
                 if (!this.editDetailsRowOrder) return;
+                if (this.editDetailsCanEditItems && this.editDetailsItems.length === 0) {
+                    alert('Add at least one order item.');
+                    return;
+                }
                 this.editDetailsSaving = true;
                 try {
+                    const payload = { ...this.editDetailsForm };
+                    if (this.editDetailsCanEditItems) {
+                        payload.items = this.buildEditDetailsItemsPayload();
+                    }
                     const r = await fetch(this.orderEditDetailsApiUrl(this.editDetailsRowOrder.id), {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': this.csrfToken
                         },
-                        body: JSON.stringify(this.editDetailsForm)
+                        body: JSON.stringify(payload)
                     });
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok || !d.success) {
@@ -2919,6 +3304,13 @@
                 return String(text).trim().split(/\s+/).filter(Boolean).map(word =>
                     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
                 ).join(' ');
+            },
+
+            selectedAgentLabel() {
+                const agentId = String(this.filters.agent || '');
+                if (!agentId) return 'Agent';
+                const match = (this.orderAgents || []).find(a => String(a.id) === agentId);
+                return match ? match.username : 'Agent';
             },
         }));
 

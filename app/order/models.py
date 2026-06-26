@@ -105,6 +105,20 @@ def generate_order_id():
     characters = string.ascii_uppercase + string.digits
     return ''.join(random.choices(characters, k=8))
 
+
+def finance_entry_transaction_id(prefix, pk):
+    """Stable public transaction id for standalone finance ledger rows."""
+    return f'{prefix}-{pk:07d}'
+
+
+def assign_finance_transaction_id(instance, prefix):
+    """Set transaction_id after the row has a primary key."""
+    if instance.transaction_id or not instance.pk:
+        return
+    instance.transaction_id = finance_entry_transaction_id(prefix, instance.pk)
+    instance.__class__.objects.filter(pk=instance.pk).update(transaction_id=instance.transaction_id)
+
+
 class Order(models.Model):
     class OrderStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pending'
@@ -295,7 +309,16 @@ class CashBankReceiptEntry(models.Model):
         LOAN = 'LOAN', 'Loan repayment'
 
     payment_type = models.CharField(max_length=10, choices=PaymentType.choices)
+    transaction_id = models.CharField(max_length=20, unique=True, editable=False, blank=True, default='')
     received_from = models.CharField(max_length=255, help_text='Payer or source description.')
+    collected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='collected_cash_bank_receipts',
+        help_text='Agent who collected this receipt.',
+    )
     transaction_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     recorded_by = models.ForeignKey(
@@ -307,6 +330,10 @@ class CashBankReceiptEntry(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        assign_finance_transaction_id(self, 'CB')
+
     class Meta:
         ordering = ['transaction_date', 'id']
 
@@ -317,6 +344,7 @@ class CashBankReceiptEntry(models.Model):
 class AgentCommissionPaymentEntry(models.Model):
     """Standalone commission paid to an agent (used in order financial dashboard)."""
 
+    transaction_id = models.CharField(max_length=20, unique=True, editable=False, blank=True, default='')
     paid_to = models.CharField(max_length=255, help_text='Agent name or reference.')
     payment_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -329,6 +357,10 @@ class AgentCommissionPaymentEntry(models.Model):
         related_name='agent_commission_payment_entries',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        assign_finance_transaction_id(self, 'CP')
 
     class Meta:
         ordering = ['payment_date', 'id']
@@ -348,6 +380,7 @@ class RevenueAdjustmentEntry(models.Model):
         LOAN_INTEREST = 'LOAN_INTEREST', 'Interest of loan'
 
     adjustment_type = models.CharField(max_length=20, choices=AdjustmentType.choices)
+    transaction_id = models.CharField(max_length=20, unique=True, editable=False, blank=True, default='')
     reference = models.CharField(max_length=255, help_text='Description or reference.')
     transaction_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -359,6 +392,10 @@ class RevenueAdjustmentEntry(models.Model):
         related_name='revenue_adjustment_entries',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        assign_finance_transaction_id(self, 'RA')
 
     class Meta:
         ordering = ['transaction_date', 'id']
