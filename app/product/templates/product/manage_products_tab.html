@@ -98,12 +98,15 @@
                     </button>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end lg:shrink-0">
-                    <div x-show="displayOrderDirty" class="shrink-0">
+                    <div x-show="displayOrderDirty" x-cloak class="shrink-0">
                         <button type="button"
                                 @click="saveAllDirtyDisplayOrders()"
                                 :disabled="savingDisplayOrder"
-                                class="inline-flex items-center px-3 py-2 h-10 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-1 sm:focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-                            <span x-show="!savingDisplayOrder">Save display order</span>
+                                class="inline-flex items-center gap-1.5 px-3 py-2 h-10 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-1 sm:focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span x-show="!savingDisplayOrder">Save order</span>
                             <span x-show="savingDisplayOrder">Saving…</span>
                         </button>
                     </div>
@@ -293,9 +296,12 @@
                                     <td class="px-3 py-4 w-36 min-w-[9rem] align-top">
                                         <div class="flex flex-col gap-1.5 items-start">
                                             <span class="text-sm font-medium text-gray-900 whitespace-nowrap" x-text="product.sku"></span>
-                                            <div class="inline-flex items-stretch rounded-md shadow-sm border border-gray-300 overflow-hidden"
+                                            <div class="inline-flex items-stretch rounded-md shadow-sm border overflow-hidden"
+                                                 :class="isProductDisplayOrderDirty(product)
+                                                     ? 'border-amber-400 ring-2 ring-amber-300 ring-offset-1'
+                                                     : 'border-gray-300'"
                                                  @click.stop
-                                                 title="Display order — lower = earlier on catalog. Use toolbar Save display order when done.">
+                                                 title="Display order — lower numbers appear first in the catalog. Click Save when finished.">
                                                 <button type="button"
                                                         class="px-2 py-1 text-xs font-semibold text-gray-600 bg-gray-50 hover:bg-gray-100 border-0 border-r border-gray-300 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
                                                         @click.stop="product.display_order = Math.max(0, (Number(product.display_order) || 0) - 1)"
@@ -542,6 +548,34 @@
         </template>
 
         {# --- Pagination --- #}
+        <div x-show="displayOrderDirty"
+             x-cloak
+             class="border-t border-amber-200 bg-amber-50 px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+             style="display: none;">
+            <p class="text-sm text-amber-900">
+                <span class="font-semibold">Unsaved display order</span>
+                <span class="text-amber-800"> — </span>
+                <span x-text="dirtyDisplayOrderCount + (dirtyDisplayOrderCount === 1 ? ' product' : ' products') + ' changed. Save to update catalog sort order.'"></span>
+            </p>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button"
+                        @click="discardDisplayOrderChanges()"
+                        :disabled="savingDisplayOrder"
+                        class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">
+                    Discard
+                </button>
+                <button type="button"
+                        @click="saveAllDirtyDisplayOrders()"
+                        :disabled="savingDisplayOrder"
+                        class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 shadow-sm">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span x-show="!savingDisplayOrder">Save order</span>
+                    <span x-show="savingDisplayOrder">Saving…</span>
+                </button>
+            </div>
+        </div>
         <div class="p-3 sm:p-4 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3 justify-between items-center rounded-b-lg shadow-md mt-0">
             <button type="button"
                     @click="fetchProducts(pagination.current_page - 1)" :disabled="!pagination.has_previous"

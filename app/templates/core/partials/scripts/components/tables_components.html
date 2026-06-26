@@ -329,6 +329,19 @@
                     (p) => this.normDisplayOrder(p.display_order) !== this.normDisplayOrder(p._serverDisplayOrder)
                 );
             },
+            isProductDisplayOrderDirty(product) {
+                if (!product) return false;
+                return this.normDisplayOrder(product.display_order) !== this.normDisplayOrder(product._serverDisplayOrder);
+            },
+            get dirtyDisplayOrderCount() {
+                if (!this.items || !this.items.length) return 0;
+                return this.items.filter((p) => this.isProductDisplayOrderDirty(p)).length;
+            },
+            discardDisplayOrderChanges() {
+                for (const product of this.items || []) {
+                    product.display_order = this.normDisplayOrder(product._serverDisplayOrder);
+                }
+            },
             async saveAllDirtyDisplayOrders() {
                 if (!this.displayOrderDirty) return;
                 const page = this.pagination.current_page || 1;
