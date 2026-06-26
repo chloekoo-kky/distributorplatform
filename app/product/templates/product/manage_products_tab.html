@@ -172,12 +172,15 @@
                         </div>
                         <button type="button"
                                 @click="openMergeTools()"
-                                class="inline-flex items-center justify-center h-10 w-10 rounded-md text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1 sm:focus:ring-offset-2"
-                                title="Cleaning tools — find duplicates and merge products"
-                                aria-label="Cleaning tools — find duplicates and merge products">
+                                class="relative inline-flex items-center justify-center h-10 w-10 rounded-md text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1 sm:focus:ring-offset-2"
+                                :title="selectedIds.length >= 2 ? ('Merge ' + selectedIds.length + ' selected products') : 'Find duplicate products'"
+                                :aria-label="selectedIds.length >= 2 ? ('Merge ' + selectedIds.length + ' selected products') : 'Find duplicate products'">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l4-4-4-4m6 8l4-4-4-4" />
                             </svg>
+                            <span x-show="selectedIds.length >= 2"
+                                  class="absolute -top-1.5 -right-1.5 min-w-[1.125rem] h-[1.125rem] px-0.5 flex items-center justify-center rounded-full bg-white text-[10px] font-bold text-amber-700 leading-none border border-amber-200 shadow-sm"
+                                  x-text="selectedIds.length"></span>
                         </button>
                     </div>
                 </div>
@@ -562,8 +565,11 @@
             <div class="flex items-start sm:items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b">
                 <div>
                     <h3 class="text-lg font-semibold text-gray-900">Duplicate Checklist</h3>
-                    <p class="text-xs text-gray-500 mt-1">
-                        Find similar products, merge duplicates into a master, or create custom merge groups. Dismissed groups are remembered.
+                    <p class="text-xs text-gray-500 mt-1" x-show="mergeMode === 'selection'">
+                        Reviewing <span x-text="selectedIds.length"></span> selected products. Choose a master for each group and merge duplicates within your selection.
+                    </p>
+                    <p class="text-xs text-gray-500 mt-1" x-show="mergeMode === 'scan'">
+                        Scanning the catalog for likely duplicates (same product name, ignoring dose/strength differences). Dismissed groups are remembered.
                     </p>
                 </div>
                 <button type="button" @click="closeMergeTools()" class="text-gray-400 hover:text-gray-600">
@@ -573,68 +579,30 @@
                 </button>
             </div>
 
-            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b bg-gray-50 space-y-4">
-                <div class="flex flex-col md:flex-row gap-3 items-start md:items-center">
-                    <div class="flex-1">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Scan scope (for duplicate suggestions)</label>
+            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b bg-gray-50 space-y-4" x-show="mergeMode === 'scan'">
+                <div class="flex flex-col md:flex-row gap-3 items-start md:items-end">
+                    <div class="flex-1 w-full">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Optional: narrow scan by SKU or name</label>
                         <input type="text"
                                x-model="mergeSearch"
                                @keydown.enter.prevent="loadMergeSuggestions()"
-                               @input.debounce.500ms="loadMergeSuggestions()"
-                               placeholder="Optional: narrow by SKU or name. Leave blank for broader scan."
+                               placeholder="Leave blank to scan the full catalog"
                                class="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
                     </div>
                     <button type="button"
                             @click="loadMergeSuggestions()"
-                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Refresh suggestions
+                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 whitespace-nowrap">
+                        Search for duplicates
                     </button>
                 </div>
-                <div class="border-t border-gray-200 pt-4">
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Create custom merge group</label>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <input type="text"
-                               x-model="mergeSearchQuery"
-                               @input.debounce.400ms="loadMergeSearch()"
-                               placeholder="Search products by SKU or name..."
-                               class="flex-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                        <button type="button"
-                                @click="createCustomMergeGroup()"
-                                :disabled="!mergeSearchSelectedIds.length || mergeSearchSelectedIds.length < 2"
-                                class="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                            Create Custom Merge Group
-                        </button>
-                    </div>
-                    <p class="text-[11px] text-gray-500 mt-1">Select two or more products below, then create a group to merge.</p>
-                    <div x-show="mergeSearchResults.length > 0" class="mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
-                        <table class="min-w-full text-xs">
-                            <thead class="bg-gray-50 sticky top-0">
-                                <tr>
-                                    <th class="px-2 py-1.5 text-left w-8"></th>
-                                    <th class="px-2 py-1.5 text-left font-medium text-gray-500">SKU</th>
-                                    <th class="px-2 py-1.5 text-left font-medium text-gray-500">Name</th>
-                                    <th class="px-2 py-1.5 text-right font-medium text-gray-500">Price</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-for="p in mergeSearchResults" :key="p.id">
-                                    <tr class="border-t border-gray-100 hover:bg-gray-50">
-                                        <td class="px-2 py-1.5">
-                                            <input type="checkbox"
-                                                   :checked="mergeSearchSelectedIds.includes(p.id)"
-                                                   @change="toggleMergeSearchSelection(p.id)"
-                                                   class="h-4 w-4 text-amber-600 border-gray-300 rounded">
-                                        </td>
-                                        <td class="px-2 py-1.5 font-mono" x-text="p.sku || '-'"></td>
-                                        <td class="px-2 py-1.5" x-text="p.name"></td>
-                                        <td class="px-2 py-1.5 text-right" x-text="p.selling_price ? ('RM ' + Number(p.selling_price).toFixed(2)) : '-'"></td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                    <p x-show="mergeSearchLoading" class="text-xs text-gray-500 mt-1">Searching...</p>
-                </div>
+                <p class="text-[11px] text-gray-500">
+                    Tip: select two or more products in the table first, then open cleaning tools to merge your selection directly.
+                </p>
+            </div>
+
+            <div class="px-4 sm:px-6 py-3 border-b bg-amber-50 text-xs text-amber-900" x-show="mergeMode === 'selection'">
+                <span x-text="selectedIds.length + ' product(s) selected.'"></span>
+                Duplicate pairs within your selection are grouped below. If none were detected, all selected products are shown as one merge group.
             </div>
 
             <div class="flex-1 overflow-y-auto">
@@ -642,7 +610,10 @@
                     <div class="p-6 text-center text-gray-500 text-sm">Scanning products and building suggestions...</div>
                 </template>
                 <template x-if="!mergeIsLoading && mergeGroups.length === 0">
-                    <div class="p-6 text-center text-gray-500 text-sm">No merge groups yet. Refresh suggestions above or create a custom group.</div>
+                    <div class="p-6 text-center text-gray-500 text-sm">
+                        <span x-show="mergeMode === 'scan'">No duplicate groups found. Try narrowing the scan, or select products in the table to merge manually.</span>
+                        <span x-show="mergeMode === 'selection'">No merge groups to show.</span>
+                    </div>
                 </template>
 
                 <div class="divide-y divide-gray-200" x-show="!mergeIsLoading && mergeGroups.length > 0">
@@ -650,7 +621,7 @@
                         <div class="p-4">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div>
-                                    <h4 class="text-sm font-semibold text-gray-800" x-text="String(group.group_id).startsWith('manual-') ? 'Custom merge group' : 'Similar products group'"></h4>
+                                    <h4 class="text-sm font-semibold text-gray-800" x-text="mergeGroupTitle(group)"></h4>
                                     <p class="text-xs text-gray-500">Choose the master product; all others in this group will be merged into it.</p>
                                 </div>
                                 <div class="flex items-center gap-2">

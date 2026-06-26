@@ -121,6 +121,93 @@
             },
             closeReceiveStockModal() { this.receiveStockModalOpen = false; },
 
+            bulkReceiveModalOpen: false,
+            bulkReceiveSaving: false,
+            bulkReceiveError: '',
+            bulkReceiveData: {
+                invoiceId: '',
+                supplierId: '',
+                supplierName: '',
+                quotationId: '',
+                received_date: '{{ today_date|date:"Y-m-d" }}',
+                items: [],
+            },
+
+            openBulkReceiveStockModal(data) {
+                if (!data || !data.items || !data.items.length) {
+                    Alpine.store('globals').showToast('Select at least one line item to receive.', 'error');
+                    return;
+                }
+                this.bulkReceiveError = '';
+                this.bulkReceiveData = {
+                    invoiceId: data.invoiceId || '',
+                    supplierId: data.supplierId || '',
+                    supplierName: data.supplierName || '',
+                    quotationId: data.quotationId || '',
+                    received_date: '{{ today_date|date:"Y-m-d" }}',
+                    items: data.items.map(item => ({
+                        invoiceItemId: item.invoiceItemId,
+                        productId: item.productId,
+                        productName: item.productName,
+                        productSku: item.productSku || '-',
+                        quantity_remaining: item.quantity_remaining,
+                        quantity_to_receive: item.quantity_to_receive ?? item.quantity_remaining,
+                    })),
+                };
+                this.bulkReceiveModalOpen = true;
+            },
+            closeBulkReceiveStockModal() {
+                this.bulkReceiveModalOpen = false;
+                this.bulkReceiveSaving = false;
+                this.bulkReceiveError = '';
+                this.bulkReceiveData.items = [];
+            },
+            async submitBulkReceiveStock() {
+                if (!this.bulkReceiveData.items.length) {
+                    this.bulkReceiveError = 'No items to receive.';
+                    return;
+                }
+                this.bulkReceiveSaving = true;
+                this.bulkReceiveError = '';
+                try {
+                    const payload = {
+                        received_date: this.bulkReceiveData.received_date,
+                        items: this.bulkReceiveData.items.map(item => ({
+                            invoice_item_id: item.invoiceItemId,
+                            quantity: item.quantity_to_receive,
+                        })),
+                    };
+                    const response = await fetch(`{% url 'inventory:bulk_receive_stock' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        this.closeBulkReceiveStockModal();
+                        Alpine.store('globals').showToast(
+                            `${data.batch_count} line item(s) received successfully.`
+                        );
+                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
+                    } else {
+                        const errors = data.errors;
+                        this.bulkReceiveError = Array.isArray(errors)
+                            ? errors.join(' ')
+                            : (data.error || 'Bulk receive failed.');
+                    }
+                } catch (error) {
+                    console.error('Bulk receive error:', error);
+                    this.bulkReceiveError = 'Network error during bulk receive.';
+                } finally {
+                    this.bulkReceiveSaving = false;
+                }
+            },
+
             // --- Payable invoice import ---
             invoiceImportStep: 'upload',
             invoiceImportBusy: false,

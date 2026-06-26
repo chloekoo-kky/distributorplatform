@@ -1036,19 +1036,74 @@ def api_update_product_display_order(request):
     return JsonResponse({"success": True, "id": product_id, "display_order": display_order})
 
 
+_VARIANT_TOKEN_PATTERN = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*(mg|g|ml|mcg|µg|ug|iu|u|unit|units|stk|st|pen|pack|pcs|pc|tablet|tab|capsule|cap|vial|dose|mg/ml)\b",
+    re.IGNORECASE,
+)
+
+
 def _normalize_product_name_for_fuzzy(value):
     """
     Helper for cleaning product names before fuzzy comparison.
     - Use only part before '|' (English name)
+    - Normalise common unit patterns (100u, 100 Unit -> 100unit)
     - Strip special characters
     - Lowercase and collapse whitespace
     """
     if not value:
         return "", []
     base = str(value).split("|", 1)[0]
+    base = re.sub(
+        r"(\d+)\s*(u|unit|units)\b",
+        r"\1unit",
+        base,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", base).lower()
     tokens = [t for t in cleaned.split() if t]
     return " ".join(tokens), tokens
+
+
+def _extract_variant_tokens(value):
+    """Strength/dose/pack-size tokens that distinguish product variants (e.g. 10mg vs 15mg)."""
+    if not value:
+        return frozenset()
+    base = str(value).split("|", 1)[0]
+    base = re.sub(
+        r"(\d+)\s*(u|unit|units)\b",
+        r"\1unit",
+        base,
+        flags=re.IGNORECASE,
+    )
+    tokens = set()
+    for match in _VARIANT_TOKEN_PATTERN.finditer(base):
+        num = match.group(1)
+        unit = match.group(2).lower()
+        if unit in ("u", "unit", "units"):
+            unit = "unit"
+        tokens.add(f"{num}{unit}")
+    return frozenset(tokens)
+
+
+def _product_base_key(name):
+    """Bucket key: normalized name with strength/dose tokens removed."""
+    if not name:
+        return ()
+    base = str(name).split("|", 1)[0]
+    base = re.sub(
+        r"(\d+)\s*(u|unit|units)\b",
+        r"\1unit",
+        base,
+        flags=re.IGNORECASE,
+    )
+    base = _VARIANT_TOKEN_PATTERN.sub(" ", base)
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", base).lower()
+    return tuple(sorted(t for t in cleaned.split() if t))
+
+
+def _variant_tokens_compatible(variant_a, variant_b):
+    """Duplicates must share the same strength/dose signature (or both lack one)."""
+    return variant_a == variant_b
 
 
 def _name_similarity(tokens_a, tokens_b):
@@ -1061,61 +1116,68 @@ def _name_similarity(tokens_a, tokens_b):
     return (2.0 * overlap) / (len(set_a) + len(set_b))
 
 
-@staff_required
-def api_product_merge_suggestions(request):
+def _products_are_merge_candidates(name_a, name_b, *, min_score=0.7):
+    """True when two product names look like duplicates, not merely same brand/dose line."""
+    tokens_a = _normalize_product_name_for_fuzzy(name_a)[1]
+    tokens_b = _normalize_product_name_for_fuzzy(name_b)[1]
+    if not tokens_a or not tokens_b:
+        return False
+    variant_a = _extract_variant_tokens(name_a)
+    variant_b = _extract_variant_tokens(name_b)
+    if not _variant_tokens_compatible(variant_a, variant_b):
+        return False
+    return _name_similarity(tokens_a, tokens_b) >= min_score
+
+
+def _build_merge_candidate_groups(products, *, min_score=0.7):
     """
-    Returns groups of products whose names look similar, to help with cleaning.
-    Uses a lightweight token-overlap fuzzy match on a limited subset.
+    Group products into duplicate merge candidates using base-name bucketing
+    and variant-aware similarity checks.
     """
-    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
-        return JsonResponse({"error": "Invalid request"}, status=400)
+    if len(products) < 2:
+        return []
 
-    search_query = request.GET.get("search", "").strip()
-    try:
-        min_score = float(request.GET.get("min_score", "0.7"))
-    except ValueError:
-        min_score = 0.7
-    try:
-        limit = int(request.GET.get("limit", "200"))
-    except ValueError:
-        limit = 200
-
-    qs = Product.objects.prefetch_related("suppliers").only("id", "name", "sku", "selling_price")
-    if search_query:
-        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
-    products = list(qs.order_by("name")[:limit])
-
-    # Pre-compute tokens
     norm_tokens = {}
-    for p in products:
-        _, tokens = _normalize_product_name_for_fuzzy(p.name)
-        norm_tokens[p.id] = tokens
+    variant_tokens = {}
+    base_keys = {}
+    for product in products:
+        _, tokens = _normalize_product_name_for_fuzzy(product.name)
+        norm_tokens[product.id] = tokens
+        variant_tokens[product.id] = _extract_variant_tokens(product.name)
+        base_keys[product.id] = _product_base_key(product.name)
 
-    # Build similarity graph (adjacency list)
-    n = len(products)
-    adjacency = {p.id: set() for p in products}
-    for i in range(n):
-        pi = products[i]
-        ti = norm_tokens.get(pi.id) or []
-        if not ti:
+    buckets = {}
+    for product in products:
+        key = base_keys.get(product.id) or ()
+        buckets.setdefault(key, []).append(product)
+
+    adjacency = {product.id: set() for product in products}
+    for bucket in buckets.values():
+        if len(bucket) < 2:
             continue
-        for j in range(i + 1, n):
-            pj = products[j]
-            tj = norm_tokens.get(pj.id) or []
-            if not tj:
+        for i in range(len(bucket)):
+            product_a = bucket[i]
+            tokens_a = norm_tokens.get(product_a.id) or []
+            variant_a = variant_tokens.get(product_a.id, frozenset())
+            if not tokens_a:
                 continue
-            score = _name_similarity(ti, tj)
-            if score >= min_score:
-                adjacency[pi.id].add(pj.id)
-                adjacency[pj.id].add(pi.id)
+            for j in range(i + 1, len(bucket)):
+                product_b = bucket[j]
+                tokens_b = norm_tokens.get(product_b.id) or []
+                variant_b = variant_tokens.get(product_b.id, frozenset())
+                if not tokens_b or not _variant_tokens_compatible(variant_a, variant_b):
+                    continue
+                if _name_similarity(tokens_a, tokens_b) >= min_score:
+                    adjacency[product_a.id].add(product_b.id)
+                    adjacency[product_b.id].add(product_a.id)
 
-    # Find connected components (each is a merge candidate group)
+    product_by_id = {product.id: product for product in products}
     visited = set()
     groups = []
-    for p in products:
-        if p.id in visited:
+    for product in products:
+        if product.id in visited:
             continue
-        stack = [p.id]
+        stack = [product.id]
         component_ids = []
         while stack:
             pid = stack.pop()
@@ -1125,34 +1187,101 @@ def api_product_merge_suggestions(request):
             component_ids.append(pid)
             stack.extend(adjacency.get(pid, []))
         if len(component_ids) >= 2:
-            component_products = [pp for pp in products if pp.id in component_ids]
-            component_products.sort(key=lambda x: x.name.lower())
-            groups.append({
-                "group_id": min(component_ids),
-                "products": [
-                    {
-                        "id": x.id,
-                        "sku": x.sku or "",
-                        "name": x.name,
-                        "selling_price": str(x.selling_price) if x.selling_price is not None else None,
-                        "suppliers": [s.name for s in x.suppliers.all()],
-                    }
-                    for x in component_products
-                ],
-            })
+            component_products = [product_by_id[pid] for pid in component_ids if pid in product_by_id]
+            component_products.sort(key=lambda item: item.name.lower())
+            groups.append(component_products)
+    return groups
+
+
+def _serialize_merge_group(products):
+    return {
+        "group_id": min(product.id for product in products),
+        "products": [
+            {
+                "id": product.id,
+                "sku": product.sku or "",
+                "name": product.name,
+                "selling_price": str(product.selling_price) if product.selling_price is not None else None,
+                "suppliers": [supplier.name for supplier in product.suppliers.all()],
+            }
+            for product in products
+        ],
+    }
+
+
+@staff_required
+def api_product_merge_suggestions(request):
+    """
+    Returns groups of products whose names look similar, to help with cleaning.
+
+    Query params:
+    - product_ids: comma-separated IDs — scan only within this selection (Manage Products checkboxes)
+    - search: optional name/SKU filter when scanning the full catalog
+    - min_score: similarity threshold (default 0.7)
+    """
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+
+    search_query = request.GET.get("search", "").strip()
+    product_ids_param = request.GET.get("product_ids", "").strip()
+    try:
+        min_score = float(request.GET.get("min_score", "0.7"))
+    except ValueError:
+        min_score = 0.7
+
+    scoped_product_ids = []
+    if product_ids_param:
+        for part in product_ids_param.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                scoped_product_ids.append(int(part))
+            except ValueError:
+                continue
+
+    qs = Product.objects.prefetch_related("suppliers").only("id", "name", "sku", "selling_price")
+    selection_mode = len(scoped_product_ids) >= 2
+    if selection_mode:
+        qs = qs.filter(pk__in=scoped_product_ids)
+    elif search_query:
+        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+    products = list(qs.order_by("name"))
+
+    raw_groups = _build_merge_candidate_groups(products, min_score=min_score)
+    groups = [_serialize_merge_group(group_products) for group_products in raw_groups]
+
+    if selection_mode and not groups and len(products) >= 2:
+        groups = [{
+            "group_id": f"selected-{min(product.id for product in products)}",
+            "products": [
+                {
+                    "id": product.id,
+                    "sku": product.sku or "",
+                    "name": product.name,
+                    "selling_price": str(product.selling_price) if product.selling_price is not None else None,
+                    "suppliers": [supplier.name for supplier in product.suppliers.all()],
+                }
+                for product in sorted(products, key=lambda item: item.name.lower())
+            ],
+        }]
 
     # Exclude groups that exactly match a previously dismissed combination (Duplicate Checklist memory)
     ignored_signatures = set(
         IgnoredMergeSuggestion.objects.values_list("product_ids_signature", flat=True)
     )
     filtered_groups = []
-    for g in groups:
-        ids = sorted(p["id"] for p in g["products"])
-        signature = ",".join(str(i) for i in ids)
+    for group in groups:
+        ids = sorted(product["id"] for product in group["products"])
+        signature = ",".join(str(product_id) for product_id in ids)
         if signature not in ignored_signatures:
-            filtered_groups.append(g)
+            filtered_groups.append(group)
 
-    return JsonResponse({"groups": filtered_groups})
+    return JsonResponse({
+        "groups": filtered_groups,
+        "mode": "selection" if selection_mode else "scan",
+        "selection_count": len(scoped_product_ids) if selection_mode else 0,
+    })
 
 
 @staff_required

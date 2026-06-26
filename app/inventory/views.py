@@ -568,6 +568,122 @@ def receive_stock(request):
 
 
 @staff_required
+@transaction.atomic
+def bulk_receive_stock(request):
+    """Receive stock for multiple invoice line items in one request."""
+    if request.method != 'POST' or not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request method.'}, status=400)
+
+    try:
+        payload = json.loads(request.body)
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON payload.'}, status=400)
+
+    received_date_str = (payload.get('received_date') or '').strip()
+    if not received_date_str:
+        return JsonResponse({'success': False, 'error': 'Received date is required.'}, status=400)
+    try:
+        received_date = datetime.date.fromisoformat(received_date_str)
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid received date.'}, status=400)
+
+    raw_items = payload.get('items') or []
+    if not raw_items:
+        return JsonResponse({'success': False, 'error': 'No items to receive.'}, status=400)
+
+    batches_to_create = []
+    invoice_items_to_update = []
+    validation_errors = []
+
+    for index, entry in enumerate(raw_items, start=1):
+        raw_item_id = entry.get('invoice_item_id') or entry.get('invoiceItemId')
+        try:
+            invoice_item_id = int(raw_item_id)
+        except (TypeError, ValueError):
+            validation_errors.append(f'Row {index}: invalid invoice item.')
+            continue
+
+        try:
+            invoice_item = InvoiceItem.objects.select_related(
+                'invoice', 'invoice__quotation', 'product'
+            ).get(pk=invoice_item_id)
+        except InvoiceItem.DoesNotExist:
+            validation_errors.append(f'Row {index}: invoice item not found.')
+            continue
+
+        if not invoice_item.product_id:
+            validation_errors.append(
+                f'Row {index}: {invoice_item.description or invoice_item.id} has no linked product.'
+            )
+            continue
+
+        if invoice_item.is_fully_received:
+            validation_errors.append(
+                f'Row {index}: {invoice_item.product.name} is already fully received.'
+            )
+            continue
+
+        raw_quantity = entry.get('quantity')
+        if raw_quantity is None:
+            raw_quantity = entry.get('quantity_to_receive')
+        if raw_quantity is None:
+            quantity = invoice_item.quantity_remaining
+        else:
+            try:
+                quantity = int(raw_quantity)
+            except (TypeError, ValueError):
+                validation_errors.append(f'Row {index}: invalid quantity.')
+                continue
+
+        if quantity <= 0:
+            validation_errors.append(f'Row {index}: quantity must be at least 1.')
+            continue
+        if quantity > invoice_item.quantity_remaining:
+            validation_errors.append(
+                f'Row {index}: cannot receive more than {invoice_item.quantity_remaining} for '
+                f'{invoice_item.product.name}.'
+            )
+            continue
+
+        quotation = invoice_item.invoice.quotation
+        batches_to_create.append(InventoryBatch(
+            product_id=invoice_item.product_id,
+            supplier_id=invoice_item.invoice.supplier_id,
+            quotation_id=quotation.id if quotation else None,
+            invoice_item=invoice_item,
+            quantity=quantity,
+            received_date=received_date,
+            batch_number='',
+        ))
+        invoice_items_to_update.append(invoice_item)
+
+    if validation_errors:
+        return JsonResponse({'success': False, 'errors': validation_errors}, status=400)
+
+    created_batch_ids = []
+    for batch in batches_to_create:
+        batch.save()
+        created_batch_ids.append(batch.pk)
+
+    updated_invoice_ids = set()
+    for invoice_item in invoice_items_to_update:
+        invoice_item.update_received_quantity()
+        updated_invoice_ids.add(invoice_item.invoice.invoice_id)
+
+    logger.info(
+        '[bulk_receive_stock] Created %s batch(es) for invoice item IDs: %s',
+        len(created_batch_ids),
+        [item.pk for item in invoice_items_to_update],
+    )
+
+    return JsonResponse({
+        'success': True,
+        'batch_count': len(created_batch_ids),
+        'invoice_ids': sorted(updated_invoice_ids),
+    })
+
+
+@staff_required
 def upload_batches(request):
     """ Handles POST requests for uploading inventory batch files. """
     logger.info("[upload_batches] View called.")

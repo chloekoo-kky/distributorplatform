@@ -198,9 +198,36 @@
                                         <template x-if="!isLoading && visibleLineItems().length === 0">
                                             <p class="text-sm text-gray-500 text-center py-4">No line items.</p>
                                         </template>
+                                        <div x-show="!isLoading && row.record_type === 'invoice' && receivableLineItems().length > 0"
+                                             class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                                            <label class="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                <input type="checkbox"
+                                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                                                       :checked="isAllReceivableSelected()"
+                                                       x-effect="$el.indeterminate = someReceivableSelected()"
+                                                       @change="toggleSelectAllReceivable()"
+                                                       @click.stop>
+                                                <span>Select all receivable (<span x-text="receivableLineItems().length"></span>)</span>
+                                            </label>
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <button type="button"
+                                                        @click.stop="openBulkReceiveSelected()"
+                                                        :disabled="selectedReceiveIds.length === 0"
+                                                        class="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                    Receive selected (<span x-text="selectedReceiveIds.length"></span>)
+                                                </button>
+                                                <button type="button"
+                                                        @click.stop="openBulkReceiveAll()"
+                                                        class="px-3 py-1.5 text-xs font-medium text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50">
+                                                    Receive all remaining
+                                                </button>
+                                            </div>
+                                        </div>
                                         <table x-show="!isLoading && visibleLineItems().length > 0" class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md overflow-hidden">
                                             <thead class="bg-gray-100">
                                                 <tr>
+                                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-10"
+                                                        x-show="row.record_type === 'invoice'"></th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                                                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
@@ -213,6 +240,15 @@
                                             <tbody class="bg-white divide-y divide-gray-100">
                                                 <template x-for="(item, idx) in visibleLineItems()" :key="idx">
                                                     <tr>
+                                                        <td class="px-3 py-2" x-show="row.record_type === 'invoice'">
+                                                            <template x-if="!item.is_fully_received">
+                                                                <input type="checkbox"
+                                                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                                                                       :checked="selectedReceiveIds.includes(item.id)"
+                                                                       @change="toggleReceiveSelection(item.id)"
+                                                                       @click.stop>
+                                                            </template>
+                                                        </td>
                                                         <td class="px-4 py-2 text-sm text-gray-500" x-text="item.sku || item.product_sku || '-'"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-900" x-text="item.product_name"></td>
                                                         <td class="px-4 py-2 text-sm text-gray-700 tabular-nums font-medium"
@@ -280,9 +316,98 @@ document.addEventListener('alpine:init', () => {
         lineItems: [],
         isLoading: false,
         hasLoaded: false,
+        selectedReceiveIds: [],
 
         visibleLineItems() {
             return (this.lineItems || []).filter(item => (parseInt(item.quantity, 10) || 0) > 0);
+        },
+
+        receivableLineItems() {
+            return this.visibleLineItems().filter(item => !item.is_fully_received && item.id);
+        },
+
+        toggleReceiveSelection(id) {
+            if (this.selectedReceiveIds.includes(id)) {
+                this.selectedReceiveIds = this.selectedReceiveIds.filter(itemId => itemId !== id);
+            } else {
+                this.selectedReceiveIds = [...this.selectedReceiveIds, id];
+            }
+        },
+
+        isAllReceivableSelected() {
+            const receivable = this.receivableLineItems();
+            return receivable.length > 0
+                && receivable.every(item => this.selectedReceiveIds.includes(item.id));
+        },
+
+        someReceivableSelected() {
+            const receivable = this.receivableLineItems();
+            const selectedCount = receivable.filter(item => this.selectedReceiveIds.includes(item.id)).length;
+            return selectedCount > 0 && selectedCount < receivable.length;
+        },
+
+        toggleSelectAllReceivable() {
+            if (this.isAllReceivableSelected()) {
+                this.selectedReceiveIds = [];
+            } else {
+                this.selectedReceiveIds = this.receivableLineItems().map(item => item.id);
+            }
+        },
+
+        itemQuantityRemaining(item) {
+            if (item.quantity_remaining != null) {
+                return parseInt(item.quantity_remaining, 10) || 0;
+            }
+            const qty = parseInt(item.quantity, 10) || 0;
+            const received = parseInt(item.quantity_received, 10) || 0;
+            return Math.max(qty - received, 0);
+        },
+
+        buildBulkReceivePayload(items) {
+            return {
+                invoiceId: this.row.document_id,
+                supplierId: this.row.supplier_id,
+                supplierName: this.row.supplier_name,
+                quotationId: this.row.quotation_pk,
+                items: items.map(item => {
+                    const remaining = this.itemQuantityRemaining(item);
+                    return {
+                        invoiceItemId: item.id,
+                        productId: item.product_id,
+                        productName: item.product_name,
+                        productSku: item.sku || item.product_sku || '-',
+                        quantity_remaining: remaining,
+                        quantity_to_receive: remaining,
+                    };
+                }),
+            };
+        },
+
+        openBulkReceiveSelected() {
+            const items = this.receivableLineItems().filter(item => this.selectedReceiveIds.includes(item.id));
+            if (!items.length) {
+                Alpine.store('globals').showToast('Select at least one line item to receive.', 'error');
+                return;
+            }
+            this.$dispatch('open-bulk-receive-stock', this.buildBulkReceivePayload(items));
+        },
+
+        openBulkReceiveAll() {
+            const items = this.receivableLineItems();
+            if (!items.length) {
+                Alpine.store('globals').showToast('All line items are already received.', 'error');
+                return;
+            }
+            this.$dispatch('open-bulk-receive-stock', this.buildBulkReceivePayload(items));
+        },
+
+        init() {
+            this.$watch('row', () => {
+                if (this.row.record_type === 'invoice' && Array.isArray(this.row.items)) {
+                    this.lineItems = this.row.items;
+                    this.selectedReceiveIds = [];
+                }
+            });
         },
 
         formatMoney(value) {
@@ -321,6 +446,7 @@ document.addEventListener('alpine:init', () => {
             if (this.row.record_type === 'invoice' && this.row.items) {
                 this.lineItems = this.row.items;
                 this.hasLoaded = true;
+                this.selectedReceiveIds = [];
                 return;
             }
             this.isLoading = true;

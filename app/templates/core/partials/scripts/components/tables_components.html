@@ -98,11 +98,8 @@
             showMergeToolsModal: false,
             mergeIsLoading: false,
             mergeGroups: [],
+            mergeMode: 'scan', // 'scan' | 'selection'
             mergeSearch: '',
-            mergeSearchQuery: '',
-            mergeSearchResults: [],
-            mergeSearchSelectedIds: [],
-            mergeSearchLoading: false,
             savingDisplayOrder: false,
             sort: { field: '', direction: 'asc' },
 
@@ -515,26 +512,40 @@
 
             // --- Product Cleaning / Merge Tools ---
             openMergeTools() {
+                if (this.selectedIds.length >= 2) {
+                    this.mergeMode = 'selection';
+                    this.mergeSearch = '';
+                } else if (this.selectedIds.length === 1) {
+                    Alpine.store('globals').showToast(
+                        'Select at least two products to merge as a group, or deselect all to scan for duplicates.',
+                        'error'
+                    );
+                    return;
+                } else {
+                    this.mergeMode = 'scan';
+                    this.mergeSearch = this.filterText || '';
+                }
                 this.showMergeToolsModal = true;
-                this.mergeSearch = this.filterText || '';
                 this.loadMergeSuggestions();
             },
             closeMergeTools() {
                 this.showMergeToolsModal = false;
                 this.mergeGroups = [];
                 this.mergeIsLoading = false;
-                this.mergeSearchQuery = '';
-                this.mergeSearchResults = [];
-                this.mergeSearchSelectedIds = [];
+                this.mergeMode = 'scan';
+                this.mergeSearch = '';
             },
             async loadMergeSuggestions() {
                 this.mergeIsLoading = true;
                 this.mergeGroups = [];
-                const params = new URLSearchParams({
-                    search: this.mergeSearch || '',
-                    min_score: '0.7',
-                    limit: '200'
-                });
+                const params = new URLSearchParams({ min_score: '0.7' });
+                if (this.mergeMode === 'selection') {
+                    params.set('product_ids', this.selectedIds.join(','));
+                } else {
+                    if (this.mergeSearch) {
+                        params.set('search', this.mergeSearch);
+                    }
+                }
                 try {
                     const response = await fetch(`{% url 'product:api_product_merge_suggestions' %}?${params.toString()}`, {
                         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -553,53 +564,15 @@
                     this.mergeIsLoading = false;
                 }
             },
-            async loadMergeSearch() {
-                const q = (this.mergeSearchQuery || '').trim();
-                if (!q) {
-                    this.mergeSearchResults = [];
-                    return;
+            mergeGroupTitle(group) {
+                const gid = String(group.group_id || '');
+                if (gid.startsWith('selected-')) {
+                    return 'Selected products';
                 }
-                this.mergeSearchLoading = true;
-                try {
-                    const params = new URLSearchParams({ search: q, limit: '50' });
-                    const response = await fetch(`{% url 'product:api_product_search' %}?${params.toString()}`, {
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-                    });
-                    const data = await response.json();
-                    this.mergeSearchResults = data.products || [];
-                } catch (err) {
-                    console.error('Merge search failed:', err);
-                    this.mergeSearchResults = [];
-                } finally {
-                    this.mergeSearchLoading = false;
+                if (gid.startsWith('manual-')) {
+                    return 'Custom merge group';
                 }
-            },
-            toggleMergeSearchSelection(id) {
-                if (this.mergeSearchSelectedIds.includes(id)) {
-                    this.mergeSearchSelectedIds = this.mergeSearchSelectedIds.filter(i => i !== id);
-                } else {
-                    this.mergeSearchSelectedIds = [...this.mergeSearchSelectedIds, id];
-                }
-            },
-            createCustomMergeGroup() {
-                if (this.mergeSearchSelectedIds.length < 2) {
-                    Alpine.store('globals').showToast('Select at least two products to create a merge group.', 'error');
-                    return;
-                }
-                const products = this.mergeSearchResults.filter(p => this.mergeSearchSelectedIds.includes(p.id));
-                if (products.length < 2) {
-                    Alpine.store('globals').showToast('Select at least two products from the search results.', 'error');
-                    return;
-                }
-                const groupId = 'manual-' + Date.now();
-                this.mergeGroups = [...this.mergeGroups, {
-                    group_id: groupId,
-                    products: products,
-                    primary_id: products[0].id,
-                    isMerging: false,
-                }];
-                this.mergeSearchSelectedIds = [];
-                Alpine.store('globals').showToast('Custom merge group created. Choose the master and click Merge into master.');
+                return 'Similar products group';
             },
             removeProductFromGroup(group, productId) {
                 const products = (group.products || []).filter(p => p.id !== productId);
@@ -678,9 +651,9 @@
                     const data = await response.json();
                     if (response.ok && data.success) {
                         Alpine.store('globals').showToast('Products merged successfully.');
-                        // Remove this group from the list
                         this.mergeGroups = this.mergeGroups.filter(g => g.group_id !== group.group_id);
-                        // Refresh product table so data stays in sync
+                        const mergedIds = new Set([group.primary_id, ...mergeIds]);
+                        this.selectedIds = this.selectedIds.filter(id => !mergedIds.has(id));
                         this.fetchProducts(1);
                     } else {
                         Alpine.store('globals').showToast(data.error || 'Merge failed.', 'error');

@@ -28,6 +28,7 @@
          @open-seo-modal.window="openSeoModal($event.detail)"
          @open-category-modal.window="openCategoryModal($event.detail)"
          @close-receive-modal.window="closeReceiveStockModal()"
+         @open-bulk-receive-stock.window="openBulkReceiveStockModal($event.detail)"
          @images-open-edit.window="Alpine.store('images').openImageEditModal($event.detail)"
          @images-handle-upload.window="Alpine.store('images').handleImageUpload($event)"
          @images-delete.window="Alpine.store('images').deleteImage($event.detail)"

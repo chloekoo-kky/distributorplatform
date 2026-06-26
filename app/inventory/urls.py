@@ -23,6 +23,7 @@ urlpatterns = [
 
     # --- START ADDED ---
     path('receive-stock/', views.receive_stock, name='receive_stock'),
+    path('bulk-receive-stock/', views.bulk_receive_stock, name='bulk_receive_stock'),
     # --- END ADDED ---
 
     path('create-quotation/', views.create_quotation, name='create_quotation'),
