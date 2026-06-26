@@ -2122,6 +2122,22 @@ def api_cash_bank_receipt_create(request):
 
 
 @staff_member_required
+def api_cash_bank_received_from_suggestions(request):
+    """Distinct payer names from prior cash/bank receipt entries for autocomplete."""
+    search_query = (request.GET.get('search') or '').strip()
+    qs = (
+        CashBankReceiptEntry.objects
+        .exclude(received_from='')
+        .values_list('received_from', flat=True)
+        .distinct()
+    )
+    if search_query:
+        qs = qs.filter(received_from__icontains=search_query)
+    items = list(qs.order_by('received_from')[:25])
+    return JsonResponse({'items': items})
+
+
+@staff_member_required
 def api_cash_received_breakdown(request):
     """Global cash/bank receipt totals grouped by payer (not filter-scoped). Superuser only."""
     if not request.user.is_superuser:

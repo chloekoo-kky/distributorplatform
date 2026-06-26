@@ -490,84 +490,81 @@
         <div class="bg-white shadow overflow-hidden sm:rounded-lg">
 
             {# Table header #}
-            <div class="px-3 py-2.5 sm:px-6 sm:py-3 border-b border-gray-100 flex flex-col gap-2.5 sm:gap-3">
-                <div class="flex items-center justify-between gap-2 min-w-0">
-                    <div class="inline-flex shrink-0 rounded-lg border border-gray-200 bg-gray-50 p-0.5"
-                         role="group"
-                         aria-label="Orders layout">
-                        <button type="button"
-                                @click="setOrdersViewMode('list')"
-                                :class="ordersViewMode === 'list'
-                                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200'
-                                    : 'text-gray-500 hover:text-gray-800'"
-                                class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-                                :aria-pressed="ordersViewMode === 'list'"
-                                title="List view">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                            </svg>
-                            <span class="hidden sm:inline">List</span>
-                        </button>
-                        <button type="button"
-                                @click="setOrdersViewMode('grid')"
-                                :class="ordersViewMode === 'grid'
-                                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200'
-                                    : 'text-gray-500 hover:text-gray-800'"
-                                class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-                                :aria-pressed="ordersViewMode === 'grid'"
-                                title="Grid view">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-                            </svg>
-                            <span class="hidden sm:inline">Grid</span>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        <button type="button"
-                                @click="openCashBankModal()"
-                                class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
-                                title="Record cash, bank transfer, or loan repayment">
-                            <span aria-hidden="true">$</span>
-                            <span class="sr-only">Record cash or bank transfer</span>
-                        </button>
-                        {% if request.user.is_superuser %}
-                        <button type="button"
-                                @click="openCommissionPaymentModal()"
-                                class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
-                                title="Record commission paid to agent">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                            <span class="sr-only">Record commission paid to agent</span>
-                        </button>
-                        <button type="button"
-                                @click="openRevenueAdjustmentModal()"
-                                class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
-                                title="Record commission released or loan interest">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/>
-                            </svg>
-                            <span class="sr-only">Record revenue adjustment</span>
-                        </button>
-                        {% endif %}
-                    </div>
+            <div class="px-3 py-2.5 sm:px-6 sm:py-3 border-b border-gray-100 flex items-center justify-between gap-2 min-w-0">
+                <div class="inline-flex shrink-0 rounded-lg border border-gray-200 bg-gray-50 p-0.5"
+                     role="group"
+                     aria-label="Orders layout">
+                    <button type="button"
+                            @click="setOrdersViewMode('list')"
+                            :class="ordersViewMode === 'list'
+                                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200'
+                                : 'text-gray-500 hover:text-gray-800'"
+                            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                            :aria-pressed="ordersViewMode === 'list'"
+                            title="List view">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                        </svg>
+                        <span class="hidden sm:inline">List</span>
+                    </button>
+                    <button type="button"
+                            @click="setOrdersViewMode('grid')"
+                            :class="ordersViewMode === 'grid'
+                                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200'
+                                : 'text-gray-500 hover:text-gray-800'"
+                            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                            :aria-pressed="ordersViewMode === 'grid'"
+                            title="Grid view">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                        <span class="hidden sm:inline">Grid</span>
+                    </button>
                 </div>
-                <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-row sm:items-center sm:gap-2">
+                <div class="flex items-center gap-1.5 shrink-0 min-w-0">
                     <button type="button"
                             @click="openBulkStatusModal()"
                             :disabled="selectedOrderIds.length === 0"
-                            class="inline-flex justify-center items-center gap-1.5 px-2.5 sm:px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                            class="inline-flex justify-center items-center gap-1.5 px-2 sm:px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Bulk status update">
                         <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h12M3 17h8"></path></svg>
-                        <span class="truncate">Bulk Status</span>
+                        <span class="truncate hidden sm:inline">Bulk Status</span>
                     </button>
                     <button type="button"
                             @click="exportSelectedOrders()"
                             :disabled="selectedOrderIds.length === 0"
-                            class="inline-flex justify-center items-center gap-1.5 px-2.5 sm:px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors">
+                            class="inline-flex justify-center items-center gap-1.5 px-2 sm:px-3 py-2 h-9 rounded-md text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
+                            title="Export selected orders">
                         <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                        <span class="truncate">Export</span>
-                        <span class="hidden sm:inline">Selected</span>
+                        <span class="truncate hidden sm:inline">Export Selected</span>
                     </button>
+                    <button type="button"
+                            @click="openCashBankModal()"
+                            class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                            title="Record cash, bank transfer, or loan repayment">
+                        <span aria-hidden="true">$</span>
+                        <span class="sr-only">Record cash or bank transfer</span>
+                    </button>
+                    {% if request.user.is_superuser %}
+                    <button type="button"
+                            @click="openCommissionPaymentModal()"
+                            class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                            title="Record commission paid to agent">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                        <span class="sr-only">Record commission paid to agent</span>
+                    </button>
+                    <button type="button"
+                            @click="openRevenueAdjustmentModal()"
+                            class="inline-flex justify-center items-center w-9 h-9 rounded-md text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 transition-colors"
+                            title="Record commission released or loan interest">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6"/>
+                        </svg>
+                        <span class="sr-only">Record revenue adjustment</span>
+                    </button>
+                    {% endif %}
                 </div>
             </div>
 
@@ -1096,8 +1093,40 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Received from</label>
-                    <input type="text" x-model="cashBankForm.received_from" placeholder="Name or payer reference"
-                           class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                    <div class="relative" @click.away="cashBankReceivedFromSearchOpen = false">
+                        <input type="text"
+                               x-model="cashBankForm.received_from"
+                               @focus="cashBankReceivedFromSearchOpen = true; cashBankReceivedFromHighlightIndex = -1; loadCashBankReceivedFromOptions()"
+                               @input="cashBankReceivedFromSearchOpen = true; cashBankReceivedFromHighlightIndex = -1"
+                               @input.debounce.300ms="loadCashBankReceivedFromOptions()"
+                               @keydown="handleCashBankReceivedFromKeydown($event)"
+                               placeholder="Search or enter payer name"
+                               autocomplete="off"
+                               role="combobox"
+                               aria-autocomplete="list"
+                               :aria-expanded="cashBankReceivedFromSearchOpen && filteredCashBankReceivedFrom.length > 0"
+                               class="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                        <div x-show="cashBankReceivedFromSearchOpen && filteredCashBankReceivedFrom.length > 0"
+                             x-cloak
+                             x-transition
+                             role="listbox"
+                             class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-44 overflow-y-auto py-1">
+                            <template x-for="(name, idx) in filteredCashBankReceivedFrom" :key="name">
+                                <button type="button"
+                                        @mousedown.prevent="selectCashBankReceivedFrom(name)"
+                                        @mouseenter="cashBankReceivedFromHighlightIndex = idx"
+                                        :class="idx === cashBankReceivedFromHighlightIndex ? 'bg-indigo-100 text-indigo-900' : 'text-gray-900 hover:bg-indigo-50'"
+                                        class="w-full text-left px-3 py-2 text-sm">
+                                    <span x-text="name"></span>
+                                </button>
+                            </template>
+                        </div>
+                        <p x-show="cashBankReceivedFromSearchOpen && cashBankForm.received_from.trim() && filteredCashBankReceivedFrom.length === 0"
+                           class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg px-3 py-2 text-sm text-gray-500"
+                           x-cloak>
+                            No matching records. A new name will be saved.
+                        </p>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Transaction date</label>
@@ -1578,6 +1607,9 @@
             cashReceivedTransactions: [],
             showCashBankModal: false,
             cashBankSaving: false,
+            cashBankReceivedFromOptions: [],
+            cashBankReceivedFromSearchOpen: false,
+            cashBankReceivedFromHighlightIndex: -1,
             orderFormModalBackdropArmed: false,
             cashBankForm: {
                 payment_type: 'CASH',
@@ -1713,6 +1745,59 @@
                 } else if (e.key === 'Escape') {
                     this.commissionAgentSearchOpen = false;
                     this.commissionAgentHighlightIndex = -1;
+                }
+            },
+
+            get filteredCashBankReceivedFrom() {
+                return (this.cashBankReceivedFromOptions || []).slice(0, 10);
+            },
+
+            async loadCashBankReceivedFromOptions() {
+                const search = (this.cashBankForm.received_from || '').trim();
+                const params = new URLSearchParams();
+                if (search) {
+                    params.set('search', search);
+                }
+                try {
+                    const response = await fetch(`{% url 'order:api_cash_bank_received_from_suggestions' %}?${params.toString()}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    this.cashBankReceivedFromOptions = data.items || [];
+                } catch (e) {
+                    console.error('Failed to load received-from suggestions', e);
+                }
+            },
+
+            selectCashBankReceivedFrom(name) {
+                this.cashBankForm.received_from = name;
+                this.cashBankReceivedFromSearchOpen = false;
+                this.cashBankReceivedFromHighlightIndex = -1;
+            },
+
+            handleCashBankReceivedFromKeydown(e) {
+                const list = this.filteredCashBankReceivedFrom;
+                if (e.key === 'ArrowDown') {
+                    if (!list.length) return;
+                    e.preventDefault();
+                    this.cashBankReceivedFromSearchOpen = true;
+                    this.cashBankReceivedFromHighlightIndex = this.cashBankReceivedFromHighlightIndex < list.length - 1
+                        ? this.cashBankReceivedFromHighlightIndex + 1
+                        : 0;
+                } else if (e.key === 'ArrowUp') {
+                    if (!list.length) return;
+                    e.preventDefault();
+                    this.cashBankReceivedFromSearchOpen = true;
+                    this.cashBankReceivedFromHighlightIndex = this.cashBankReceivedFromHighlightIndex > 0
+                        ? this.cashBankReceivedFromHighlightIndex - 1
+                        : list.length - 1;
+                } else if (e.key === 'Enter') {
+                    if (this.cashBankReceivedFromSearchOpen && this.cashBankReceivedFromHighlightIndex >= 0 && list[this.cashBankReceivedFromHighlightIndex]) {
+                        e.preventDefault();
+                        this.selectCashBankReceivedFrom(list[this.cashBankReceivedFromHighlightIndex]);
+                    }
+                } else if (e.key === 'Escape') {
+                    this.cashBankReceivedFromSearchOpen = false;
+                    this.cashBankReceivedFromHighlightIndex = -1;
                 }
             },
 
@@ -1995,7 +2080,10 @@
                     amount: '',
                 };
                 this.orderFormModalBackdropArmed = false;
+                this.cashBankReceivedFromSearchOpen = false;
+                this.cashBankReceivedFromHighlightIndex = -1;
                 this.showCashBankModal = true;
+                this.loadCashBankReceivedFromOptions();
             },
 
             async saveCashBankReceipt() {
