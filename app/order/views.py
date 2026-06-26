@@ -57,6 +57,13 @@ def _logical_order_date(order):
     return order.transaction_date or (order.created_at.date() if order.created_at else None)
 
 
+def _title_case_received_from(value):
+    s = (value or '').strip()
+    if not s:
+        return s
+    return ' '.join(part.capitalize() for part in s.split())
+
+
 def _cash_bank_receipt_export_rows(receipts_qs):
     """Build export row dicts for CashBankReceiptEntry (same columns as order item rows)."""
     type_labels = {
@@ -77,7 +84,7 @@ def _cash_bank_receipt_export_rows(receipts_qs):
                 f'CB-{rec.pk}',
                 d.strftime('%Y-%m-%d'),
                 salesteam,
-                rec.received_from.strip(),
+                _title_case_received_from(rec.received_from),
                 product_label,
                 '',
                 '',
@@ -2081,7 +2088,7 @@ def api_cash_bank_receipt_create(request):
     if ptype not in ('CASH', 'BANK', 'LOAN'):
         return JsonResponse({'success': False, 'error': 'payment_type must be CASH, BANK, or LOAN'}, status=400)
 
-    received_from = (data.get('received_from') or '').strip()
+    received_from = _title_case_received_from(data.get('received_from') or '')
     if not received_from:
         return JsonResponse({'success': False, 'error': 'received_from is required'}, status=400)
 
@@ -2133,7 +2140,7 @@ def api_cash_bank_received_from_suggestions(request):
     )
     if search_query:
         qs = qs.filter(received_from__icontains=search_query)
-    items = list(qs.order_by('received_from')[:25])
+    items = [_title_case_received_from(name) for name in qs.order_by('received_from')[:25]]
     return JsonResponse({'items': items})
 
 
@@ -2152,7 +2159,7 @@ def api_cash_received_breakdown(request):
 
     grouped = {}
     for row in rows:
-        name = row['received_from'] or 'Unknown'
+        name = _title_case_received_from(row['received_from'] or 'Unknown')
         amount = row['amount'] or Decimal('0')
         if name not in grouped:
             grouped[name] = {
@@ -2213,10 +2220,80 @@ def api_cash_received_transactions(request):
             'transaction_date': entry.transaction_date.isoformat(),
             'type': type_labels.get(entry.payment_type, entry.get_payment_type_display()),
             'type_code': entry.payment_type,
-            'received_from': entry.received_from or '',
+            'received_from': _title_case_received_from(entry.received_from or ''),
             'amount': float(entry.amount),
         })
     total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return JsonResponse({
+        'total': float(total),
+        'transactions': transactions,
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+def api_cash_bank_receipt_delete(request, entry_id):
+    """Delete a cash/bank receipt entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(CashBankReceiptEntry, pk=entry_id)
+    entry.delete()
+
+    total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    payload = {
+        'success': True,
+        'total': float(total),
+        'financial': _order_financial_summary(),
+    }
+    return JsonResponse(payload)
+
+
+@staff_member_required
+def api_commission_paid_transactions(request):
+    """All commission payment entries for the transaction details modal. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    entries = AgentCommissionPaymentEntry.objects.order_by('-payment_date', '-id')
+    transactions = []
+    for entry in entries:
+        transactions.append({
+            'id': entry.pk,
+            'payment_date': entry.payment_date.isoformat(),
+            'paid_to': _title_case_received_from(entry.paid_to or ''),
+            'notes': entry.notes or '',
+            'amount': float(entry.amount),
+        })
+    total = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return JsonResponse({
+        'total': float(total),
+        'transactions': transactions,
+    })
+
+
+@staff_member_required
+def api_revenue_adjustment_transactions(request):
+    """All revenue adjustment entries for the transaction details modal. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    type_labels = {
+        RevenueAdjustmentEntry.AdjustmentType.COMMISSION_RELEASED: 'Commission released',
+        RevenueAdjustmentEntry.AdjustmentType.LOAN_INTEREST: 'Interest of loan',
+    }
+    entries = RevenueAdjustmentEntry.objects.order_by('-transaction_date', '-id')
+    transactions = []
+    for entry in entries:
+        transactions.append({
+            'id': entry.pk,
+            'transaction_date': entry.transaction_date.isoformat(),
+            'type': type_labels.get(entry.adjustment_type, entry.get_adjustment_type_display()),
+            'type_code': entry.adjustment_type,
+            'reference': entry.reference or '',
+            'amount': float(entry.amount),
+        })
+    total = RevenueAdjustmentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'total': float(total),
         'transactions': transactions,
