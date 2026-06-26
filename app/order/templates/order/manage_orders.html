@@ -85,9 +85,9 @@
             </div>
 
             {% if request.user.is_superuser %}
-            <button type="button" @click="openCashReceivedBreakdown()"
-                    class="group bg-white overflow-hidden shadow rounded-lg text-left w-full transition hover:shadow-md hover:ring-2 hover:ring-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 cursor-pointer border-l-4 border-emerald-500">
-                <div class="px-4 py-5 sm:p-6 h-full flex flex-col">
+            <div class="group relative bg-white overflow-hidden shadow rounded-lg border-l-4 border-emerald-500">
+                <button type="button" @click="openCashReceivedBreakdown()"
+                        class="block w-full text-left px-4 py-5 sm:p-6 pr-12 transition hover:shadow-md hover:ring-2 hover:ring-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 cursor-pointer">
                     <dt class="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5">
                         Total Cash Received
                         <svg class="w-4 h-4 text-gray-400 group-hover:text-emerald-600 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,9 +95,19 @@
                         </svg>
                     </dt>
                     <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(financial.total_cash_received)"></dd>
-                    <p class="mt-auto pt-1 text-xs font-medium text-emerald-600 opacity-80 group-hover:opacity-100">All-time &middot; view breakdown &rarr;</p>
-                </div>
-            </button>
+                    <p class="mt-2 text-xs font-medium text-emerald-600 opacity-80 group-hover:opacity-100">All-time &middot; view breakdown &rarr;</p>
+                </button>
+                <button type="button"
+                        @click="openCashReceivedDetails()"
+                        class="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-10 inline-flex items-center justify-center w-8 h-8 rounded-md text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 transition-colors"
+                        title="View transaction details"
+                        aria-label="View transaction details">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                </button>
+            </div>
             <div class="bg-white overflow-hidden shadow rounded-lg border-l-4 border-amber-400">
                 <div class="px-4 py-5 sm:p-6 h-full flex flex-col">
                     <dt class="text-sm font-medium text-gray-500 truncate">Pending Cash Receivable</dt>
@@ -272,20 +282,20 @@
         </div>
 
         {# --- Cash Received Breakdown Modal --- #}
-        <div x-show="showCashReceivedModal"
+        <div x-show="showCashReceivedBreakdownModal"
              class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-60 backdrop-blur-sm p-4"
              x-transition.opacity
              style="display: none;"
-             @keydown.escape.window="showCashReceivedModal = false"
+             @keydown.escape.window="showCashReceivedBreakdownModal = false"
              x-cloak>
             <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto max-h-[85vh] flex flex-col overflow-hidden"
-                 @click.away="showCashReceivedModal = false">
+                 @click.away="showCashReceivedBreakdownModal = false">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900">Cash Received Breakdown</h3>
-                        <p class="mt-0.5 text-sm text-gray-500">All-time cash, bank transfers, and loan repayments recorded</p>
+                        <p class="mt-0.5 text-sm text-gray-500">All-time totals grouped by payer</p>
                     </div>
-                    <button type="button" @click="showCashReceivedModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                    <button type="button" @click="showCashReceivedBreakdownModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
@@ -294,11 +304,11 @@
                     <span class="text-lg font-bold text-gray-900" x-text="formatRevenue(cashReceivedTotal)"></span>
                 </div>
                 <div class="flex-1 overflow-y-auto">
-                    <div x-show="cashReceivedLoading" class="p-10 flex justify-center">
+                    <div x-show="cashReceivedBreakdownLoading" class="p-10 flex justify-center">
                         <svg class="animate-spin h-7 w-7 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </div>
-                    <div x-show="!cashReceivedLoading && cashReceivedBreakdown.length === 0" class="p-10 text-center text-sm text-gray-500">No receipts recorded yet.</div>
-                    <ul x-show="!cashReceivedLoading && cashReceivedBreakdown.length > 0" class="divide-y divide-gray-100">
+                    <div x-show="!cashReceivedBreakdownLoading && cashReceivedBreakdown.length === 0" class="p-10 text-center text-sm text-gray-500">No receipts recorded yet.</div>
+                    <ul x-show="!cashReceivedBreakdownLoading && cashReceivedBreakdown.length > 0" class="divide-y divide-gray-100">
                         <template x-for="(row, idx) in cashReceivedBreakdown" :key="idx">
                             <li class="px-6 py-3">
                                 <div class="flex items-center justify-between gap-3">
@@ -314,6 +324,67 @@
                             </li>
                         </template>
                     </ul>
+                </div>
+            </div>
+        </div>
+
+        {# --- Cash Received Transaction Details Modal --- #}
+        <div x-show="showCashReceivedTransactionsModal"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-60 backdrop-blur-sm p-4"
+             x-transition.opacity
+             style="display: none;"
+             @keydown.escape.window="showCashReceivedTransactionsModal = false"
+             x-cloak>
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-auto max-h-[85vh] flex flex-col overflow-hidden"
+                 @click.away="showCashReceivedTransactionsModal = false">
+                <div class="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Cash Received — Transaction Details</h3>
+                        <p class="mt-0.5 text-sm text-gray-500">All recorded cash, bank transfer, and loan repayment entries</p>
+                    </div>
+                    <button type="button" @click="showCashReceivedTransactionsModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-500">Total Cash Received</span>
+                    <span class="text-lg font-bold text-gray-900" x-text="formatRevenue(cashReceivedTotal)"></span>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                    <div x-show="cashReceivedTransactionsLoading" class="p-10 flex justify-center">
+                        <svg class="animate-spin h-7 w-7 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                    <div x-show="!cashReceivedTransactionsLoading && cashReceivedTransactions.length === 0" class="p-10 text-center text-sm text-gray-500">No transactions recorded yet.</div>
+                    <div x-show="!cashReceivedTransactionsLoading && cashReceivedTransactions.length > 0" class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50 sticky top-0">
+                                <tr>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
+                                    <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-100">
+                                <template x-for="tx in cashReceivedTransactions" :key="tx.id">
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 whitespace-nowrap text-gray-700 tabular-nums" x-text="formatTransactionDate(tx.transaction_date)"></td>
+                                        <td class="px-4 py-3 text-gray-700">
+                                            <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
+                                                  :class="{
+                                                      'bg-emerald-100 text-emerald-800': tx.type_code === 'CASH',
+                                                      'bg-blue-100 text-blue-800': tx.type_code === 'BANK',
+                                                      'bg-purple-100 text-purple-800': tx.type_code === 'LOAN',
+                                                  }"
+                                                  x-text="tx.type"></span>
+                                        </td>
+                                        <td class="px-4 py-3 text-gray-900 break-words max-w-xs" x-text="tx.received_from || '—'"></td>
+                                        <td class="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums whitespace-nowrap" x-text="formatRevenue(tx.amount)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -985,8 +1056,11 @@
          class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
          x-transition.opacity
          style="display: none;"
-         @keydown.escape.window="showCashBankModal = false" x-cloak>
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @click.away="showCashBankModal = false">
+         @keydown.escape.window="showCashBankModal = false"
+         @mousedown.self="armOrderFormModalBackdrop()"
+         @mouseup.self="dismissOrderFormModalBackdrop(() => { showCashBankModal = false; })"
+         x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @mousedown.stop="disarmOrderFormModalBackdrop()">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">Cash, bank, or loan receipt</h3>
                 <p class="mt-1 text-sm text-gray-500">
@@ -1057,8 +1131,11 @@
          class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
          x-transition.opacity
          style="display: none;"
-         @keydown.escape.window="showCommissionPaymentModal = false" x-cloak>
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @click.away="showCommissionPaymentModal = false">
+         @keydown.escape.window="showCommissionPaymentModal = false"
+         @mousedown.self="armOrderFormModalBackdrop()"
+         @mouseup.self="dismissOrderFormModalBackdrop(() => { showCommissionPaymentModal = false; })"
+         x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @mousedown.stop="disarmOrderFormModalBackdrop()">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">Commission paid to agent</h3>
                 <p class="mt-1 text-sm text-gray-500">
@@ -1139,8 +1216,11 @@
          class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4"
          x-transition.opacity
          style="display: none;"
-         @keydown.escape.window="showRevenueAdjustmentModal = false" x-cloak>
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @click.away="showRevenueAdjustmentModal = false">
+         @keydown.escape.window="showRevenueAdjustmentModal = false"
+         @mousedown.self="armOrderFormModalBackdrop()"
+         @mouseup.self="dismissOrderFormModalBackdrop(() => { showRevenueAdjustmentModal = false; })"
+         x-cloak>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md" @mousedown.stop="disarmOrderFormModalBackdrop()">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">Other revenue line</h3>
                 <p class="mt-1 text-sm text-gray-500">
@@ -1489,12 +1569,16 @@
             revenueTotal: 0,
             revenueBreakdown: [],
             revenueCopied: false,
-            showCashReceivedModal: false,
-            cashReceivedLoading: false,
+            showCashReceivedBreakdownModal: false,
+            cashReceivedBreakdownLoading: false,
             cashReceivedTotal: 0,
             cashReceivedBreakdown: [],
+            showCashReceivedTransactionsModal: false,
+            cashReceivedTransactionsLoading: false,
+            cashReceivedTransactions: [],
             showCashBankModal: false,
             cashBankSaving: false,
+            orderFormModalBackdropArmed: false,
             cashBankForm: {
                 payment_type: 'CASH',
                 received_from: '',
@@ -1886,6 +1970,19 @@
                 }
             },
 
+            armOrderFormModalBackdrop() {
+                this.orderFormModalBackdropArmed = true;
+            },
+            disarmOrderFormModalBackdrop() {
+                this.orderFormModalBackdropArmed = false;
+            },
+            dismissOrderFormModalBackdrop(onDismiss) {
+                if (this.orderFormModalBackdropArmed) {
+                    onDismiss();
+                }
+                this.orderFormModalBackdropArmed = false;
+            },
+
             openCashBankModal() {
                 const t = new Date();
                 const y = t.getFullYear();
@@ -1897,6 +1994,7 @@
                     transaction_date: `${y}-${m}-${d}`,
                     amount: '',
                 };
+                this.orderFormModalBackdropArmed = false;
                 this.showCashBankModal = true;
             },
 
@@ -1961,6 +2059,7 @@
                 };
                 this.commissionAgentSearchOpen = false;
                 this.commissionAgentHighlightIndex = -1;
+                this.orderFormModalBackdropArmed = false;
                 this.showCommissionPaymentModal = true;
             },
 
@@ -2021,6 +2120,7 @@
                     transaction_date: `${y}-${m}-${d}`,
                     amount: '',
                 };
+                this.orderFormModalBackdropArmed = false;
                 this.showRevenueAdjustmentModal = true;
             },
 
@@ -2068,8 +2168,8 @@
             },
 
             async openCashReceivedBreakdown() {
-                this.showCashReceivedModal = true;
-                this.cashReceivedLoading = true;
+                this.showCashReceivedBreakdownModal = true;
+                this.cashReceivedBreakdownLoading = true;
                 this.cashReceivedBreakdown = [];
                 this.cashReceivedTotal = this.financial.total_cash_received || 0;
 
@@ -2078,13 +2178,34 @@
                     if (!response.ok) throw new Error('Failed to load cash received breakdown');
                     const data = await response.json();
                     this.cashReceivedTotal = data.total;
-                    this.cashReceivedBreakdown = data.breakdown;
+                    this.cashReceivedBreakdown = data.breakdown || [];
                 } catch (error) {
                     console.error('Error:', error);
                     alert('Error loading cash received breakdown.');
-                    this.showCashReceivedModal = false;
+                    this.showCashReceivedBreakdownModal = false;
                 } finally {
-                    this.cashReceivedLoading = false;
+                    this.cashReceivedBreakdownLoading = false;
+                }
+            },
+
+            async openCashReceivedDetails() {
+                this.showCashReceivedTransactionsModal = true;
+                this.cashReceivedTransactionsLoading = true;
+                this.cashReceivedTransactions = [];
+                this.cashReceivedTotal = this.financial.total_cash_received || 0;
+
+                try {
+                    const response = await fetch(`{% url 'order:api_cash_received_transactions' %}`);
+                    if (!response.ok) throw new Error('Failed to load cash received transactions');
+                    const data = await response.json();
+                    this.cashReceivedTotal = data.total;
+                    this.cashReceivedTransactions = data.transactions || [];
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error loading cash received transactions.');
+                    this.showCashReceivedTransactionsModal = false;
+                } finally {
+                    this.cashReceivedTransactionsLoading = false;
                 }
             },
 
@@ -2452,7 +2573,14 @@
             formatRevenue(amount) {
                  if (amount === null || amount === undefined) return 'RM 0.00';
                  return 'RM ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            }
+            },
+
+            formatTransactionDate(isoDate) {
+                if (!isoDate) return '—';
+                const parts = String(isoDate).split('-');
+                if (parts.length !== 3) return isoDate;
+                return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            },
         }));
 
         Alpine.data('manualOrderData', () => ({

@@ -2179,6 +2179,35 @@ def api_cash_received_breakdown(request):
 
 
 @staff_member_required
+def api_cash_received_transactions(request):
+    """All cash/bank receipt entries for the transaction details modal. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    type_labels = {
+        CashBankReceiptEntry.PaymentType.CASH: 'Cash received',
+        CashBankReceiptEntry.PaymentType.BANK: 'Bank transfer',
+        CashBankReceiptEntry.PaymentType.LOAN: 'Loan repayment',
+    }
+    entries = CashBankReceiptEntry.objects.order_by('-transaction_date', '-id')
+    transactions = []
+    for entry in entries:
+        transactions.append({
+            'id': entry.pk,
+            'transaction_date': entry.transaction_date.isoformat(),
+            'type': type_labels.get(entry.payment_type, entry.get_payment_type_display()),
+            'type_code': entry.payment_type,
+            'received_from': entry.received_from or '',
+            'amount': float(entry.amount),
+        })
+    total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return JsonResponse({
+        'total': float(total),
+        'transactions': transactions,
+    })
+
+
+@staff_member_required
 @require_http_methods(['POST'])
 def api_agent_commission_payment_create(request):
     """
