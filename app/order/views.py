@@ -173,9 +173,20 @@ def _agent_commission_payment_export_rows(payments_qs):
     return rows
 
 
+def _export_row_line_revenue_sign_bucket(row):
+    """Within a date, positive/zero line revenue sorts before negative."""
+    try:
+        line_revenue = float(row['values'][ORDER_EXPORT_LINE_REVENUE_IDX])
+    except (TypeError, ValueError, IndexError):
+        return 1
+    if line_revenue < 0:
+        return 2
+    return 0
+
+
 def _export_row_sort_key(row):
     v = row['values']
-    return (v[1] or '', str(v[0]))
+    return (v[1] or '', _export_row_line_revenue_sign_bucket(row), str(v[0]))
 
 
 def _merge_sorted_export_rows(*row_lists):
