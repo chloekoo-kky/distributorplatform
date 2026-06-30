@@ -2770,6 +2770,61 @@ def api_agent_commission_payment_create(request):
 
 @staff_member_required
 @require_http_methods(['POST'])
+def api_agent_commission_payment_update(request, entry_id):
+    """Update an existing commission payment entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(AgentCommissionPaymentEntry, pk=entry_id)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    paid_to = (data.get('paid_to') or '').strip()
+    if not paid_to:
+        return JsonResponse({'success': False, 'error': 'paid_to is required'}, status=400)
+
+    date_str = (data.get('payment_date') or '').strip()
+    try:
+        payment_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'payment_date must be YYYY-MM-DD'}, status=400)
+
+    raw_amount = data.get('amount')
+    try:
+        amount = Decimal(str(raw_amount))
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount'}, status=400)
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
+
+    notes = (data.get('notes') or '').strip()
+
+    entry.paid_to = paid_to
+    entry.payment_date = payment_date
+    entry.amount = amount
+    entry.notes = notes
+    entry.save()
+
+    financial = _order_financial_summary()
+    return JsonResponse({
+        'success': True,
+        'entry': {
+            'id': entry.pk,
+            'transaction_id': entry.transaction_id,
+            'paid_to': entry.paid_to,
+            'payment_date': entry.payment_date.isoformat(),
+            'amount': str(entry.amount),
+            'notes': entry.notes,
+        },
+        'financial': financial,
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
 def api_revenue_adjustment_create(request):
     """
     Record a standalone revenue adjustment line for order exports.

@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/commission-paid-transactions/', views.api_commission_paid_transactions, name='api_commission_paid_transactions'),
     path('api/revenue-adjustment-transactions/', views.api_revenue_adjustment_transactions, name='api_revenue_adjustment_transactions'),
     path('api/agent-commission-payment/', views.api_agent_commission_payment_create, name='api_agent_commission_payment_create'),
+    path('api/agent-commission-payment/<int:entry_id>/update/', views.api_agent_commission_payment_update, name='api_agent_commission_payment_update'),
     path('api/agent-commission-payment/bulk-upload/template/', views.api_agent_commission_payment_bulk_template, name='api_agent_commission_payment_bulk_template'),
     path('api/agent-commission-payment/bulk-upload/', views.api_agent_commission_payment_bulk_upload, name='api_agent_commission_payment_bulk_upload'),
     path('api/revenue-adjustment/', views.api_revenue_adjustment_create, name='api_revenue_adjustment_create'),
