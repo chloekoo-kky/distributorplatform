@@ -50,6 +50,7 @@ from .finance_entry_import import (
     revenue_adjustment_template_bytes,
 )
 from core.models import SiteSetting, PaymentOption
+from core.dates import format_display_date, format_display_datetime
 
 ORDER_EXPORT_HEADERS = [
     'Order ID', 'Order Date', 'Salesteam', 'Customer Name', 'Product Name',
@@ -99,7 +100,7 @@ def _cash_bank_receipt_export_rows(receipts_qs):
             'month_key': month_key,
             'values': [
                 rec.transaction_id or finance_entry_transaction_id('CB', rec.pk),
-                d.strftime('%Y-%m-%d'),
+                format_display_date(d),
                 salesteam,
                 _title_case_received_from(rec.received_from),
                 product_label,
@@ -131,7 +132,7 @@ def _revenue_adjustment_export_rows(adjustments_qs):
             'month_key': month_key,
             'values': [
                 adj.transaction_id or finance_entry_transaction_id('RA', adj.pk),
-                d.strftime('%Y-%m-%d'),
+                format_display_date(d),
                 salesteam,
                 adj.reference.strip(),
                 product_label,
@@ -158,7 +159,7 @@ def _agent_commission_payment_export_rows(payments_qs):
             'month_key': month_key,
             'values': [
                 pay.transaction_id or finance_entry_transaction_id('CP', pay.pk),
-                d.strftime('%Y-%m-%d'),
+                format_display_date(d),
                 salesteam,
                 pay.paid_to.strip(),
                 'Commission paid',
@@ -601,7 +602,7 @@ def api_customers_list(request):
             'email': c.email or '',
             'address': (c.address or '')[:80] + ('...' if c.address and len(c.address) > 80 else ''),
             'notes': (c.notes or '')[:80] + ('...' if c.notes and len(c.notes) > 80 else ''),
-            'created_at': c.created_at.strftime('%Y-%m-%d %H:%M'),
+            'created_at': format_display_datetime(c.created_at),
             'order_count': c.orders.count(),
         }
         for c in page.object_list
@@ -975,7 +976,7 @@ def api_customer_orders(request, customer_id):
         total = sum((item.total_price for item in items), Decimal('0.00'))
         orders_data.append({
             'id': str(o.id),
-            'created_at': o.created_at.strftime('%Y-%m-%d %H:%M'),
+            'created_at': format_display_datetime(o.created_at),
             'transaction_date': o.transaction_date.isoformat() if o.transaction_date else '',
             'status': o.status,
             'status_display': o.get_status_display(),
@@ -1163,7 +1164,7 @@ def api_submit_manual_order(request):
         "*New Manual Order Recorded!*",
         f"Order ID: #{new_order.id}",
         f"Agent: {request.user.username}",
-        f"Date: {new_order.created_at.strftime('%Y-%m-%d %H:%M')}",
+        f"Date: {format_display_datetime(new_order.created_at)}",
         "",
         "*Items:*",
     ]
@@ -1434,7 +1435,7 @@ def api_update_manual_order(request, order_id):
         "*Manual Order Updated!*",
         f"Order ID: #{order.id}",
         f"Agent: {request.user.username}",
-        f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}",
+        f"Date: {format_display_datetime(order.created_at)}",
         "",
         "*Items:*",
     ]
@@ -1490,7 +1491,7 @@ def order_success_view(request, order_id):
         f"*New Order Placed!*",
         f"Order ID: #{order.id}",
         f"Agent: {request.user.username}",
-        f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}",
+        f"Date: {format_display_datetime(order.created_at)}",
         "",
         "*Items:*",
     ]
@@ -1886,10 +1887,9 @@ def api_manage_orders(request):
 
         # Display date: prefer transaction_date (manual orders), else localized created_at date
         if order.transaction_date:
-            display_date = order.transaction_date.strftime('%d/%m/%Y')
+            display_date = format_display_date(order.transaction_date)
         else:
-            local_dt = timezone.localtime(order.created_at)
-            display_date = local_dt.strftime('%d/%m/%Y')
+            display_date = format_display_date(timezone.localtime(order.created_at))
 
         data.append({
             'id': order.id,
@@ -3009,7 +3009,7 @@ def export_selected_orders(request):
             or order.agent.username
         )
         order_date_obj = _logical_order_date(order)
-        order_date = order_date_obj.strftime('%Y-%m-%d') if order_date_obj else ''
+        order_date = format_display_date(order_date_obj) if order_date_obj else ''
         month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
@@ -3132,7 +3132,7 @@ def export_orders_range(request):
             or order.agent.username
         )
         order_date_obj = _logical_order_date(order)
-        order_date_str = order_date_obj.strftime('%Y-%m-%d') if order_date_obj else ''
+        order_date_str = format_display_date(order_date_obj) if order_date_obj else ''
         month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
@@ -3525,7 +3525,7 @@ def export_order_statement(request):
                 or order.agent.username
             )
             order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
-            order_date_str = order_date.strftime('%Y-%m-%d') if hasattr(order_date, 'strftime') else ''
+            order_date_str = format_display_date(order_date) if hasattr(order_date, 'strftime') else ''
             month_key = order_date.strftime('%Y-%m') if hasattr(order_date, 'strftime') else ''
 
             for item in items:

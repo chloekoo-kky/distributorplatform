@@ -12,6 +12,7 @@ from django.core.paginator import Paginator, EmptyPage
 import json
 
 from inventory.models import Quotation
+from core.dates import format_display_date
 from .models import Invoice, InvoiceItem
 
 from inventory.views import staff_required
@@ -96,8 +97,8 @@ def api_manage_invoices(request):
             'supplier_id': invoice.supplier.id,
             'quotation_id': invoice.quotation.quotation_id if invoice.quotation else None,
             'quotation_pk': invoice.quotation.id if invoice.quotation else None,
-            'date_issued': invoice.date_issued.strftime('%Y-%m-%d'),
-            'payment_date': invoice.payment_date.strftime('%Y-%m-%d') if invoice.payment_date else '-',
+            'date_issued': format_display_date(invoice.date_issued),
+            'payment_date': format_display_date(invoice.payment_date) if invoice.payment_date else '-',
             'status': invoice.get_status_display(),
             'status_code': invoice.status,
             'transportation_cost': float(invoice.transportation_cost),

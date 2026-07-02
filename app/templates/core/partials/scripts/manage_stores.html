@@ -14,6 +14,12 @@
             csrfToken: '{{ csrf_token }}', // Ensure this is populated if not handled elsewhere
             selectedCategoryId: null,
             invoiceToOpen: null,
+            formatDisplayDate(value) {
+                return window.formatDisplayDate(value);
+            },
+            formatDisplayDateTime(value) {
+                return window.formatDisplayDateTime(value);
+            },
 
             // --- HELPER: Toast Message ---
             showToast(message, icon = 'success') {

@@ -109,7 +109,7 @@
                                     <a :href="q.detail_url" @click.stop class="text-indigo-600 hover:text-indigo-900 underline decoration-indigo-200 hover:decoration-indigo-900" x-text="q.quotation_id"></a>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium" x-text="q.supplier_name"></td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="q.date_quoted ? $displayDate(q.date_quoted) : '—'"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">
                                     <template x-if="q.status === 'Open'">
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Open</span>

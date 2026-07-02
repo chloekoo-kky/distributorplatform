@@ -147,7 +147,7 @@
                                                             x-text="batch.batch_number || '—'"></td>
                                                         <td class="px-3 py-2 text-sm"
                                                             :class="batch.expiry_date ? 'text-gray-500' : 'text-gray-300'"
-                                                            x-text="batch.expiry_date || '—'"></td>
+                                                            x-text="batch.expiry_date ? $displayDate(batch.expiry_date) : '—'"></td>
                                                         <td class="px-3 py-2 text-sm text-gray-700 tabular-nums font-medium" x-text="batch.quantity"></td>
                                                         <td class="px-3 py-2 text-right">
                                                             <button type="button"

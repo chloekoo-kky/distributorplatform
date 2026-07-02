@@ -227,7 +227,7 @@
                             <template x-for="o in orders" :key="o.id">
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-3 py-2 font-mono text-xs text-gray-900" x-text="o.id"></td>
-                                    <td class="px-3 py-2 text-gray-700" x-text="o.transaction_date || o.created_at"></td>
+                                    <td class="px-3 py-2 text-gray-700" x-text="$displayDate(o.transaction_date || o.created_at)"></td>
                                     <td class="px-3 py-2">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                                               :class="{

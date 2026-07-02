@@ -23,6 +23,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth import update_session_auth_hash
 
 from core.models import SiteSetting, PaymentOption
+from core.dates import format_display_date
 from .forms import CustomUserCreationForm
 from .models import UserGroup, CustomUser, SubscriptionPlan, SubscriptionPayment
 from .utils import generate_verification_code, send_verification_code
@@ -595,9 +596,9 @@ def api_order_history(request):
     serialized = []
     for o in orders:
         if o.transaction_date:
-            date_display = o.transaction_date.strftime('%d/%m/%Y')
+            date_display = format_display_date(o.transaction_date)
         elif o.created_at:
-            date_display = timezone.localtime(o.created_at).strftime('%d/%m/%Y')
+            date_display = format_display_date(timezone.localtime(o.created_at))
         else:
             date_display = ''
 

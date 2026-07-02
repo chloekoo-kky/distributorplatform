@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_date
 from django.utils import timezone
 
 from inventory.views import staff_required
+from core.dates import format_display_date, format_display_datetime
 from .models import CommissionLedger
 
 @staff_required
@@ -96,13 +97,13 @@ def api_get_commissions(request):
     for c in commissions_qs:
         data.append({
             'id': c.id,
-            'created_at': c.created_at.strftime('%Y-%m-%d'),
+            'created_at': format_display_date(c.created_at),
             'agent_name': c.agent.username,
             'order_id': c.order_item.order.id,
             'product_name': c.order_item.product.name,
             'amount': float(c.amount),
             'status': c.get_status_display(),
-            'paid_at': c.paid_at.strftime('%Y-%m-%d') if c.paid_at else '-'
+            'paid_at': format_display_date(c.paid_at) if c.paid_at else '-'
         })
 
     return JsonResponse({
@@ -176,7 +177,7 @@ def export_commission_statement(request):
 
         for c in qs:
             writer.writerow([
-                c.created_at.strftime('%Y-%m-%d %H:%M'),
+                format_display_datetime(c.created_at),
                 c.agent.username,
                 c.agent.email,
                 c.order_item.order.id,
@@ -184,7 +185,7 @@ def export_commission_statement(request):
                 c.order_item.quantity,
                 f"{c.amount:.2f}",
                 c.get_status_display(),
-                c.paid_at.strftime('%Y-%m-%d') if c.paid_at else '-'
+                format_display_date(c.paid_at) if c.paid_at else '-'
             ])
 
         return response

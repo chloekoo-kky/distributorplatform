@@ -282,7 +282,7 @@
                                     <div class="text-xs" x-text="formatTier(tier, row)"></div>
                                 </template>
                             </td>
-                            <td class="px-3 py-3 text-xs text-gray-400 whitespace-nowrap w-24" x-text="formatDate(row.updated_at)"></td>
+                            <td class="px-3 py-3 text-xs text-gray-400 whitespace-nowrap w-24" x-text="$displayDateTime(row.updated_at)"></td>
                             <td class="px-3 py-3 text-center w-14 sticky right-0 z-10 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.06)]"
                                 :class="isRowSelected(row) ? 'bg-indigo-50' : 'bg-white'"
                                 @click.stop>
@@ -355,7 +355,7 @@
                                 <p x-show="!detailEntry.tiers?.length" class="text-sm text-gray-500">No tiers recorded.</p>
                             </div>
                             <p class="text-xs text-gray-400 mt-1.5">
-                                Last updated <span x-text="formatDateTime(detailEntry.updated_at)"></span>
+                                Last updated <span x-text="$displayDateTime(detailEntry.updated_at)"></span>
                                 <span x-show="detailEntry.source_filename"> · from <span x-text="detailEntry.source_filename"></span></span>
                                 <span x-show="detailEntry.price_currency && detailEntry.price_currency !== 'MYR'"> · uploaded in <span x-text="detailEntry.price_currency"></span></span>
                                 <span x-show="formatConversionRate(detailEntry.price_currency, detailEntry.conversion_rate)">
@@ -1244,26 +1244,18 @@ document.addEventListener('alpine:init', () => {
         },
 
         formatDate(value) {
-            if (!value) return '-';
-            return new Date(value).toLocaleDateString();
+            return window.formatDisplayDate(value) || '—';
         },
 
         formatDateTime(value) {
-            if (!value) return '-';
-            return new Date(value).toLocaleString(undefined, {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit',
-            });
+            return window.formatDisplayDateTime(value) || '—';
         },
 
         formatHistoryDate(record) {
             if (!record) return '—';
             const raw = record.effective_date || record.uploaded_at;
             if (!raw) return '—';
-            if (record.effective_date) {
-                return new Date(record.effective_date + 'T00:00:00').toLocaleDateString();
-            }
-            return this.formatDateTime(raw);
+            return window.formatDisplayDateTime(raw) || window.formatDisplayDate(raw) || '—';
         },
     }));
 });

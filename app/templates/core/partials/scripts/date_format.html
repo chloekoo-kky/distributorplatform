@@ -1,0 +1,52 @@
+<script>
+(function () {
+    function formatDisplayDate(value) {
+        if (value === null || value === undefined) return '';
+        const s = String(value).trim();
+        if (!s || s === '-') return '';
+        if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.slice(0, 10);
+        const iso = s.slice(0, 10);
+        const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+        const d = new Date(s);
+        if (!Number.isNaN(d.getTime())) {
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}/${d.getFullYear()}`;
+        }
+        return s;
+    }
+
+    function formatDisplayDateTime(value) {
+        if (value === null || value === undefined) return '';
+        const s = String(value).trim();
+        if (!s || s === '-') return '';
+        if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+        if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+        const d = new Date(s);
+        if (!Number.isNaN(d.getTime())) {
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mi = String(d.getMinutes()).padStart(2, '0');
+            return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mi}`;
+        }
+        return formatDisplayDate(s);
+    }
+
+    window.formatDisplayDate = formatDisplayDate;
+    window.formatDisplayDateTime = formatDisplayDateTime;
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.magic('displayDate', () => formatDisplayDate);
+        Alpine.magic('displayDateTime', () => formatDisplayDateTime);
+
+        const globals = Alpine.store('globals');
+        if (globals) {
+            globals.formatDisplayDate = formatDisplayDate;
+            globals.formatDisplayDateTime = formatDisplayDateTime;
+        }
+    });
+})();
+</script>

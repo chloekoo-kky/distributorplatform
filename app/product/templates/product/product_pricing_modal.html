@@ -43,7 +43,7 @@
                                     <p class="text-xs text-amber-600 truncate"
                                        x-text="pricingData.latest_invoice_cost.supplier_name
                                                 + (pricingData.latest_invoice_cost.invoice_date
-                                                    ? '  ·  ' + new Date(pricingData.latest_invoice_cost.invoice_date + 'T00:00:00').toLocaleDateString()
+                                                    ? '  ·  ' + formatDisplayDate(pricingData.latest_invoice_cost.invoice_date)
                                                     : '')
                                                 + '  ·  ' + pricingData.latest_invoice_cost.invoice_id">
                                     </p>
@@ -95,7 +95,7 @@
                                        x-text="costInfo.supplier_name"></p>
                                     <p class="text-base font-bold font-mono text-indigo-700 mt-1 leading-none"
                                        x-text="`RM ${parseFloat(costInfo.cost).toFixed(2)}`"></p>
-                                    <p class="text-[10px] text-gray-400 mt-1 truncate" x-text="costInfo.date || '—'"></p>
+                                    <p class="text-[10px] text-gray-400 mt-1 truncate" x-text="costInfo.date ? $displayDate(costInfo.date) : '—'"></p>
                                 </button>
                             </template>
                         </div>

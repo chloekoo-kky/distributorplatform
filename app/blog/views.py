@@ -18,6 +18,7 @@ from django.core.files.base import ContentFile
 
 from images.forms import ImageUploadForm
 from product.models import Product
+from core.dates import format_display_date
 
 def get_accessible_posts(user):
     """
@@ -190,7 +191,7 @@ def api_manage_posts(request):
             'status': post.status,
             'is_public': post.is_public,
             'author': post.author.username if post.author else 'N/A',
-            'created_at': post.created_at.strftime('%Y-%m-%d'),
+            'created_at': format_display_date(post.created_at),
             'user_groups': [group.name for group in post.user_groups.all()],
             'featured_image_id': post.featured_image_id,
             'featured_image_url': post.featured_image.image.url if post.featured_image else '',

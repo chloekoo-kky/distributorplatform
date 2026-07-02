@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load date_display %}
 
 {% block title %}Market Insights{% endblock %}
 
@@ -30,7 +31,7 @@
                         </div>
 
                         <p class="text-sm text-gray-500 mb-3">
-                            {{ post.created_at|date:"F d, Y" }}
+                            {{ post.created_at|display_date }}
                         </p>
 
                         <div class="text-gray-700 mt-2 prose max-w-none">

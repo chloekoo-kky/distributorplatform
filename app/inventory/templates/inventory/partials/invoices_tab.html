@@ -140,7 +140,7 @@
                                     </span>
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700" x-text="row.supplier_name"></td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="formatDate(row.date)"></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="$displayDate(row.date)"></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm">
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                           :class="statusBadgeClass(row)"
@@ -539,8 +539,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         formatDate(value) {
-            if (!value) return '—';
-            return new Date(value).toLocaleDateString();
+            return window.formatDisplayDate(value);
         },
 
         formatMoney(value) {
