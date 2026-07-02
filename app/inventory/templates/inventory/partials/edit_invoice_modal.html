@@ -64,11 +64,14 @@
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">Qty</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-28">Received</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-36">Unit Price (RM)</th>
+                                        {% if request.user.is_superuser %}
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-28">Actions</th>
+                                        {% endif %}
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-100">
                                     <template x-if="!currentInvoice.items || currentInvoice.items.length === 0">
-                                        <tr><td colspan="4" class="px-3 py-4 text-center text-gray-400">No line items.</td></tr>
+                                        <tr><td colspan="{% if request.user.is_superuser %}5{% else %}4{% endif %}" class="px-3 py-4 text-center text-gray-400">No line items.</td></tr>
                                     </template>
                                     <template x-for="(item, idx) in (currentInvoice.items || [])" :key="item.id">
                                         <tr>
@@ -90,12 +93,24 @@
                                                        step="0.01" min="0"
                                                        class="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm tabular-nums focus:ring-2 focus:ring-indigo-400 focus:outline-none">
                                             </td>
+                                            {% if request.user.is_superuser %}
+                                            <td class="px-3 py-2 text-right">
+                                                <button type="button"
+                                                        x-show="(item.quantity_received || 0) > 0"
+                                                        @click="revertInvoiceItemReceived(item)"
+                                                        :disabled="invoiceRevertSaving === item.id"
+                                                        class="inline-flex items-center px-2 py-1 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-md hover:bg-rose-100 disabled:opacity-50">
+                                                    <span x-show="invoiceRevertSaving !== item.id">Revert received</span>
+                                                    <span x-show="invoiceRevertSaving === item.id">Reverting…</span>
+                                                </button>
+                                            </td>
+                                            {% endif %}
                                         </tr>
                                     </template>
                                 </tbody>
                             </table>
                         </div>
-                        <p class="text-xs text-gray-400 mt-1.5">Quantity cannot be reduced below the amount already received.</p>
+                        <p class="text-xs text-gray-400 mt-1.5">Quantity cannot be reduced below the amount already received.{% if request.user.is_superuser %} Superusers can revert received stock (removes inventory batches).{% endif %}</p>
                     </div>
 
                     <div>

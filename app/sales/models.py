@@ -91,16 +91,25 @@ class Invoice(models.Model):
 
         new_status = self.status # Keep current status by default
 
-        # Only update receiving status if it's currently Draft, Sent, or Paid
-        # Avoid overriding Cancelled status, for example.
-        relevant_statuses = [self.InvoiceStatus.DRAFT, self.InvoiceStatus.SENT, self.InvoiceStatus.PAID, self.InvoiceStatus.PARTIALLY_RECEIVED]
+        # Only update receiving status if it's currently Draft, Sent, Paid, or receiving states
+        relevant_statuses = [
+            self.InvoiceStatus.DRAFT,
+            self.InvoiceStatus.SENT,
+            self.InvoiceStatus.PAID,
+            self.InvoiceStatus.PARTIALLY_RECEIVED,
+            self.InvoiceStatus.FULLY_RECEIVED,
+        ]
 
         if self.status in relevant_statuses:
-            if fully_received_items == total_items:
+            if fully_received_items == total_items and total_items > 0:
                 new_status = self.InvoiceStatus.FULLY_RECEIVED
             elif fully_received_items > 0 or partially_received_items > 0:
                 new_status = self.InvoiceStatus.PARTIALLY_RECEIVED
-            # else: remains DRAFT/SENT/PAID
+            elif self.status in (
+                self.InvoiceStatus.PARTIALLY_RECEIVED,
+                self.InvoiceStatus.FULLY_RECEIVED,
+            ):
+                new_status = self.InvoiceStatus.SENT
 
             if new_status != self.status:
                 self.status = new_status

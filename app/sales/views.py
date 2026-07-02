@@ -9,9 +9,10 @@ from decimal import Decimal, InvalidOperation
 from django.http import JsonResponse
 from django.db.models import Q
 from django.core.paginator import Paginator, EmptyPage
+from django.views.decorators.http import require_POST
 import json
 
-from inventory.models import Quotation
+from inventory.models import Quotation, InventoryBatch
 from core.dates import format_display_date
 from .models import Invoice, InvoiceItem
 
@@ -284,3 +285,59 @@ def edit_invoice(request, invoice_id):
 
     messages.error(request, "Invalid request.")
     return redirect('core:manage_dashboard')
+
+
+@staff_required
+@require_POST
+@transaction.atomic
+def revert_invoice_received(request, invoice_id):
+    """
+    Superuser only: remove received stock for invoice line items (deletes linked batches).
+    Body JSON: { "item_ids": [1, 2, ...] }
+    """
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    invoice = get_object_or_404(Invoice, invoice_id=invoice_id)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON payload.'}, status=400)
+
+    raw_ids = data.get('item_ids') or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return JsonResponse({'success': False, 'error': 'No item IDs provided.'}, status=400)
+
+    try:
+        item_ids = [int(i) for i in raw_ids]
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'error': 'Invalid item IDs.'}, status=400)
+
+    items = list(invoice.items.filter(pk__in=item_ids))
+    if len(items) != len(set(item_ids)):
+        return JsonResponse({'success': False, 'error': 'One or more items not found on this invoice.'}, status=400)
+
+    reverted = []
+    for item in items:
+        if item.quantity_received <= 0:
+            continue
+        batch_count = InventoryBatch.objects.filter(invoice_item=item).count()
+        InventoryBatch.objects.filter(invoice_item=item).delete()
+        item.update_received_quantity()
+        reverted.append({
+            'id': item.pk,
+            'product_name': item.product.name if item.product else (item.description or '-'),
+            'batches_removed': batch_count,
+            'quantity_received': item.quantity_received,
+        })
+
+    if not reverted:
+        return JsonResponse({'success': False, 'error': 'No received stock to revert for the selected items.'}, status=400)
+
+    invoice.refresh_from_db()
+    return JsonResponse({
+        'success': True,
+        'reverted': reverted,
+        'invoice_status': invoice.status,
+    })

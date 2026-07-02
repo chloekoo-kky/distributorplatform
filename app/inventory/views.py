@@ -388,6 +388,11 @@ def api_manage_procurement(request):
         month = 0
         year = 0
 
+    sort_by = (request.GET.get('sort_by') or 'date').strip().lower()
+    sort_dir = (request.GET.get('sort_dir') or 'desc').strip().lower()
+    if sort_dir not in ('asc', 'desc'):
+        sort_dir = 'desc'
+
     include_po = type_filter in ('', 'po')
     include_invoice = type_filter in ('', 'invoice')
 
@@ -449,7 +454,18 @@ def api_manage_procurement(request):
         for inv in inv_qs:
             records.append(_serialize_procurement_invoice(inv))
 
-    records.sort(key=lambda r: r.get('date') or '', reverse=True)
+    sort_keys = {
+        'type': lambda r: (r.get('record_type') or '').lower(),
+        'document': lambda r: (r.get('document_id') or '').lower(),
+        'supplier': lambda r: (r.get('supplier_name') or '').lower(),
+        'date': lambda r: r.get('date') or '',
+        'status': lambda r: (r.get('status_code') or '').lower(),
+        'items': lambda r: int(r.get('item_count') or 0),
+        'transport': lambda r: float(r.get('transportation_cost') or 0),
+        'total': lambda r: float(r.get('total_amount') or 0),
+    }
+    key_fn = sort_keys.get(sort_by, sort_keys['date'])
+    records.sort(key=key_fn, reverse=(sort_dir == 'desc'))
 
     paginator = Paginator(records, 25)
     try:

@@ -1,6 +1,6 @@
 <div x-data="procurementTableData()"
      x-init="init()"
-     @refresh-data.window="if ($event.detail.tab === 'invoices') fetchProcurement(1)">
+     @refresh-data.window="if ($event.detail.tab === 'invoices') fetchProcurement($event.detail.keepPage ? (pagination.current_page || 1) : 1)">
 
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
@@ -66,7 +66,14 @@
                 </select>
             </div>
             <div class="md:col-span-3">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <label class="block text-sm font-medium text-gray-700">Status</label>
+                    <button type="button"
+                            x-show="filters.search || filters.type || filters.status || filters.month !== 0"
+                            @click="clearAllFilters()"
+                            class="text-xs text-indigo-600 hover:text-indigo-900 underline focus:outline-none"
+                            x-cloak>Clear</button>
+                </div>
                 <select x-model="filters.status"
                         class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm h-10">
                     <option value="">All statuses</option>
@@ -96,14 +103,54 @@
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-2 py-3 w-10"></th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transport</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('type')">
+                                Type
+                                <span x-show="sort.field === 'type'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('document')">
+                                Document
+                                <span x-show="sort.field === 'document'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('supplier')">
+                                Supplier
+                                <span x-show="sort.field === 'supplier'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('date')">
+                                Date
+                                <span x-show="sort.field === 'date'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('status')">
+                                Status
+                                <span x-show="sort.field === 'status'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('items')">
+                                Items
+                                <span x-show="sort.field === 'items'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('transport')">
+                                Transport
+                                <span x-show="sort.field === 'transport'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <button type="button" class="inline-flex items-center gap-1 hover:text-gray-800" @click="changeSort('total')">
+                                Total
+                                <span x-show="sort.field === 'total'" x-text="sort.dir === 'asc' ? '↑' : '↓'"></span>
+                            </button>
+                        </th>
                         <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                 </thead>
@@ -477,14 +524,40 @@ document.addEventListener('alpine:init', () => {
             month: 0,
             year: 0,
         },
+        sort: {
+            field: 'date',
+            dir: 'desc',
+        },
+        _clearingFilters: false,
 
         init() {
             this.fetchProcurement(1);
-            this.$watch('filters.search', () => this.fetchProcurement(1));
-            this.$watch('filters.type', () => this.fetchProcurement(1));
-            this.$watch('filters.status', () => this.fetchProcurement(1));
-            this.$watch('filters.month', () => this.fetchProcurement(1));
-            this.$watch('filters.year', () => this.fetchProcurement(1));
+            this.$watch('filters.search', () => { if (!this._clearingFilters) this.fetchProcurement(1); });
+            this.$watch('filters.type', () => { if (!this._clearingFilters) this.fetchProcurement(1); });
+            this.$watch('filters.status', () => { if (!this._clearingFilters) this.fetchProcurement(1); });
+            this.$watch('filters.month', () => { if (!this._clearingFilters) this.fetchProcurement(1); });
+            this.$watch('filters.year', () => { if (!this._clearingFilters) this.fetchProcurement(1); });
+        },
+
+        clearAllFilters() {
+            this._clearingFilters = true;
+            this.filters.search = '';
+            this.filters.type = '';
+            this.filters.status = '';
+            this.filters.month = 0;
+            this.filters.year = 0;
+            this._clearingFilters = false;
+            this.fetchProcurement(1);
+        },
+
+        changeSort(field) {
+            if (this.sort.field === field) {
+                this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sort.field = field;
+                this.sort.dir = field === 'date' ? 'desc' : 'asc';
+            }
+            this.fetchProcurement(this.pagination.current_page || 1);
         },
 
         get currentMonthLabel() {
@@ -556,6 +629,8 @@ document.addEventListener('alpine:init', () => {
                 status: this.filters.status,
                 month: String(this.filters.month),
                 year: String(this.filters.year),
+                sort_by: this.sort.field,
+                sort_dir: this.sort.dir,
             });
             try {
                 const response = await fetch(`{% url 'inventory:api_manage_procurement' %}?${params}`, {

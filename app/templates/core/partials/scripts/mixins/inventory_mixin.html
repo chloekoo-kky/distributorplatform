@@ -14,6 +14,7 @@
             // Edit Invoice Modal State
             editModalOpen: false,
             invoiceEditSaving: false,
+            invoiceRevertSaving: null,
             invoiceEditError: '',
             currentInvoice: {
                 invoice_id: '', status: '', payment_date: '', notes: '',
@@ -87,7 +88,9 @@
                     if (response.ok && data.success) {
                         this.editModalOpen = false;
                         Alpine.store('globals').showToast('Invoice updated successfully.');
-                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
+                        window.dispatchEvent(new CustomEvent('refresh-data', {
+                            detail: { tab: 'invoices', keepPage: true },
+                        }));
                     } else {
                         this.invoiceEditError = data.error || 'Update failed.';
                         if (data.errors) {
@@ -101,6 +104,49 @@
                 } finally {
                     this.invoiceEditSaving = false;
                     if (submitButton) submitButton.disabled = false;
+                }
+            },
+
+            async revertInvoiceItemReceived(item) {
+                if (!item || !item.id || !(item.quantity_received > 0)) return;
+                const label = item.product_name || 'this item';
+                if (!confirm(
+                    `Revert received stock for "${label}"?\n\n`
+                    + `This removes ${item.quantity_received} unit(s) from inventory `
+                    + '(all batches linked to this invoice line will be deleted).'
+                )) {
+                    return;
+                }
+                this.invoiceRevertSaving = item.id;
+                this.invoiceEditError = '';
+                try {
+                    const url = `/sales/invoice/${this.currentInvoice.invoice_id}/revert-received/`;
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                        },
+                        body: JSON.stringify({ item_ids: [item.id] }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.error || 'Revert failed.');
+                    }
+                    item.quantity_received = 0;
+                    if (data.invoice_status) {
+                        this.currentInvoice.status = data.invoice_status;
+                    }
+                    Alpine.store('globals').showToast('Received stock reverted and removed from inventory.');
+                    window.dispatchEvent(new CustomEvent('refresh-data', {
+                        detail: { tab: 'invoices', keepPage: true },
+                    }));
+                } catch (error) {
+                    this.invoiceEditError = error.message || 'Could not revert received stock.';
+                    Alpine.store('globals').showToast(this.invoiceEditError, 'error');
+                } finally {
+                    this.invoiceRevertSaving = null;
                 }
             },
 
@@ -193,7 +239,9 @@
                         Alpine.store('globals').showToast(
                             `${data.batch_count} line item(s) received successfully.`
                         );
-                        window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
+                        window.dispatchEvent(new CustomEvent('refresh-data', {
+                            detail: { tab: 'invoices', keepPage: true },
+                        }));
                     } else {
                         const errors = data.errors;
                         this.bulkReceiveError = Array.isArray(errors)
@@ -452,7 +500,9 @@
                     }
                     Alpine.store('globals').showToast(data.message || 'Invoices imported.', 'success');
                     this.closeInvoiceImportModal();
-                    window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'invoices' } }));
+                    window.dispatchEvent(new CustomEvent('refresh-data', {
+                        detail: { tab: 'invoices', keepPage: true },
+                    }));
                 } catch (e) {
                     this.invoiceImportError = 'Import failed.';
                 } finally {
