@@ -54,10 +54,43 @@
             object-fit: contain;
             object-position: left top;
         }
+        .issuer-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            line-height: 1.15;
+            letter-spacing: 0.02em;
+            margin: 0;
+        }
+        .issuer-reg-no {
+            font-size: 0.75rem;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        .issuer-address,
+        .issuer-contact {
+            font-size: 1rem;
+            line-height: 1.2;
+            margin-top: 0.15rem;
+            color: #1f2937;
+        }
+        .customer-meta-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 15mm;
+            margin-top: 1rem;
+            margin-bottom: 0.75rem;
+        }
         .customer-brackets {
             position: relative;
-            padding: 0.75rem 1rem 0.75rem 0.25rem;
-            min-height: 7.5rem;
+            flex: 0 1 52%;
+            max-width: 52%;
+            min-width: 0;
+            padding: 0.6rem 0.85rem 0.6rem 0.25rem;
+            min-height: 6.5rem;
+            font-size: 0.95rem;
+            line-height: 1.25;
         }
         .customer-brackets::before,
         .customer-brackets::after {
@@ -77,6 +110,20 @@
             bottom: 0;
             right: 0;
             border-width: 0 1.5px 1.5px 0;
+        }
+        .customer-brackets .party-title {
+            font-weight: 700;
+            text-transform: uppercase;
+            line-height: 1.2;
+            margin: 0;
+        }
+        .customer-brackets .party-line {
+            margin: 0.2rem 0 0;
+            line-height: 1.25;
+        }
+        .invoice-meta {
+            flex: 0 0 auto;
+            padding-top: 0.15rem;
         }
         .invoice-table th,
         .invoice-table td {
@@ -134,8 +181,9 @@
             padding-bottom: 0.4rem;
         }
         .meta-table td {
-            padding: 0.1rem 0;
-            font-size: 12px;
+            padding: 0.05rem 0;
+            font-size: 0.95rem;
+            line-height: 1.25;
             vertical-align: top;
         }
         .meta-table .meta-label {
@@ -180,13 +228,13 @@
                 {% endif %}
             </div>
             <div class="min-w-0 flex-1">
-                <h1 class="text-base font-bold uppercase leading-tight tracking-wide">
-                    {{ issuer.legal_name }}{% if issuer.registration_no %} ({{ issuer.registration_no }}){% endif %}
+                <h1 class="issuer-name">
+                    {{ issuer.legal_name }}{% if issuer.registration_no %} <span class="issuer-reg-no">({{ issuer.registration_no }})</span>{% endif %}
                 </h1>
                 {% if issuer.address %}
-                <p class="mt-1 whitespace-pre-line text-xs leading-snug text-gray-800">{{ issuer.address }}</p>
+                <p class="issuer-address whitespace-pre-line">{{ issuer.address }}</p>
                 {% endif %}
-                <div class="mt-1 text-xs leading-snug text-gray-800">
+                <div class="issuer-contact">
                     {% if issuer.phone %}<span>Tel: {{ issuer.phone }}</span>{% endif %}
                     {% if issuer.phone and issuer.email %} &nbsp;{% endif %}
                     {% if issuer.email %}<span>Email: {{ issuer.email }}</span>{% endif %}
@@ -196,23 +244,19 @@
         </div>
 
         {# --- Customer + meta --- #}
-        <div class="mt-4 mb-3 grid grid-cols-2 gap-6 items-start">
+        <div class="customer-meta-row">
             <div class="customer-brackets">
                 {% if bill_to_company_name %}
-                <p class="font-bold uppercase text-sm leading-tight">{{ bill_to_company_name }}</p>
-                <p class="mt-1 font-semibold uppercase text-sm leading-tight">{{ customer_name }}</p>
-                {% else %}
-                <p class="font-bold uppercase text-sm leading-tight">{{ customer_name }}</p>
+                <p class="party-title">{{ bill_to_company_name }}</p>
                 {% endif %}
-                <p class="mt-2 text-xs">Attn:</p>
-                <p class="mt-1 text-xs">TEL: {% if customer_phone %}{{ customer_phone }}{% endif %}</p>
-                <p class="mt-1 text-xs">FAX:</p>
+                <p class="party-line">Attn: {{ customer_name }}</p>
+                <p class="party-line">TEL: {% if customer_phone %}{{ customer_phone }}{% endif %}</p>
                 {% if ship_to %}
-                <p class="mt-2 whitespace-pre-line text-xs text-gray-700">{{ ship_to }}</p>
+                <p class="party-line whitespace-pre-line text-gray-700">{{ ship_to }}</p>
                 {% endif %}
             </div>
-            <div class="pt-1">
-                <table class="meta-table ml-auto">
+            <div class="invoice-meta">
+                <table class="meta-table">
                     <tr>
                         <td class="meta-label font-bold">Invoice</td>
                         <td class="meta-colon">:</td>
