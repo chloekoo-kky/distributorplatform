@@ -1,4 +1,4 @@
-{% load date_display %}
+{% load date_display invoice_format %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,11 +48,110 @@
         }
         .invoice-logo {
             max-height: 4.5rem;
-            max-width: 220px;
+            max-width: 140px;
             width: auto;
             height: auto;
             object-fit: contain;
             object-position: left top;
+        }
+        .customer-brackets {
+            position: relative;
+            padding: 0.75rem 1rem 0.75rem 0.25rem;
+            min-height: 7.5rem;
+        }
+        .customer-brackets::before,
+        .customer-brackets::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-color: #111;
+            border-style: solid;
+        }
+        .customer-brackets::before {
+            top: 0;
+            left: 0;
+            border-width: 1.5px 0 0 1.5px;
+        }
+        .customer-brackets::after {
+            bottom: 0;
+            right: 0;
+            border-width: 0 1.5px 1.5px 0;
+        }
+        .invoice-table th,
+        .invoice-table td {
+            font-size: 12px;
+            line-height: 1.35;
+        }
+        .invoice-table thead th {
+            border-top: 1px solid #111;
+            border-bottom: 1px solid #111;
+            padding: 0.35rem 0.4rem;
+            font-weight: 700;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .invoice-table tbody td {
+            padding: 0.45rem 0.4rem;
+            vertical-align: top;
+            border: none;
+        }
+        .invoice-table .col-qty,
+        .invoice-table .col-price,
+        .invoice-table .col-amount,
+        .invoice-table thead th.col-qty,
+        .invoice-table thead th.col-price,
+        .invoice-table thead th.col-amount {
+            text-align: right;
+        }
+        .totals-box {
+            border: 1px solid #111;
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .totals-box td {
+            padding: 0.3rem 0.5rem;
+            vertical-align: middle;
+        }
+        .totals-box .totals-label {
+            text-align: left;
+            white-space: nowrap;
+        }
+        .totals-box .totals-value {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .totals-box .totals-divider td {
+            border-top: 1px solid #111;
+            padding-top: 0.35rem;
+        }
+        .totals-box .totals-payable td {
+            border-top: 2px solid #111;
+            font-weight: 700;
+            padding-top: 0.4rem;
+            padding-bottom: 0.4rem;
+        }
+        .meta-table td {
+            padding: 0.1rem 0;
+            font-size: 12px;
+            vertical-align: top;
+        }
+        .meta-table .meta-label {
+            padding-right: 0.5rem;
+            white-space: nowrap;
+        }
+        .meta-table .meta-colon {
+            padding-right: 0.5rem;
+        }
+        .notes-block {
+            font-size: 11px;
+            line-height: 1.45;
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #111;
         }
     </style>
 </head>
@@ -72,119 +171,166 @@
 </div>
 
 <div class="document-sheet">
-    <table class="w-full">
-        <thead>
-            <tr>
-                <td class="margin-top margin-sides">
-                    <div class="flex flex-wrap items-start justify-between gap-6 border-b-2 border-gray-800 pb-4">
-                        <div class="shrink-0 min-h-[2.5rem] min-w-[4rem]">
-                            {% if issuer.logo %}
-                            <img src="{{ issuer.logo.url }}" alt="" class="invoice-logo block" loading="eager" decoding="async" />
-                            {% endif %}
-                        </div>
-                        <div class="min-w-0 flex-1 text-right sm:max-w-[65%]">
-                            <h1 class="text-2xl font-extrabold uppercase tracking-wide text-gray-900">{{ issuer.legal_name }}</h1>
-                            {% if issuer.address %}
-                            <p class="mt-2 whitespace-pre-line text-gray-600">{{ issuer.address }}</p>
-                            {% endif %}
-                            <div class="mt-2 space-y-0.5 text-gray-600">
-                                {% if issuer.phone %}<p>Tel: {{ issuer.phone }}</p>{% endif %}
-                                {% if issuer.email %}<p>{{ issuer.email }}</p>{% endif %}
-                                {% if issuer.tax_id %}<p>Tax ID: {{ issuer.tax_id }}</p>{% endif %}
-                                {% if issuer.registration_no %}<p>Reg. No.: {{ issuer.registration_no }}</p>{% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="h-1"></div>
-                </td>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td class="margin-sides margin-bottom align-top">
-                    <div class="mt-0 mb-0.5 w-full text-center">
-                        <h2 class="text-2xl font-extrabold uppercase tracking-[0.18em] text-gray-900">Invoice</h2>
-                    </div>
-                    <div class="mb-6 grid items-stretch gap-6 sm:grid-cols-2">
-                        <div class="flex h-full min-h-[7rem] flex-col rounded-lg border border-gray-200 bg-white p-4 text-left">
-                            <div>
-                                <p class="text-xs font-bold uppercase tracking-wide text-gray-500">Invoice no.</p>
-                                <p class="mt-1 text-xl font-bold leading-tight text-gray-900">{{ invoice_number }}</p>
-                            </div>
-                            <div class="mt-auto space-y-1 pt-2">
-                                <p class="text-gray-700">Date of Issue: <span class="font-medium text-gray-900">{{ invoice_date|display_date }}</span></p>
-                            </div>
-                        </div>
-                        <div class="h-full rounded-lg border border-gray-200 bg-gray-50 p-4 text-right">
-                            <p class="text-xs font-bold uppercase text-gray-500">Bill to</p>
-                            {% if bill_to_company_name %}
-                            <p class="mt-1 text-base font-bold text-gray-900">{{ bill_to_company_name }}</p>
-                            {% endif %}
-                            <p class="{% if bill_to_company_name %}mt-1 text-gray-800{% else %}mt-1 font-semibold text-gray-900{% endif %}">{{ customer_name }}</p>
-                            {% if customer_phone %}<p class="text-gray-700">{{ customer_phone }}</p>{% endif %}
-                            {% if ship_to %}
-                            <p class="mt-2 whitespace-pre-line text-gray-600">{{ ship_to }}</p>
-                            {% endif %}
-                        </div>
-                    </div>
+    <div class="margin-top margin-sides margin-bottom">
+        {# --- Header --- #}
+        <div class="flex items-start gap-4 pb-3" style="border-bottom: 1px solid #111;">
+            <div class="shrink-0 min-h-[2.5rem] min-w-[4rem]">
+                {% if issuer.logo %}
+                <img src="{{ issuer.logo.url }}" alt="" class="invoice-logo block" loading="eager" decoding="async" />
+                {% endif %}
+            </div>
+            <div class="min-w-0 flex-1">
+                <h1 class="text-base font-bold uppercase leading-tight tracking-wide">
+                    {{ issuer.legal_name }}{% if issuer.registration_no %} ({{ issuer.registration_no }}){% endif %}
+                </h1>
+                {% if issuer.address %}
+                <p class="mt-1 whitespace-pre-line text-xs leading-snug text-gray-800">{{ issuer.address }}</p>
+                {% endif %}
+                <div class="mt-1 text-xs leading-snug text-gray-800">
+                    {% if issuer.phone %}<span>Tel: {{ issuer.phone }}</span>{% endif %}
+                    {% if issuer.phone and issuer.email %} &nbsp;{% endif %}
+                    {% if issuer.email %}<span>Email: {{ issuer.email }}</span>{% endif %}
+                    {% if issuer.tax_id %}<br /><span>Tax ID: {{ issuer.tax_id }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
 
-                    {% if payment_method or remarks %}
-                    <div class="mb-6 rounded-lg border border-gray-200 p-4">
-                        {% if payment_method %}
-                        <p class="text-xs font-bold uppercase text-gray-500">Payment</p>
-                        <p class="mt-1 text-gray-800">{{ payment_method }}</p>
-                        {% endif %}
-                        {% if remarks %}
-                        <p class="mt-3 text-xs font-bold uppercase text-gray-500">Remarks</p>
-                        <p class="mt-1 text-gray-700">{{ remarks }}</p>
-                        {% endif %}
-                    </div>
-                    {% endif %}
+        {# --- Customer + meta --- #}
+        <div class="mt-4 mb-3 grid grid-cols-2 gap-6 items-start">
+            <div class="customer-brackets">
+                {% if bill_to_company_name %}
+                <p class="font-bold uppercase text-sm leading-tight">{{ bill_to_company_name }}</p>
+                <p class="mt-1 font-semibold uppercase text-sm leading-tight">{{ customer_name }}</p>
+                {% else %}
+                <p class="font-bold uppercase text-sm leading-tight">{{ customer_name }}</p>
+                {% endif %}
+                <p class="mt-2 text-xs">Attn:</p>
+                <p class="mt-1 text-xs">TEL: {% if customer_phone %}{{ customer_phone }}{% endif %}</p>
+                <p class="mt-1 text-xs">FAX:</p>
+                {% if ship_to %}
+                <p class="mt-2 whitespace-pre-line text-xs text-gray-700">{{ ship_to }}</p>
+                {% endif %}
+            </div>
+            <div class="pt-1">
+                <table class="meta-table ml-auto">
+                    <tr>
+                        <td class="meta-label font-bold">Invoice</td>
+                        <td class="meta-colon">:</td>
+                        <td class="font-bold">{{ invoice_number }}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Your Ref.</td>
+                        <td class="meta-colon">:</td>
+                        <td>{% if your_ref %}{{ your_ref }}{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Terms</td>
+                        <td class="meta-colon">:</td>
+                        <td>{% if terms %}{{ terms }}{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Date</td>
+                        <td class="meta-colon">:</td>
+                        <td>{{ invoice_date|display_date }}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Page</td>
+                        <td class="meta-colon">:</td>
+                        <td>1 of 1</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
 
-                    <table class="w-full border border-gray-300 text-left">
-                        <thead>
-                            <tr class="bg-gray-100 text-xs font-semibold uppercase text-gray-600">
-                                <th class="border-b border-gray-300 px-3 py-2">Description</th>
-                                <th class="border-b border-gray-300 px-3 py-2">SKU</th>
-                                <th class="border-b border-gray-300 px-3 py-2 text-right">Qty</th>
-                                <th class="border-b border-gray-300 px-3 py-2 text-right">Unit (RM)</th>
-                                <th class="border-b border-gray-300 px-3 py-2 text-right">Amount (RM)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in items_rows %}
-                            <tr class="border-b border-gray-200">
-                                <td class="px-3 py-2 align-top text-gray-900">{{ row.description }}</td>
-                                <td class="px-3 py-2 align-top text-gray-600">{{ row.sku }}</td>
-                                <td class="px-3 py-2 text-right tabular-nums">{{ row.quantity }}</td>
-                                <td class="px-3 py-2 text-right tabular-nums">{{ row.unit_price|floatformat:2 }}</td>
-                                <td class="px-3 py-2 text-right font-medium tabular-nums">{{ row.line_total|floatformat:2 }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        {# --- Line items --- #}
+        <table class="invoice-table w-full">
+            <thead>
+                <tr>
+                    <th style="width: 6%;">No</th>
+                    <th style="width: 16%;">Item Code</th>
+                    <th style="width: 38%;">Description</th>
+                    <th class="col-qty" style="width: 12%;">Qty</th>
+                    <th class="col-price" style="width: 14%;">Price/Unit</th>
+                    <th class="col-amount" style="width: 14%;">Amount (RM)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in items_rows %}
+                <tr>
+                    <td>{{ row.no }}</td>
+                    <td>{{ row.sku }}</td>
+                    <td class="whitespace-pre-line">{{ row.description }}</td>
+                    <td class="col-qty tabular-nums">{{ row.quantity|floatformat:2 }} UNIT</td>
+                    <td class="col-price tabular-nums">{{ row.unit_price|rm_amount }}</td>
+                    <td class="col-amount tabular-nums">{{ row.line_total|rm_amount }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="py-6 text-center text-gray-500">No line items</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="border-top: 1px solid #111; margin-top: 0.25rem;"></div>
 
-                    <div class="mt-6 flex justify-end">
-                        <div class="w-full max-w-xs space-y-2 border-t border-gray-300 pt-3">
-                            <div class="flex justify-between text-base font-bold text-gray-900">
-                                <span>Total</span>
-                                <span class="tabular-nums">RM {{ subtotal|floatformat:2 }}</span>
-                            </div>
-                        </div>
-                    </div>
+        {# --- Amount in words + totals --- #}
+        <div class="mt-4 grid grid-cols-2 gap-6 items-start">
+            <div class="pt-1">
+                <p class="text-xs font-bold uppercase leading-snug">{{ amount_in_words }}</p>
+            </div>
+            <div>
+                <table class="totals-box">
+                    <tr>
+                        <td class="totals-label">Gross</td>
+                        <td class="totals-label">:</td>
+                        <td class="totals-value">{{ gross|rm_amount }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label">- Discount</td>
+                        <td class="totals-label">:</td>
+                        <td class="totals-value">{{ discount|rm_amount }}</td>
+                    </tr>
+                    <tr class="totals-divider">
+                        <td class="totals-label"></td>
+                        <td class="totals-label"></td>
+                        <td class="totals-value">{{ subtotal|rm_amount }}</td>
+                    </tr>
+                    <tr>
+                        <td class="totals-label">Rounding Adjustment</td>
+                        <td class="totals-label">:</td>
+                        <td class="totals-value">{{ rounding|rm_amount }}</td>
+                    </tr>
+                    <tr class="totals-payable">
+                        <td class="totals-label">TOTAL PAYABLE</td>
+                        <td class="totals-label">:</td>
+                        <td class="totals-value">{{ total_payable|rm_amount }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
 
-                    {% if issuer.bank_details %}
-                    <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-                        <p class="text-xs font-bold uppercase text-gray-500">Payment details</p>
-                        <p class="mt-2 whitespace-pre-line text-gray-700">{{ issuer.bank_details }}</p>
-                    </div>
-                    {% endif %}
+        {# --- Notes --- #}
+        <div class="notes-block mt-8">
+            <p class="font-bold">Notes :</p>
+            <ol class="mt-1 list-decimal pl-5 space-y-1">
+                <li>All cheques should be crossed and made payable to <strong>{{ issuer.legal_name }}</strong>.</li>
+                <li>Goods sold are neither returnable nor refundable.</li>
+            </ol>
+            {% if issuer.bank_details %}
+            <p class="mt-2 font-bold">Bank Details :</p>
+            <p class="mt-1 whitespace-pre-line">{{ issuer.bank_details }}</p>
+            {% endif %}
+        </div>
 
-                    <p class="mt-8 text-center text-xs text-gray-400 no-print">Generated {{ generated_at|display_datetime }}</p>
-                </td>
-            </tr>
-        </tbody>
-    </table>
+        {# --- Signature --- #}
+        <div class="mt-10">
+            <p class="text-[10px] uppercase tracking-wide text-gray-600">COMPUTER GENERATED FORM. NO SIGNATURE REQUIRED.</p>
+            <div class="mt-10" style="width: 220px; border-top: 1px solid #111;"></div>
+            <p class="mt-1 text-xs">Authorised Signature</p>
+        </div>
+
+        <p class="mt-8 text-center text-xs text-gray-400 no-print">Generated {{ generated_at|display_datetime }}</p>
+    </div>
 </div>
 
 </body>

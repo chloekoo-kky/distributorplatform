@@ -27,6 +27,7 @@ import urllib.parse
 from inventory.models import QuotationItem
 from product.models import Product, Category
 from commission.models import CommissionLedger
+from .invoice_amount_words import ringgit_amount_in_words
 from .models import (
     Order,
     OrderItem,
@@ -895,11 +896,12 @@ def sales_invoice_print(request, order_id):
 
     items_rows = []
     subtotal = Decimal('0.00')
-    for item in order.items.all():
+    for idx, item in enumerate(order.items.all(), start=1):
         unit = item.effective_unit_price
         line_total = item.total_price
         subtotal += line_total
         items_rows.append({
+            'no': idx,
             'description': item.product.order_display_name,
             'sku': item.product.sku or '—',
             'quantity': item.quantity,
@@ -916,18 +918,35 @@ def sales_invoice_print(request, order_id):
     ship_to = (order.shipping_address or '').strip()
     bill_to_company_name = (order.company_name or '').strip()
 
+    payment_method = (order.payment_method or '').strip()
+    terms = payment_method
+    if payment_method.upper() in ('COD', 'C.O.D', 'C.O.D.'):
+        terms = 'C.O.D.'
+
+    gross = subtotal
+    discount = Decimal('0.00')
+    rounding = Decimal('0.00')
+    total_payable = gross - discount + rounding
+
     context = {
         'order': order,
         'issuer': issuer,
         'items_rows': items_rows,
         'subtotal': subtotal,
+        'gross': gross,
+        'discount': discount,
+        'rounding': rounding,
+        'total_payable': total_payable,
+        'amount_in_words': ringgit_amount_in_words(total_payable),
         'invoice_number': f'SINV-{order.id}',
         'invoice_date': invoice_date,
         'bill_to_company_name': bill_to_company_name,
         'customer_name': customer_name,
         'customer_phone': customer_phone,
         'ship_to': ship_to,
-        'payment_method': (order.payment_method or '').strip(),
+        'your_ref': (order.remarks or '').strip(),
+        'terms': terms,
+        'payment_method': payment_method,
         'remarks': (order.remarks or '').strip(),
         'generated_at': timezone.now(),
     }
