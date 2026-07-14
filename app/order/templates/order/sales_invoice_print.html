@@ -54,6 +54,11 @@
             object-fit: contain;
             object-position: left top;
         }
+        .issuer-header {
+            text-align: left;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid #111;
+        }
         .issuer-name {
             font-size: 1.5rem;
             font-weight: 700;
@@ -61,6 +66,7 @@
             line-height: 1.15;
             letter-spacing: 0.02em;
             margin: 0;
+            text-align: left;
         }
         .issuer-reg-no {
             font-size: 0.75rem;
@@ -238,26 +244,19 @@
 
 <div class="document-sheet">
     <div class="margin-top margin-sides margin-bottom">
-        {# --- Header --- #}
-        <div class="flex items-start gap-4 pb-3" style="border-bottom: 1px solid #111;">
-            <div class="shrink-0 min-h-[2.5rem] min-w-[4rem]">
-                {% if issuer.logo %}
-                <img src="{{ issuer.logo.url }}" alt="" class="invoice-logo block" loading="eager" decoding="async" />
-                {% endif %}
-            </div>
-            <div class="min-w-0 flex-1">
-                <h1 class="issuer-name">
-                    {{ issuer.legal_name }}{% if issuer.registration_no %} <span class="issuer-reg-no">({{ issuer.registration_no }})</span>{% endif %}
-                </h1>
-                {% if issuer.address %}
-                <p class="issuer-address whitespace-pre-line">{{ issuer.address }}</p>
-                {% endif %}
-                <div class="issuer-contact">
-                    {% if issuer.phone %}<span>Tel: {{ issuer.phone }}</span>{% endif %}
-                    {% if issuer.phone and issuer.email %} &nbsp;{% endif %}
-                    {% if issuer.email %}<span>Email: {{ issuer.email }}</span>{% endif %}
-                    {% if issuer.tax_id %}<br /><span>Tax ID: {{ issuer.tax_id }}</span>{% endif %}
-                </div>
+        {# --- Header (logo display paused; re-add beside issuer text later) --- #}
+        <div class="issuer-header">
+            <h1 class="issuer-name">
+                {{ issuer.legal_name }}{% if issuer.registration_no %} <span class="issuer-reg-no">({{ issuer.registration_no }})</span>{% endif %}
+            </h1>
+            {% if issuer.address %}
+            <p class="issuer-address whitespace-pre-line">{{ issuer.address }}</p>
+            {% endif %}
+            <div class="issuer-contact">
+                {% if issuer.phone %}<span>Tel: {{ issuer.phone }}</span>{% endif %}
+                {% if issuer.phone and issuer.email %} &nbsp;{% endif %}
+                {% if issuer.email %}<span>Email: {{ issuer.email }}</span>{% endif %}
+                {% if issuer.tax_id %}<br /><span>Tax ID: {{ issuer.tax_id }}</span>{% endif %}
             </div>
         </div>
 
