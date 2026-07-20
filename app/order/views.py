@@ -977,6 +977,7 @@ def sales_invoice_print(request, order_id):
             'sku': item.product.sku or '—',
             'quantity': item.quantity,
             'unit_price': unit,
+            'price_after_discount': item.effective_unit_price,
             'discount': line_discount,
             'line_total': line_gross,
             'line_net': item.total_price,
@@ -1987,6 +1988,8 @@ def api_manage_orders(request):
         total_value = sum(item.selling_price * item.quantity for item in order.items.all())
         gross_profit = sum(item.profit for item in order.items.all())
         customer_display = _order_customer_display(order)
+        company_name = (order.company_name or '').strip()
+        customer_name = (order.customer_name or '').strip()
 
         # Display date: prefer transaction_date (manual orders), else localized created_at date
         if order.transaction_date:
@@ -1999,6 +2002,8 @@ def api_manage_orders(request):
             'created_at': display_date,
             'agent': order.agent.username,
             'customer': customer_display,
+            'company_name': company_name,
+            'customer_name': customer_name,
             'is_agent': False,
             'is_manual_order': bool(order.created_by_id),
             'sales_channel': order.sales_channel or '',

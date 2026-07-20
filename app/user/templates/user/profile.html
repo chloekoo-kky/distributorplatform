@@ -309,7 +309,8 @@
                                 <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.date_display"></td>
                                 {% if can_manual_order_profile %}
                                 <td class="px-4 py-4 text-sm text-gray-500 break-words">
-                                    <div class="font-medium text-gray-900" x-text="order.customer_name || '-'"></div>
+                                    <div class="font-medium text-gray-900" x-text="order.company_name || order.customer_name || '-'"></div>
+                                    <div class="text-xs text-gray-500 mt-0.5" x-show="order.company_name && order.customer_name" x-text="order.customer_name"></div>
                                     <div class="mt-0.5 text-[11px] text-gray-400" x-show="order.remarks" x-text="order.remarks"></div>
                                 </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500" x-text="order.customer_phone || '-'"></td>
@@ -693,23 +694,24 @@ document.addEventListener('alpine:init', () => {
             const p = this.products.find(x => x.id === line.productId);
             return p ? ((p.sku || '') + ' – ' + (p.name || '')) : '—';
         },
-        lineSubtotal(line) {
-            const q = parseInt(line.quantity, 10) || 0;
-            const u = parseFloat(line.actualUnitPrice) || 0;
-            return (q * u).toFixed(2);
-        },
         lineGross(line) {
             const q = parseInt(line.quantity, 10) || 0;
             const u = parseFloat(line.actualUnitPrice) || 0;
             return q * u;
         },
-        lineDiscount(line) {
-            const q = parseInt(line.quantity, 10) || 0;
+        lineUnitDiscount(line) {
             const platform = parseFloat(line.platformPrice) || 0;
             const actual = parseFloat(line.actualUnitPrice) || 0;
             const unitDisc = platform - actual;
-            if (unitDisc <= 0 || q <= 0) return 0;
-            return unitDisc * q;
+            return unitDisc > 0 ? unitDisc : 0;
+        },
+        lineDiscount(line) {
+            const q = parseInt(line.quantity, 10) || 0;
+            if (q <= 0) return 0;
+            return this.lineUnitDiscount(line) * q;
+        },
+        lineSubtotal(line) {
+            return this.lineGross(line).toFixed(2);
         },
         totalDiscount() {
             return this.lines.reduce((sum, line) => sum + this.lineDiscount(line), 0);

@@ -532,6 +532,7 @@ def api_order_history(request):
             base_orders = base_orders.filter(
                 Q(id__icontains=term) |
                 Q(customer_name__icontains=term) |
+                Q(company_name__icontains=term) |
                 Q(customer_phone__icontains=term) |
                 Q(items__product__name__icontains=term) |
                 Q(items__product__sku__icontains=term)
@@ -615,6 +616,7 @@ def api_order_history(request):
             'date_display': date_display,
             'sales_channel_display': o.get_sales_channel_display() if hasattr(o, 'get_sales_channel_display') else '',
             'remarks': o.remarks or '',
+            'company_name': o.company_name or '',
             'customer_name': o.customer_name or '',
             'customer_phone': o.customer_phone or '',
             'items': items_data,

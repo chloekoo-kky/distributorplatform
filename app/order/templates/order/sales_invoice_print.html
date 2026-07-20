@@ -312,7 +312,7 @@
                     <th style="width: 32%;">Description</th>
                     <th class="col-qty" style="width: 11%;">Qty</th>
                     <th class="col-price" style="width: 12%;">Price/Unit</th>
-                    <th class="col-price" style="width: 12%;">Discount</th>
+                    <th class="col-price" style="width: 12%;">Price after discount</th>
                     <th class="col-amount" style="width: 14%;">Amount (RM)</th>
                 </tr>
             </thead>
@@ -324,7 +324,7 @@
                     <td class="whitespace-pre-line">{{ row.description }}</td>
                     <td class="col-qty tabular-nums">{{ row.quantity|floatformat:2 }} UNIT</td>
                     <td class="col-price tabular-nums">{{ row.unit_price|rm_amount }}</td>
-                    <td class="col-price tabular-nums">{% if row.discount %}{{ row.discount|rm_amount }}{% else %}—{% endif %}</td>
+                    <td class="col-price tabular-nums">{{ row.price_after_discount|rm_amount }}</td>
                     <td class="col-amount tabular-nums">{{ row.line_total|rm_amount }}</td>
                 </tr>
                 {% empty %}
