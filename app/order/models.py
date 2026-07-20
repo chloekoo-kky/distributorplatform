@@ -284,7 +284,7 @@ class OrderItem(models.Model):
     profit = models.DecimalField(
         max_digits=10, decimal_places=2,
         editable=False,
-        help_text="(effective_unit_price - landed_cost) * quantity - discount_amount"
+        help_text="(effective_unit_price - landed_cost) * quantity"
     )
 
     @property
@@ -295,13 +295,28 @@ class OrderItem(models.Model):
         return self.selling_price
 
     @property
+    def list_unit_price(self):
+        """Retail/platform unit price when set; otherwise the effective selling unit price."""
+        if self.platform_price is not None:
+            return self.platform_price
+        return self.effective_unit_price
+
+    @property
     def line_gross(self):
-        """Pre-discount line amount: effective unit price × quantity."""
-        return self.effective_unit_price * self.quantity
+        """List/retail line amount: list unit price × quantity (for invoice gross)."""
+        return self.list_unit_price * self.quantity
 
     @property
     def effective_discount(self):
-        """Discount capped between 0 and line gross."""
+        """
+        Line discount. When platform_price is set, auto = max(0, platform − actual) × qty.
+        Otherwise uses stored discount_amount (capped at line gross).
+        """
+        if self.platform_price is not None:
+            unit_disc = self.platform_price - self.effective_unit_price
+            if unit_disc < 0:
+                unit_disc = Decimal('0.00')
+            return unit_disc * self.quantity
         disc = self.discount_amount if self.discount_amount is not None else Decimal('0.00')
         if disc < 0:
             disc = Decimal('0.00')
@@ -312,15 +327,15 @@ class OrderItem(models.Model):
 
     @property
     def total_price(self):
-        """Net line total after discount."""
-        return self.line_gross - self.effective_discount
+        """Net line total at actual/effective unit price (what was received)."""
+        return self.effective_unit_price * self.quantity
 
     def save(self, *args, **kwargs):
         unit = self.effective_unit_price
         disc = self.effective_discount
-        if self.discount_amount is None or self.discount_amount != disc:
-            self.discount_amount = disc
-        self.profit = (unit - self.landed_cost) * self.quantity - disc
+        self.discount_amount = disc
+        # Profit from cash received (actual), not reduced again by retail gap discount
+        self.profit = (unit - self.landed_cost) * self.quantity
         super().save(*args, **kwargs)
 
     def __str__(self):

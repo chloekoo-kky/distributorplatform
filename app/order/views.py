@@ -67,6 +67,42 @@ HEADER_FILL_GRAY = PatternFill(fill_type='solid', fgColor='F2F2F2')
 HEADER_FONT_BOLD = Font(bold=True)
 
 
+def _line_discount_from_prices(platform_price, actual_unit_price, quantity):
+    """Retail gap discount: max(0, platform − actual) × qty. Used when platform_price is set."""
+    if platform_price is None or quantity <= 0:
+        return Decimal('0.00')
+    unit_disc = platform_price - actual_unit_price
+    if unit_disc <= 0:
+        return Decimal('0.00')
+    return unit_disc * quantity
+
+
+def _parse_order_item_prices(row, product):
+    """Parse actual/platform unit prices from a payload row."""
+    try:
+        actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
+    except Exception:
+        actual_unit_price = product.selling_price or Decimal('0.00')
+    if actual_unit_price < 0:
+        actual_unit_price = Decimal('0.00')
+
+    platform_price = None
+    raw_platform = row.get('platform_price')
+    if raw_platform not in (None, ''):
+        try:
+            platform_price = Decimal(str(raw_platform))
+        except Exception:
+            platform_price = None
+        if platform_price is not None and platform_price < 0:
+            platform_price = None
+    if platform_price is None and product.selling_price is not None:
+        platform_price = product.selling_price
+
+    quantity = int(row.get('quantity') or 0)
+    discount_amount = _line_discount_from_prices(platform_price, actual_unit_price, quantity)
+    return actual_unit_price, platform_price, discount_amount
+
+
 def _logical_order_date(order):
     return order.transaction_date or (order.created_at.date() if order.created_at else None)
 
@@ -930,7 +966,7 @@ def sales_invoice_print(request, order_id):
     gross = Decimal('0.00')
     discount_total = Decimal('0.00')
     for idx, item in enumerate(order.items.all(), start=1):
-        unit = item.effective_unit_price
+        unit = item.list_unit_price
         line_gross = item.line_gross
         line_discount = item.effective_discount
         gross += line_gross
@@ -1190,28 +1226,8 @@ def api_submit_manual_order(request):
         quantity = int(row.get('quantity') or 0)
         if quantity <= 0:
             continue
-        try:
-            actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
-        except Exception:
-            actual_unit_price = product.selling_price or Decimal('0.00')
-        if actual_unit_price < 0:
-            actual_unit_price = Decimal('0.00')
-        try:
-            platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
-        except Exception:
-            platform_price = None
-        if platform_price is not None and platform_price < 0:
-            platform_price = None
+        actual_unit_price, platform_price, discount_amount = _parse_order_item_prices(row, product)
         landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
-        try:
-            discount_amount = Decimal(str(row.get('discount_amount') or 0))
-        except Exception:
-            discount_amount = Decimal('0.00')
-        if discount_amount < 0:
-            discount_amount = Decimal('0.00')
-        line_gross = actual_unit_price * quantity
-        if discount_amount > line_gross:
-            discount_amount = line_gross
 
         order_items_to_create.append(
             OrderItem(
@@ -1474,28 +1490,8 @@ def api_update_manual_order(request, order_id):
             quantity = int(row.get('quantity') or 0)
             if quantity <= 0:
                 continue
-            try:
-                actual_unit_price = Decimal(str(row.get('actual_unit_price') or row.get('unit_price') or 0))
-            except Exception:
-                actual_unit_price = product.selling_price or Decimal('0.00')
-            if actual_unit_price < 0:
-                actual_unit_price = Decimal('0.00')
-            try:
-                platform_price = Decimal(str(row.get('platform_price') or 0)) if row.get('platform_price') not in (None, '') else None
-            except Exception:
-                platform_price = None
-            if platform_price is not None and platform_price < 0:
-                platform_price = None
+            actual_unit_price, platform_price, discount_amount = _parse_order_item_prices(row, product)
             landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
-            try:
-                discount_amount = Decimal(str(row.get('discount_amount') or 0))
-            except Exception:
-                discount_amount = Decimal('0.00')
-            if discount_amount < 0:
-                discount_amount = Decimal('0.00')
-            line_gross = actual_unit_price * quantity
-            if discount_amount > line_gross:
-                discount_amount = line_gross
 
             order_items_to_create.append(
                 OrderItem(
@@ -1516,7 +1512,7 @@ def api_update_manual_order(request, order_id):
         for oi in order_items_to_create:
             oi.save()
     else:
-        # Restricted edit: allow updating actual received amount and line discount
+        # Restricted edit: allow updating actual received amount (discount recalculates from platform)
         for item in order.items.select_related('product').all():
             row = payload_by_product.get(item.product_id)
             if not row:
@@ -1528,17 +1524,7 @@ def api_update_manual_order(request, order_id):
             if new_actual < 0:
                 new_actual = Decimal('0.00')
             item.actual_unit_price = new_actual
-            try:
-                disc = Decimal(str(row.get('discount_amount') or 0))
-            except Exception:
-                disc = Decimal('0.00')
-            if disc < 0:
-                disc = Decimal('0.00')
-            line_gross = new_actual * item.quantity
-            if disc > line_gross:
-                disc = line_gross
-            item.discount_amount = disc
-            # selling_price and quantity remain unchanged; profit recalculated in save()
+            # selling_price and quantity remain unchanged; discount/profit recalculated in save()
             item.save()
 
     success_url = reverse('order:order_success', kwargs={'order_id': order.id})

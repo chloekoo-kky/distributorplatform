@@ -676,9 +676,8 @@ document.addEventListener('alpine:init', () => {
                     productName: item.name || '',
                     productDisplayName: item.display_name || item.name || '',
                     quantity: item.quantity,
-                    platformPrice: item.platform_price || '',
+                    platformPrice: item.platform_price || item.actual_unit_price || '0.00',
                     actualUnitPrice: item.actual_unit_price || '0.00',
-                    discountAmount: item.discount_amount || '0',
                 }));
             } catch (e) {
                 console.error('Failed to load manual order', e);
@@ -697,11 +696,7 @@ document.addEventListener('alpine:init', () => {
         lineSubtotal(line) {
             const q = parseInt(line.quantity, 10) || 0;
             const u = parseFloat(line.actualUnitPrice) || 0;
-            const gross = q * u;
-            let d = parseFloat(line.discountAmount) || 0;
-            if (d < 0) d = 0;
-            if (d > gross) d = gross;
-            return (gross - d).toFixed(2);
+            return (q * u).toFixed(2);
         },
         lineGross(line) {
             const q = parseInt(line.quantity, 10) || 0;
@@ -709,17 +704,18 @@ document.addEventListener('alpine:init', () => {
             return q * u;
         },
         lineDiscount(line) {
-            const gross = this.lineGross(line);
-            let d = parseFloat(line.discountAmount) || 0;
-            if (d < 0) d = 0;
-            if (d > gross) d = gross;
-            return d;
+            const q = parseInt(line.quantity, 10) || 0;
+            const platform = parseFloat(line.platformPrice) || 0;
+            const actual = parseFloat(line.actualUnitPrice) || 0;
+            const unitDisc = platform - actual;
+            if (unitDisc <= 0 || q <= 0) return 0;
+            return unitDisc * q;
         },
         totalDiscount() {
             return this.lines.reduce((sum, line) => sum + this.lineDiscount(line), 0);
         },
         totalAmount() {
-            return this.lines.reduce((sum, line) => sum + this.lineGross(line) - this.lineDiscount(line), 0).toFixed(2);
+            return this.lines.reduce((sum, line) => sum + this.lineGross(line), 0).toFixed(2);
         },
         addProductLine(p) {
             if (this.orderStatus !== 'PENDING') return;
@@ -732,7 +728,6 @@ document.addEventListener('alpine:init', () => {
                 quantity: 1,
                 platformPrice: price,
                 actualUnitPrice: price,
-                discountAmount: '',
             });
         },
         removeLine(idx) {
