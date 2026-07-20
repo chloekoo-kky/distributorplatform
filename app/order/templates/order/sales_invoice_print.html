@@ -307,11 +307,12 @@
         <table class="invoice-table w-full">
             <thead>
                 <tr>
-                    <th style="width: 6%;">No</th>
-                    <th style="width: 16%;">Item Code</th>
-                    <th style="width: 38%;">Description</th>
-                    <th class="col-qty" style="width: 12%;">Qty</th>
-                    <th class="col-price" style="width: 14%;">Price/Unit</th>
+                    <th style="width: 5%;">No</th>
+                    <th style="width: 14%;">Item Code</th>
+                    <th style="width: 32%;">Description</th>
+                    <th class="col-qty" style="width: 11%;">Qty</th>
+                    <th class="col-price" style="width: 12%;">Price/Unit</th>
+                    <th class="col-price" style="width: 12%;">Discount</th>
                     <th class="col-amount" style="width: 14%;">Amount (RM)</th>
                 </tr>
             </thead>
@@ -323,11 +324,12 @@
                     <td class="whitespace-pre-line">{{ row.description }}</td>
                     <td class="col-qty tabular-nums">{{ row.quantity|floatformat:2 }} UNIT</td>
                     <td class="col-price tabular-nums">{{ row.unit_price|rm_amount }}</td>
+                    <td class="col-price tabular-nums">{% if row.discount %}{{ row.discount|rm_amount }}{% else %}—{% endif %}</td>
                     <td class="col-amount tabular-nums">{{ row.line_total|rm_amount }}</td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="py-6 text-center text-gray-500">No line items</td>
+                    <td colspan="7" class="py-6 text-center text-gray-500">No line items</td>
                 </tr>
                 {% endfor %}
             </tbody>

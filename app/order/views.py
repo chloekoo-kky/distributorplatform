@@ -78,6 +78,28 @@ def _title_case_received_from(value):
     return ' '.join(part.capitalize() for part in s.split())
 
 
+def _customer_display_label(company_name=None, customer_name=None, fallback=''):
+    """Prefer company name; when both exist show 'Company - Customer'."""
+    company = (company_name or '').strip()
+    name = (customer_name or '').strip()
+    if company and name:
+        return f'{company} - {name}'
+    if company:
+        return company
+    if name:
+        return name
+    return (fallback or '').strip()
+
+
+def _order_customer_display(order):
+    """Customer label for manage-order cards/lists."""
+    return _customer_display_label(
+        getattr(order, 'company_name', None),
+        getattr(order, 'customer_name', None),
+        fallback=order.agent.username if getattr(order, 'agent_id', None) else '',
+    )
+
+
 def _cash_bank_receipt_export_rows(receipts_qs):
     """Build export row dicts for CashBankReceiptEntry (same columns as order item rows)."""
     type_labels = {
@@ -540,7 +562,7 @@ def api_manual_order_products(request):
 
 @salesperson_required
 def api_customer_search(request):
-    """GET: search customers by name/phone/email for manual order picker. ?q=..."""
+    """GET: search customers by name/company/phone/email for manual order picker. ?q=..."""
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     q = (request.GET.get('q') or '').strip()[:100]
@@ -548,16 +570,19 @@ def api_customer_search(request):
     if q:
         customers = customers.filter(
             Q(name__icontains=q) |
+            Q(company_name__icontains=q) |
             Q(phone__icontains=q) |
             Q(email__icontains=q) |
-            Q(address__icontains=q)
-        )[:15]
+            Q(address__icontains=q) |
+            Q(orders__company_name__icontains=q)
+        ).distinct()[:15]
     else:
         customers = customers[:20]
     items = [
         {
             'id': c.id,
             'name': c.name or '',
+            'company_name': c.company_name or '',
             'phone': c.phone or '',
             'email': c.email or '',
             'address': c.address or '',
@@ -586,6 +611,7 @@ def api_customers_list(request):
     if search:
         qs = qs.filter(
             Q(name__icontains=search) |
+            Q(company_name__icontains=search) |
             Q(phone__icontains=search) |
             Q(email__icontains=search)
         )
@@ -599,6 +625,7 @@ def api_customers_list(request):
         {
             'id': c.id,
             'name': c.name or '',
+            'company_name': c.company_name or '',
             'phone': c.phone or '',
             'email': c.email or '',
             'address': (c.address or '')[:80] + ('...' if c.address and len(c.address) > 80 else ''),
@@ -632,6 +659,7 @@ def api_customer_create(request):
         return JsonResponse({'success': False, 'error': 'Name is required.'}, status=400)
     customer = Customer.objects.create(
         name=name,
+        company_name=(data.get('company_name') or '').strip() or None,
         phone=(data.get('phone') or '').strip() or None,
         email=(data.get('email') or '').strip() or None,
         address=(data.get('address') or '').strip() or None,
@@ -642,6 +670,7 @@ def api_customer_create(request):
         'customer': {
             'id': customer.id,
             'name': customer.name,
+            'company_name': customer.company_name or '',
             'phone': customer.phone or '',
             'email': customer.email or '',
             'address': customer.address or '',
@@ -666,6 +695,8 @@ def api_customer_update(request, customer_id):
         if not name:
             return JsonResponse({'success': False, 'error': 'Name cannot be empty.'}, status=400)
         customer.name = name
+    if 'company_name' in data:
+        customer.company_name = (data.get('company_name') or '').strip() or None
     if 'phone' in data:
         customer.phone = (data.get('phone') or '').strip() or None
     if 'email' in data:
@@ -680,6 +711,7 @@ def api_customer_update(request, customer_id):
         'customer': {
             'id': customer.id,
             'name': customer.name,
+            'company_name': customer.company_name or '',
             'phone': customer.phone or '',
             'email': customer.email or '',
             'address': customer.address or '',
@@ -895,18 +927,23 @@ def sales_invoice_print(request, order_id):
     issuer = get_object_or_404(SalesInvoiceIssuer, pk=issuer_pk)
 
     items_rows = []
-    subtotal = Decimal('0.00')
+    gross = Decimal('0.00')
+    discount_total = Decimal('0.00')
     for idx, item in enumerate(order.items.all(), start=1):
         unit = item.effective_unit_price
-        line_total = item.total_price
-        subtotal += line_total
+        line_gross = item.line_gross
+        line_discount = item.effective_discount
+        gross += line_gross
+        discount_total += line_discount
         items_rows.append({
             'no': idx,
             'description': item.product.order_display_name,
             'sku': item.product.sku or '—',
             'quantity': item.quantity,
             'unit_price': unit,
-            'line_total': line_total,
+            'discount': line_discount,
+            'line_total': line_gross,
+            'line_net': item.total_price,
         })
 
     if order.transaction_date:
@@ -923,10 +960,9 @@ def sales_invoice_print(request, order_id):
     if payment_method.upper() in ('COD', 'C.O.D', 'C.O.D.'):
         terms = 'C.O.D.'
 
-    gross = subtotal
-    discount = Decimal('0.00')
+    subtotal = gross - discount_total
     rounding = Decimal('0.00')
-    total_payable = gross - discount + rounding
+    total_payable = subtotal + rounding
 
     context = {
         'order': order,
@@ -934,7 +970,7 @@ def sales_invoice_print(request, order_id):
         'items_rows': items_rows,
         'subtotal': subtotal,
         'gross': gross,
-        'discount': discount,
+        'discount': discount_total,
         'rounding': rounding,
         'total_payable': total_payable,
         'amount_in_words': ringgit_amount_in_words(total_payable),
@@ -1061,9 +1097,9 @@ def api_submit_manual_order(request):
     products = Product.objects.filter(id__in=product_ids)
     product_map = {p.id: p for p in products}
 
-    sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
+    sales_channel = data.get('sales_channel') or Order.SalesChannel.WHATSAPP
     if sales_channel not in dict(Order.SalesChannel.choices):
-        sales_channel = Order.SalesChannel.OTHER
+        sales_channel = Order.SalesChannel.WHATSAPP
 
     transaction_date = None
     if data.get('transaction_date'):
@@ -1075,20 +1111,33 @@ def api_submit_manual_order(request):
 
     customer = None
     customer_name = (data.get('customer_name') or '').strip() or None
+    company_name = (data.get('company_name') or '').strip() or None
     customer_phone = (data.get('customer_phone') or '').strip() or None
     shipping_address = (data.get('shipping_address') or '').strip() or None
+    if not customer_name:
+        return JsonResponse({'success': False, 'error': 'Customer name is required.'}, status=400)
+    if not customer_phone:
+        return JsonResponse({'success': False, 'error': 'Customer phone is required.'}, status=400)
+    if not shipping_address:
+        return JsonResponse({'success': False, 'error': 'Shipping address is required.'}, status=400)
     customer_id = data.get('customer_id')
     if customer_id:
         try:
             customer = Customer.objects.get(id=int(customer_id))
-            customer_name = customer.name
+            customer_name = customer_name or customer.name
             customer_phone = customer.phone or customer_phone
+            if company_name and company_name != (customer.company_name or ''):
+                customer.company_name = company_name
+                customer.save(update_fields=['company_name', 'updated_at'])
+            elif not company_name:
+                company_name = customer.company_name or None
             # Keep order's shipping_address payload as provided; don't force override with customer.address
         except (ValueError, TypeError, Customer.DoesNotExist):
             customer = None
-    elif customer_name or customer_phone or shipping_address:
+    elif customer_name or customer_phone or shipping_address or company_name:
         customer = Customer.objects.create(
             name=customer_name or 'Unknown',
+            company_name=company_name,
             phone=customer_phone,
             email=None,
             address=shipping_address,
@@ -1098,6 +1147,7 @@ def api_submit_manual_order(request):
     # Snapshot fields on order always use the latest values
     customer_name = customer_name or (customer.name if customer else None)
     customer_phone = customer_phone or (customer.phone if customer else None)
+    company_name = company_name or (customer.company_name if customer else None)
 
     # Persist new shipping address variant in address book (without overwriting customer.address)
     if customer and shipping_address:
@@ -1119,6 +1169,7 @@ def api_submit_manual_order(request):
         sales_channel=sales_channel,
         transaction_date=transaction_date,
         customer=customer,
+        company_name=company_name,
         customer_name=customer_name,
         customer_phone=customer_phone,
         shipping_address=shipping_address,
@@ -1152,6 +1203,15 @@ def api_submit_manual_order(request):
         if platform_price is not None and platform_price < 0:
             platform_price = None
         landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+        try:
+            discount_amount = Decimal(str(row.get('discount_amount') or 0))
+        except Exception:
+            discount_amount = Decimal('0.00')
+        if discount_amount < 0:
+            discount_amount = Decimal('0.00')
+        line_gross = actual_unit_price * quantity
+        if discount_amount > line_gross:
+            discount_amount = line_gross
 
         order_items_to_create.append(
             OrderItem(
@@ -1162,6 +1222,7 @@ def api_submit_manual_order(request):
                 landed_cost=landed_cost,
                 platform_price=platform_price,
                 actual_unit_price=actual_unit_price,
+                discount_amount=discount_amount,
             )
         )
 
@@ -1253,14 +1314,16 @@ def api_manual_order_detail(request, order_id):
             'quantity': item.quantity,
             'platform_price': str(item.platform_price) if item.platform_price is not None else '',
             'actual_unit_price': str(item.actual_unit_price or item.selling_price),
+            'discount_amount': str(item.discount_amount or '0.00'),
         })
 
     data = {
         'id': order.id,
         'status': order.status,
-        'sales_channel': order.sales_channel or Order.SalesChannel.OTHER,
+        'sales_channel': order.sales_channel or Order.SalesChannel.WHATSAPP,
         'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
         'customer_id': order.customer_id,
+        'company_name': order.company_name or '',
         'customer_name': order.customer_name or '',
         'customer_phone': order.customer_phone or '',
         'shipping_address': order.shipping_address or '',
@@ -1321,9 +1384,9 @@ def api_update_manual_order(request, order_id):
         products = Product.objects.filter(id__in=product_ids)
         product_map = {p.id: p for p in products}
 
-        sales_channel = data.get('sales_channel') or Order.SalesChannel.OTHER
+        sales_channel = data.get('sales_channel') or Order.SalesChannel.WHATSAPP
         if sales_channel not in dict(Order.SalesChannel.choices):
-            sales_channel = Order.SalesChannel.OTHER
+            sales_channel = Order.SalesChannel.WHATSAPP
 
         transaction_date = None
         if data.get('transaction_date'):
@@ -1339,19 +1402,32 @@ def api_update_manual_order(request, order_id):
         order.remarks = (data.get('remarks') or '').strip() or None
         customer = None
         customer_name = (data.get('customer_name') or '').strip() or None
+        company_name = (data.get('company_name') or '').strip() or None
         customer_phone = (data.get('customer_phone') or '').strip() or None
         shipping_address = (data.get('shipping_address') or '').strip() or None
+        if not customer_name:
+            return JsonResponse({'success': False, 'error': 'Customer name is required.'}, status=400)
+        if not customer_phone:
+            return JsonResponse({'success': False, 'error': 'Customer phone is required.'}, status=400)
+        if not shipping_address:
+            return JsonResponse({'success': False, 'error': 'Shipping address is required.'}, status=400)
         customer_id = data.get('customer_id')
         if customer_id:
             try:
                 customer = Customer.objects.get(id=int(customer_id))
                 customer_name = customer_name or customer.name
                 customer_phone = customer_phone or customer.phone
+                if company_name and company_name != (customer.company_name or ''):
+                    customer.company_name = company_name
+                    customer.save(update_fields=['company_name', 'updated_at'])
+                elif not company_name:
+                    company_name = customer.company_name or None
             except (ValueError, TypeError, Customer.DoesNotExist):
                 pass
-        elif customer_name or customer_phone or shipping_address:
+        elif customer_name or customer_phone or shipping_address or company_name:
             customer = Customer.objects.create(
                 name=customer_name or 'Unknown',
+                company_name=company_name,
                 phone=customer_phone,
                 email=None,
                 address=shipping_address,
@@ -1360,6 +1436,7 @@ def api_update_manual_order(request, order_id):
         # snapshot fields from final values / customer
         customer_name = customer_name or (customer.name if customer else None)
         customer_phone = customer_phone or (customer.phone if customer else None)
+        company_name = company_name or (customer.company_name if customer else None)
 
         # maintain address book
         if customer and shipping_address:
@@ -1375,6 +1452,7 @@ def api_update_manual_order(request, order_id):
                         is_default=is_default,
                     )
         order.customer = customer
+        order.company_name = company_name
         order.customer_name = customer_name
         order.customer_phone = customer_phone
         order.shipping_address = shipping_address
@@ -1409,6 +1487,15 @@ def api_update_manual_order(request, order_id):
             if platform_price is not None and platform_price < 0:
                 platform_price = None
             landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
+            try:
+                discount_amount = Decimal(str(row.get('discount_amount') or 0))
+            except Exception:
+                discount_amount = Decimal('0.00')
+            if discount_amount < 0:
+                discount_amount = Decimal('0.00')
+            line_gross = actual_unit_price * quantity
+            if discount_amount > line_gross:
+                discount_amount = line_gross
 
             order_items_to_create.append(
                 OrderItem(
@@ -1419,6 +1506,7 @@ def api_update_manual_order(request, order_id):
                     landed_cost=landed_cost,
                     platform_price=platform_price,
                     actual_unit_price=actual_unit_price,
+                    discount_amount=discount_amount,
                 )
             )
 
@@ -1428,7 +1516,7 @@ def api_update_manual_order(request, order_id):
         for oi in order_items_to_create:
             oi.save()
     else:
-        # Restricted edit: only allow updating actual received amount
+        # Restricted edit: allow updating actual received amount and line discount
         for item in order.items.select_related('product').all():
             row = payload_by_product.get(item.product_id)
             if not row:
@@ -1440,6 +1528,16 @@ def api_update_manual_order(request, order_id):
             if new_actual < 0:
                 new_actual = Decimal('0.00')
             item.actual_unit_price = new_actual
+            try:
+                disc = Decimal(str(row.get('discount_amount') or 0))
+            except Exception:
+                disc = Decimal('0.00')
+            if disc < 0:
+                disc = Decimal('0.00')
+            line_gross = new_actual * item.quantity
+            if disc > line_gross:
+                disc = line_gross
+            item.discount_amount = disc
             # selling_price and quantity remain unchanged; profit recalculated in save()
             item.save()
 
@@ -1902,7 +2000,7 @@ def api_manage_orders(request):
         total_items = sum(item.quantity for item in order.items.all())
         total_value = sum(item.selling_price * item.quantity for item in order.items.all())
         gross_profit = sum(item.profit for item in order.items.all())
-        customer_display = (order.customer_name and order.customer_name.strip()) or order.agent.username
+        customer_display = _order_customer_display(order)
 
         # Display date: prefer transaction_date (manual orders), else localized created_at date
         if order.transaction_date:
@@ -2149,7 +2247,8 @@ def api_get_order_items(request, order_id):
             'sku': item.product.sku or '-',
             'quantity': item.quantity,
             'selling_price': float(item.selling_price),
-            'total': float(item.selling_price * item.quantity),
+            'discount_amount': float(item.discount_amount or 0),
+            'total': float(item.total_price),
             'profit': float(item.profit),
         })
 
@@ -2166,6 +2265,7 @@ def _serialize_order_item_for_edit(item):
         'quantity': item.quantity,
         'unit_price': str(unit_price),
         'platform_price': str(item.platform_price) if item.platform_price is not None else '',
+        'discount_amount': str(item.discount_amount or '0.00'),
     }
 
 
@@ -2221,6 +2321,16 @@ def _superuser_update_order_items(order, items_payload):
             if platform_price is not None and platform_price < 0:
                 platform_price = None
 
+        try:
+            discount_amount = Decimal(str(row.get('discount_amount') or 0))
+        except Exception:
+            discount_amount = Decimal('0.00')
+        if discount_amount < 0:
+            discount_amount = Decimal('0.00')
+        line_gross = unit_price * quantity
+        if discount_amount > line_gross:
+            discount_amount = line_gross
+
         landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
 
         item_id = row.get('id')
@@ -2236,6 +2346,7 @@ def _superuser_update_order_items(order, items_payload):
             existing_item.selling_price = unit_price
             existing_item.actual_unit_price = unit_price
             existing_item.platform_price = platform_price
+            existing_item.discount_amount = discount_amount
             existing_item.landed_cost = landed_cost
             existing_item.save()
             kept_item_ids.add(existing_item.id)
@@ -2250,6 +2361,7 @@ def _superuser_update_order_items(order, items_payload):
                 landed_cost=landed_cost,
                 platform_price=platform_price,
                 actual_unit_price=unit_price,
+                discount_amount=discount_amount,
             )
         )
 
@@ -2314,7 +2426,7 @@ def api_manage_order_edit_details(request, order_id):
 
                 sc = payload.get('sales_channel', order.sales_channel)
                 if sc not in dict(Order.SalesChannel.choices):
-                    sc = Order.SalesChannel.OTHER
+                    sc = Order.SalesChannel.WHATSAPP
 
                 td_raw = payload.get('transaction_date')
                 if td_raw in (None, '', False):
@@ -2531,18 +2643,53 @@ def api_cash_bank_receipt_bulk_upload(request):
 
 @staff_member_required
 def api_cash_bank_received_from_suggestions(request):
-    """Distinct payer names from prior cash/bank receipt entries for autocomplete."""
+    """
+    Autocomplete for receipt 'received from':
+    customer company name (preferred) or customer name, plus prior receipt payers.
+    """
     search_query = (request.GET.get('search') or '').strip()
-    qs = (
-        CashBankReceiptEntry.objects
-        .exclude(received_from='')
-        .values_list('received_from', flat=True)
-        .distinct()
-    )
+    seen = set()
+    items = []
+
+    def _add(label):
+        label = _title_case_received_from(label)
+        if not label:
+            return
+        key = label.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        items.append(label)
+
+    customers = Customer.objects.all().order_by('company_name', 'name')
     if search_query:
-        qs = qs.filter(received_from__icontains=search_query)
-    items = [_title_case_received_from(name) for name in qs.order_by('received_from')[:25]]
-    return JsonResponse({'items': items})
+        customers = customers.filter(
+            Q(company_name__icontains=search_query) |
+            Q(name__icontains=search_query) |
+            Q(phone__icontains=search_query)
+        )
+    for customer in customers[:40]:
+        # Prefer company name alone in the dropdown (user can still type freely).
+        label = (customer.company_name or '').strip() or (customer.name or '').strip()
+        _add(label)
+        if len(items) >= 25:
+            break
+
+    if len(items) < 25:
+        qs = (
+            CashBankReceiptEntry.objects
+            .exclude(received_from='')
+            .values_list('received_from', flat=True)
+            .distinct()
+        )
+        if search_query:
+            qs = qs.filter(received_from__icontains=search_query)
+        for name in qs.order_by('received_from')[:25]:
+            _add(name)
+            if len(items) >= 25:
+                break
+
+    return JsonResponse({'items': items[:25]})
 
 
 @staff_member_required

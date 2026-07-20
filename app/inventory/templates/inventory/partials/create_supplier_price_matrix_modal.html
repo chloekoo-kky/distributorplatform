@@ -1,0 +1,300 @@
+<div x-show="createSupplierPriceMatrixModalOpen" x-cloak
+     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-gray-800 bg-opacity-75"
+     x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+     x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+     style="display: none;"
+     @keydown.escape.window="if (createSupplierPriceMatrixModalOpen) closeCreateSupplierPriceMatrixModal()">
+
+    <div @click.away="closeCreateSupplierPriceMatrixModal()"
+         class="relative bg-white rounded-t-lg sm:rounded-lg shadow-xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col m-0 sm:m-4"
+         x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
+         x-transition:enter-end="opacity-100 transform scale-100">
+
+        <div class="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b">
+            <div>
+                <h3 class="text-xl font-bold text-gray-800">Create Price Matrix Row</h3>
+                <p class="text-sm text-gray-500 mt-1">
+                    Add a single product price for one supplier (same uniqueness as upload: medication + strength + size).
+                </p>
+            </div>
+            <button type="button" @click="closeCreateSupplierPriceMatrixModal()" class="text-gray-400 hover:text-gray-600" aria-label="Close">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="px-4 sm:px-6 py-4 overflow-y-auto flex-1 space-y-5">
+            {# Supplier #}
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-sm font-medium text-gray-700">Supplier</label>
+                    <button type="button" @click="openCreateMatrixNewSupplierPanel()"
+                            class="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                        + New supplier
+                    </button>
+                </div>
+                <div class="relative" @click.outside="createMatrixSupplierOpen = false">
+                    <div class="relative rounded-lg border bg-white shadow-sm transition-colors duration-150"
+                         :class="createMatrixSupplierOpen
+                             ? 'border-indigo-400 ring-2 ring-indigo-500/20'
+                             : createMatrixSupplierId
+                                 ? 'border-indigo-200 bg-indigo-50/30'
+                                 : 'border-gray-300 hover:border-gray-400'">
+                        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        </div>
+                        <input type="text"
+                               x-model="createMatrixSupplierSearch"
+                               @focus="createMatrixSupplierOpen = true"
+                               @input="createMatrixSupplierId = ''; createMatrixSupplierOpen = true"
+                               placeholder="Search suppliers…"
+                               autocomplete="off"
+                               class="block w-full rounded-lg border-0 bg-transparent py-2.5 pl-9 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0">
+                        <button type="button"
+                                x-show="createMatrixSupplierId"
+                                @click="createMatrixSupplierId = ''; createMatrixSupplierSearch = ''; createMatrixSupplierOpen = true"
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                                title="Clear selection">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <div x-show="createMatrixSupplierOpen"
+                         x-cloak
+                         class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg max-h-52 overflow-y-auto">
+                        <template x-if="filteredCreateMatrixSuppliers().length === 0 && !createMatrixSupplierSearch">
+                            <p class="px-3 py-2 text-sm text-gray-500">No suppliers yet. Create one below.</p>
+                        </template>
+                        <template x-for="sup in filteredCreateMatrixSuppliers()" :key="'cm-sup-' + sup.id">
+                            <button type="button"
+                                    @click="selectCreateMatrixSupplier(sup)"
+                                    class="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none"
+                                    :class="String(createMatrixSupplierId) === String(sup.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-800'">
+                                <span x-text="sup.name"></span>
+                            </button>
+                        </template>
+                        <template x-if="createMatrixSupplierSearch.trim() && !exactCreateMatrixSupplierMatch()">
+                            <button type="button"
+                                    @click="openCreateMatrixNewSupplierPanel()"
+                                    class="w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border-t border-gray-100">
+                                + Create supplier "<span x-text="createMatrixSupplierSearch.trim()"></span>"
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="createMatrixShowNewSupplier" x-cloak
+                 class="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4 space-y-4">
+                <p class="text-sm font-medium text-gray-800">Create new supplier</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="min-w-0">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input type="text" x-model="createMatrixNewSupplierName" placeholder="Supplier name" autocomplete="off"
+                               class="w-full rounded-lg border border-gray-300 py-2.5 px-3 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20">
+                    </div>
+                    <div class="min-w-0">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Code <span class="font-normal text-gray-500">(optional)</span></label>
+                        <input type="text" x-model="createMatrixNewSupplierCode" placeholder="e.g. SUP001" autocomplete="off"
+                               class="w-full rounded-lg border border-gray-300 py-2.5 px-3 text-sm font-mono focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20">
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" @click="createMatrixSupplier()" :disabled="createMatrixBusy"
+                            class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                        Save supplier
+                    </button>
+                    <button type="button" @click="createMatrixShowNewSupplier = false"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+
+            {# Line identity #}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="sm:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Medication / product name</label>
+                    <input type="text" x-model="createMatrixMedication" placeholder="As on supplier price list"
+                           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Strength <span class="font-normal text-gray-500">(optional)</span></label>
+                    <input type="text" x-model="createMatrixStrength" placeholder="e.g. 100 mg"
+                           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Size <span class="font-normal text-gray-500">(optional)</span></label>
+                    <input type="text" x-model="createMatrixSize" placeholder="e.g. 1 mL"
+                           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Form <span class="font-normal text-gray-500">(optional)</span></label>
+                    <input type="text" x-model="createMatrixForm" placeholder="e.g. INJ, TAB"
+                           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes <span class="font-normal text-gray-500">(optional)</span></label>
+                    <input type="text" x-model="createMatrixNotes"
+                           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+            </div>
+
+            {# Currency #}
+            <div>
+                <div class="grid grid-cols-1 gap-4 items-end"
+                     :class="createMatrixCurrency !== 'MYR' ? 'sm:grid-cols-2' : ''">
+                    <div class="min-w-0">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Price currency</label>
+                        <div class="inline-flex rounded-md shadow-sm border border-gray-300 overflow-hidden">
+                            <template x-for="cur in ['MYR', 'USD', 'EUR']" :key="'cm-cur-' + cur">
+                                <button type="button"
+                                        @click="createMatrixCurrency = cur"
+                                        class="px-4 py-2 text-sm font-medium border-r border-gray-300 last:border-r-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                                        :class="createMatrixCurrency === cur ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                                        x-text="cur"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="min-w-0" x-show="createMatrixCurrency !== 'MYR'" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 mb-1"
+                               x-text="'Rate (1 ' + createMatrixCurrency + ' → MYR)'"></label>
+                        <div class="flex rounded-md border border-gray-300 shadow-sm overflow-hidden bg-white focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                            <input type="text" inputmode="decimal"
+                                   x-show="createMatrixCurrency === 'USD'"
+                                   x-model="createMatrixRateUSDInput"
+                                   @blur="formatCreateMatrixRateUSD()"
+                                   class="block w-full min-w-0 border-0 bg-transparent py-2 px-3 text-sm tabular-nums focus:outline-none focus:ring-0"
+                                   placeholder="4.20">
+                            <input type="text" inputmode="decimal"
+                                   x-show="createMatrixCurrency === 'EUR'"
+                                   x-model="createMatrixRateEURInput"
+                                   @blur="formatCreateMatrixRateEUR()"
+                                   class="block w-full min-w-0 border-0 bg-transparent py-2 px-3 text-sm tabular-nums focus:outline-none focus:ring-0"
+                                   placeholder="4.60">
+                            <span class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-gray-50 border-l border-gray-300 shrink-0">MYR</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Tier prices are stored in MYR (converted on save when currency is not MYR).</p>
+            </div>
+
+            {# Catalog product #}
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Catalog product <span class="font-normal text-gray-500">(optional)</span></label>
+                <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+                    <template x-if="createMatrixProductId">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium text-green-700 truncate"
+                                   x-text="`${createMatrixProductName}${createMatrixProductSku ? ' (' + createMatrixProductSku + ')' : ''}`"></p>
+                                <p class="text-xs text-gray-500">Linked to catalog</p>
+                            </div>
+                            <button type="button" @click="clearCreateMatrixProduct()"
+                                    class="text-xs font-medium text-red-600 hover:text-red-800 shrink-0">Clear</button>
+                        </div>
+                    </template>
+                    <template x-if="!createMatrixProductId && createMatrixCreateNewProduct">
+                        <div class="space-y-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Create new catalog product</p>
+                            <input type="text" x-model="createMatrixNewProductName" placeholder="New product name"
+                                   class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <input type="text" x-model="createMatrixNewProductSku" placeholder="SKU (optional)"
+                                   class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:ring-indigo-500">
+                            <button type="button" @click="createMatrixCreateNewProduct = false; createMatrixNewProductName = ''; createMatrixNewProductSku = ''"
+                                    class="text-xs font-medium text-gray-600 hover:text-gray-800">Cancel new product</button>
+                        </div>
+                    </template>
+                    <template x-if="!createMatrixProductId && !createMatrixCreateNewProduct">
+                        <div class="space-y-2">
+                            <input type="text"
+                                   x-model="createMatrixProductQuery"
+                                   @input.debounce.200ms="fetchCreateMatrixProducts(createMatrixProductQuery)"
+                                   @focus="fetchCreateMatrixProducts(createMatrixProductQuery)"
+                                   placeholder="Search catalog by name or SKU…"
+                                   class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <div class="max-h-40 overflow-y-auto space-y-0.5" x-show="createMatrixProductResults.length > 0 || createMatrixProductQuery">
+                                <button type="button"
+                                        @click="setCreateMatrixCreateNewProduct()"
+                                        class="w-full text-left px-2 py-1.5 hover:bg-emerald-50 rounded text-xs text-emerald-700 font-medium">
+                                    — Create new catalog product —
+                                </button>
+                                <template x-for="p in createMatrixProductResults" :key="'cm-prod-' + p.id">
+                                    <button type="button"
+                                            @click="applyCreateMatrixProduct(p)"
+                                            class="w-full text-left px-2 py-1.5 hover:bg-indigo-50 rounded text-xs text-gray-800 truncate"
+                                            x-text="(p.sku ? p.sku + ' — ' : '') + p.name"></button>
+                                </template>
+                                <p x-show="createMatrixProductResults.length === 0 && createMatrixProductQuery"
+                                   class="text-gray-500 text-[11px] px-2 py-1">No products found</p>
+                            </div>
+                            <p class="text-xs text-gray-500">Leave unlinked to save supplier line only.</p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            {# Price tiers #}
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Price tiers</label>
+                    <button type="button" @click="addCreateMatrixTier()"
+                            class="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                        + Add tier
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div class="hidden sm:grid sm:grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+                        <div class="sm:col-span-3">Min qty</div>
+                        <div class="sm:col-span-3">Max qty</div>
+                        <div class="sm:col-span-5">Unit price (<span x-text="createMatrixCurrency"></span>)</div>
+                        <div class="sm:col-span-1"></div>
+                    </div>
+                    <template x-for="(tier, idx) in createMatrixTiers" :key="'cm-tier-' + idx">
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                            <div class="sm:col-span-3">
+                                <label class="sm:hidden text-xs text-gray-500">Min qty</label>
+                                <input type="number" min="1" x-model="tier.min_quantity"
+                                       class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <div class="sm:col-span-3">
+                                <label class="sm:hidden text-xs text-gray-500">Max qty</label>
+                                <input type="number" min="1" x-model="tier.max_quantity" placeholder="Open"
+                                       class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <div class="sm:col-span-5">
+                                <label class="sm:hidden text-xs text-gray-500">Unit price</label>
+                                <input type="text" inputmode="decimal" x-model="tier.unit_price" placeholder="0.00"
+                                       class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <div class="sm:col-span-1 flex justify-end">
+                                <button type="button" @click="removeCreateMatrixTier(idx)"
+                                        :disabled="createMatrixTiers.length <= 1"
+                                        class="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                        title="Remove tier" aria-label="Remove tier">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Leave max qty empty for an open-ended tier (e.g. 2000+).</p>
+            </div>
+
+            <p x-show="createMatrixError" x-text="createMatrixError" class="text-sm text-red-600"></p>
+        </div>
+
+        <div class="px-4 sm:px-6 py-4 border-t bg-gray-50 flex flex-wrap gap-2 justify-end">
+            <button type="button" @click="closeCreateSupplierPriceMatrixModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="button"
+                    @click="submitCreateSupplierPriceMatrix()"
+                    :disabled="createMatrixBusy"
+                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                <span x-show="!createMatrixBusy">Create price row</span>
+                <span x-show="createMatrixBusy">Saving…</span>
+            </button>
+        </div>
+    </div>
+</div>

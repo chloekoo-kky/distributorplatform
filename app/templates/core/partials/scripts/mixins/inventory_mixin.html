@@ -535,6 +535,35 @@
             supplierPriceMatrixMappingStyle: '',
             supplierPriceMatrixProductsMappingUrl: '{% url "inventory:api_products_for_mapping" %}',
 
+            // --- Create single supplier price matrix row modal ---
+            createMatrixSupplierId: '',
+            createMatrixSupplierSearch: '',
+            createMatrixSupplierOpen: false,
+            createMatrixShowNewSupplier: false,
+            createMatrixNewSupplierName: '',
+            createMatrixNewSupplierCode: '',
+            createMatrixMedication: '',
+            createMatrixStrength: '',
+            createMatrixSize: '',
+            createMatrixForm: '',
+            createMatrixNotes: '',
+            createMatrixCurrency: 'MYR',
+            createMatrixRateUSD: 4.2,
+            createMatrixRateEUR: 4.9,
+            createMatrixRateUSDInput: '4.20',
+            createMatrixRateEURInput: '4.90',
+            createMatrixProductId: null,
+            createMatrixProductName: '',
+            createMatrixProductSku: '',
+            createMatrixCreateNewProduct: false,
+            createMatrixNewProductName: '',
+            createMatrixNewProductSku: '',
+            createMatrixProductQuery: '',
+            createMatrixProductResults: [],
+            createMatrixTiers: [{ min_quantity: 1, max_quantity: '', unit_price: '' }],
+            createMatrixError: '',
+            createMatrixBusy: false,
+
             filteredSupplierPriceMatrixSuppliers() {
                 const q = (this.supplierPriceMatrixSupplierSearch || '').trim().toLowerCase();
                 const list = this.supplierPriceMatrixSuppliers || [];
@@ -919,6 +948,301 @@
                     this.supplierPriceMatrixError = 'Import failed.';
                 } finally {
                     this.supplierPriceMatrixBusy = false;
+                }
+            },
+
+            // --- Create single price matrix row ---
+            filteredCreateMatrixSuppliers() {
+                const q = (this.createMatrixSupplierSearch || '').trim().toLowerCase();
+                const list = this.supplierPriceMatrixSuppliers || [];
+                if (!q) return list;
+                return list.filter((s) => (s.name || '').toLowerCase().includes(q));
+            },
+
+            exactCreateMatrixSupplierMatch() {
+                const q = (this.createMatrixSupplierSearch || '').trim().toLowerCase();
+                if (!q) return false;
+                return (this.supplierPriceMatrixSuppliers || []).some(
+                    (s) => (s.name || '').toLowerCase() === q
+                );
+            },
+
+            openCreateSupplierPriceMatrixModal() {
+                this.loadSupplierPriceMatrixSuppliers();
+                try {
+                    const savedUsd = window.localStorage.getItem('quotation_rate_usd');
+                    if (savedUsd) this.createMatrixRateUSD = parseFloat(savedUsd) || 4.2;
+                    const savedEur = window.localStorage.getItem('quotation_rate_eur');
+                    if (savedEur) this.createMatrixRateEUR = parseFloat(savedEur) || 4.9;
+                } catch (e) { /* ignore */ }
+                this.resetCreateSupplierPriceMatrixModal();
+                this.createMatrixRateUSDInput = Number(this.createMatrixRateUSD).toFixed(2);
+                this.createMatrixRateEURInput = Number(this.createMatrixRateEUR).toFixed(2);
+                this.createSupplierPriceMatrixModalOpen = true;
+            },
+
+            closeCreateSupplierPriceMatrixModal() {
+                this.createSupplierPriceMatrixModalOpen = false;
+                this.resetCreateSupplierPriceMatrixModal();
+            },
+
+            resetCreateSupplierPriceMatrixModal() {
+                this.createMatrixSupplierId = '';
+                this.createMatrixSupplierSearch = '';
+                this.createMatrixSupplierOpen = false;
+                this.createMatrixShowNewSupplier = false;
+                this.createMatrixNewSupplierName = '';
+                this.createMatrixNewSupplierCode = '';
+                this.createMatrixMedication = '';
+                this.createMatrixStrength = '';
+                this.createMatrixSize = '';
+                this.createMatrixForm = '';
+                this.createMatrixNotes = '';
+                this.createMatrixCurrency = 'MYR';
+                this.createMatrixProductId = null;
+                this.createMatrixProductName = '';
+                this.createMatrixProductSku = '';
+                this.createMatrixCreateNewProduct = false;
+                this.createMatrixNewProductName = '';
+                this.createMatrixNewProductSku = '';
+                this.createMatrixProductQuery = '';
+                this.createMatrixProductResults = [];
+                this.createMatrixTiers = [{ min_quantity: 1, max_quantity: '', unit_price: '' }];
+                this.createMatrixError = '';
+                this.createMatrixBusy = false;
+            },
+
+            selectCreateMatrixSupplier(supplier) {
+                this.createMatrixSupplierId = String(supplier.id);
+                this.createMatrixSupplierSearch = supplier.name;
+                this.createMatrixSupplierOpen = false;
+                this.createMatrixShowNewSupplier = false;
+                this.createMatrixError = '';
+            },
+
+            openCreateMatrixNewSupplierPanel() {
+                this.createMatrixShowNewSupplier = true;
+                this.createMatrixNewSupplierName = (this.createMatrixSupplierSearch || '').trim();
+                this.createMatrixNewSupplierCode = '';
+                this.createMatrixSupplierOpen = false;
+            },
+
+            async createMatrixSupplier() {
+                const name = (this.createMatrixNewSupplierName || '').trim();
+                if (!name) {
+                    this.createMatrixError = 'Enter a supplier name.';
+                    return;
+                }
+                this.createMatrixBusy = true;
+                this.createMatrixError = '';
+                try {
+                    const response = await fetch(`{% url 'inventory:api_create_supplier' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            name,
+                            code: (this.createMatrixNewSupplierCode || '').trim() || null,
+                        }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        this.createMatrixError = data.error || 'Could not create supplier.';
+                        return;
+                    }
+                    const sup = { id: data.id, name: data.name };
+                    const exists = this.supplierPriceMatrixSuppliers.some((s) => s.id === sup.id);
+                    if (!exists) {
+                        this.supplierPriceMatrixSuppliers.push(sup);
+                        this.supplierPriceMatrixSuppliers.sort((a, b) => a.name.localeCompare(b.name));
+                    }
+                    this.selectCreateMatrixSupplier(sup);
+                    this.createMatrixShowNewSupplier = false;
+                    this.createMatrixNewSupplierName = '';
+                    this.createMatrixNewSupplierCode = '';
+                    Alpine.store('globals').showToast('Supplier created.', 'success');
+                } catch (e) {
+                    this.createMatrixError = 'Could not create supplier.';
+                } finally {
+                    this.createMatrixBusy = false;
+                }
+            },
+
+            formatCreateMatrixRateUSD() {
+                const n = parseFloat(String(this.createMatrixRateUSDInput || '').replace(',', '.'));
+                this.createMatrixRateUSD = isNaN(n) || n <= 0 ? 0.01 : parseFloat(n.toFixed(2));
+                this.createMatrixRateUSDInput = this.createMatrixRateUSD.toFixed(2);
+            },
+
+            formatCreateMatrixRateEUR() {
+                const n = parseFloat(String(this.createMatrixRateEURInput || '').replace(',', '.'));
+                this.createMatrixRateEUR = isNaN(n) || n <= 0 ? 0.01 : parseFloat(n.toFixed(2));
+                this.createMatrixRateEURInput = this.createMatrixRateEUR.toFixed(2);
+            },
+
+            persistCreateMatrixRates() {
+                this.formatCreateMatrixRateUSD();
+                this.formatCreateMatrixRateEUR();
+                try {
+                    window.localStorage.setItem('quotation_rate_usd', String(this.createMatrixRateUSD));
+                    window.localStorage.setItem('quotation_rate_eur', String(this.createMatrixRateEUR));
+                } catch (e) { /* ignore */ }
+            },
+
+            async fetchCreateMatrixProducts(q) {
+                this.createMatrixProductQuery = q || '';
+                const url = this.supplierPriceMatrixProductsMappingUrl
+                    + (q ? '?q=' + encodeURIComponent(q) : '');
+                try {
+                    const response = await fetch(url, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                    });
+                    const data = await response.json();
+                    this.createMatrixProductResults = data.products || [];
+                } catch (e) {
+                    this.createMatrixProductResults = [];
+                }
+            },
+
+            applyCreateMatrixProduct(product) {
+                this.createMatrixProductId = product.id;
+                this.createMatrixProductName = product.name;
+                this.createMatrixProductSku = product.sku || '';
+                this.createMatrixCreateNewProduct = false;
+                this.createMatrixNewProductName = '';
+                this.createMatrixNewProductSku = '';
+                this.createMatrixProductQuery = '';
+                this.createMatrixProductResults = [];
+            },
+
+            clearCreateMatrixProduct() {
+                this.createMatrixProductId = null;
+                this.createMatrixProductName = '';
+                this.createMatrixProductSku = '';
+            },
+
+            setCreateMatrixCreateNewProduct() {
+                this.createMatrixProductId = null;
+                this.createMatrixProductName = '';
+                this.createMatrixProductSku = '';
+                this.createMatrixCreateNewProduct = true;
+                this.createMatrixNewProductName = (this.createMatrixMedication || '').trim();
+                this.createMatrixNewProductSku = '';
+                this.createMatrixProductQuery = '';
+                this.createMatrixProductResults = [];
+            },
+
+            addCreateMatrixTier() {
+                const last = this.createMatrixTiers[this.createMatrixTiers.length - 1];
+                const nextMin = last && last.max_quantity
+                    ? (parseInt(last.max_quantity, 10) || 0) + 1
+                    : (parseInt(last?.min_quantity, 10) || 1);
+                this.createMatrixTiers.push({
+                    min_quantity: nextMin > 0 ? nextMin : 1,
+                    max_quantity: '',
+                    unit_price: '',
+                });
+            },
+
+            removeCreateMatrixTier(idx) {
+                if (this.createMatrixTiers.length <= 1) return;
+                this.createMatrixTiers.splice(idx, 1);
+            },
+
+            async submitCreateSupplierPriceMatrix() {
+                this.persistCreateMatrixRates();
+                this.createMatrixError = '';
+
+                if (!this.createMatrixSupplierId) {
+                    this.createMatrixError = 'Select a supplier.';
+                    return;
+                }
+                const medication = (this.createMatrixMedication || '').trim();
+                if (!medication) {
+                    this.createMatrixError = 'Medication / product name is required.';
+                    return;
+                }
+                if (this.createMatrixCreateNewProduct && !(this.createMatrixNewProductName || '').trim()) {
+                    this.createMatrixError = 'Enter a new catalog product name, or clear the new-product option.';
+                    return;
+                }
+
+                const tiers = [];
+                for (let i = 0; i < this.createMatrixTiers.length; i++) {
+                    const t = this.createMatrixTiers[i];
+                    const minQty = parseInt(t.min_quantity, 10);
+                    const priceRaw = String(t.unit_price ?? '').trim();
+                    if (!priceRaw) {
+                        this.createMatrixError = `Tier ${i + 1}: unit price is required.`;
+                        return;
+                    }
+                    if (isNaN(minQty) || minQty < 1) {
+                        this.createMatrixError = `Tier ${i + 1}: min quantity must be ≥ 1.`;
+                        return;
+                    }
+                    const maxRaw = String(t.max_quantity ?? '').trim();
+                    tiers.push({
+                        min_quantity: minQty,
+                        max_quantity: maxRaw === '' ? null : parseInt(maxRaw, 10),
+                        unit_price: priceRaw,
+                    });
+                }
+                if (!tiers.length) {
+                    this.createMatrixError = 'At least one price tier is required.';
+                    return;
+                }
+
+                this.createMatrixBusy = true;
+                const payload = {
+                    supplier_id: Number(this.createMatrixSupplierId),
+                    currency: this.createMatrixCurrency,
+                    rate_usd: this.createMatrixRateUSD,
+                    rate_eur: this.createMatrixRateEUR,
+                    source_filename: 'Manual entry',
+                    rows: [{
+                        medication,
+                        strength: (this.createMatrixStrength || '').trim(),
+                        form: (this.createMatrixForm || '').trim(),
+                        size: (this.createMatrixSize || '').trim(),
+                        notes: (this.createMatrixNotes || '').trim(),
+                        product_id: this.createMatrixProductId || null,
+                        new_product_name: this.createMatrixCreateNewProduct
+                            ? (this.createMatrixNewProductName || '').trim()
+                            : null,
+                        new_product_sku: this.createMatrixCreateNewProduct
+                            ? (this.createMatrixNewProductSku || '').trim() || null
+                            : null,
+                        tiers,
+                    }],
+                };
+
+                try {
+                    const response = await fetch(`{% url 'inventory:upload_supplier_price_matrix_confirm' %}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': Alpine.store('globals').csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        this.createMatrixError = (data.errors && data.errors.join(' ')) || data.error || 'Could not create price row.';
+                        return;
+                    }
+                    Alpine.store('globals').showToast(data.message || 'Price matrix row created.', 'success');
+                    this.closeCreateSupplierPriceMatrixModal();
+                    window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'quotations' } }));
+                } catch (e) {
+                    this.createMatrixError = 'Could not create price row.';
+                } finally {
+                    this.createMatrixBusy = false;
                 }
             },
         };

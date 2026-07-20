@@ -1321,7 +1321,7 @@
                                @input.debounce.300ms="loadCashBankReceivedFromOptions()"
                                @keydown="handleCashBankReceivedFromKeydown($event)"
                                @blur="cashBankForm.received_from = formatTitleCase(cashBankForm.received_from)"
-                               placeholder="Search or enter payer name"
+                               placeholder="Search company or customer name…"
                                autocomplete="off"
                                role="combobox"
                                aria-autocomplete="list"
@@ -1943,7 +1943,7 @@
                 customer_name: '',
                 customer_phone: '',
                 shipping_address: '',
-                sales_channel: 'Other',
+                sales_channel: 'WhatsApp',
                 transaction_date: '',
                 remarks: '',
                 payment_method: ''
@@ -3117,7 +3117,7 @@
                         customer_name: o.customer_name || '',
                         customer_phone: o.customer_phone || '',
                         shipping_address: o.shipping_address || '',
-                        sales_channel: o.sales_channel || 'Other',
+                        sales_channel: (o.sales_channel && o.sales_channel !== 'Other') ? o.sales_channel : 'WhatsApp',
                         transaction_date: o.transaction_date || '',
                         remarks: o.remarks || '',
                         payment_method: o.payment_method || ''
@@ -3131,6 +3131,7 @@
                             quantity: item.quantity,
                             unit_price: item.unit_price,
                             platform_price: item.platform_price || '',
+                            discount_amount: item.discount_amount || '0',
                         }));
                     }
                 } catch (e) {
@@ -3199,6 +3200,7 @@
                     quantity: 1,
                     unit_price: price,
                     platform_price: '',
+                    discount_amount: '',
                 });
             },
 
@@ -3209,17 +3211,30 @@
             editDetailsLineSubtotal(line) {
                 const qty = parseFloat(line.quantity) || 0;
                 const unit = parseFloat(line.unit_price) || 0;
-                return 'RM ' + (qty * unit).toFixed(2);
+                const gross = qty * unit;
+                let disc = parseFloat(line.discount_amount) || 0;
+                if (disc < 0) disc = 0;
+                if (disc > gross) disc = gross;
+                return 'RM ' + (gross - disc).toFixed(2);
             },
 
             buildEditDetailsItemsPayload() {
-                return this.editDetailsItems.map(line => ({
-                    id: line.id || null,
-                    product_id: line.product_id,
-                    quantity: line.quantity,
-                    unit_price: line.unit_price,
-                    platform_price: line.platform_price,
-                }));
+                return this.editDetailsItems.map(line => {
+                    const qty = parseFloat(line.quantity) || 0;
+                    const unit = parseFloat(line.unit_price) || 0;
+                    const gross = qty * unit;
+                    let disc = parseFloat(line.discount_amount) || 0;
+                    if (disc < 0) disc = 0;
+                    if (disc > gross) disc = gross;
+                    return {
+                        id: line.id || null,
+                        product_id: line.product_id,
+                        quantity: line.quantity,
+                        unit_price: line.unit_price,
+                        platform_price: line.platform_price,
+                        discount_amount: disc,
+                    };
+                });
             },
 
             closeEditDetailsModal() {
@@ -3362,8 +3377,9 @@
             customerSearchOpen: false,
             customerSearchResults: [],
             selectedCustomer: null,
-            salesChannel: 'Other',
+            salesChannel: 'WhatsApp',
             transactionDate: '',
+            companyName: '',
             customerName: '',
             customerPhone: '',
             shippingAddress: '',
@@ -3401,6 +3417,7 @@
             },
             selectCustomer(c) {
                 this.selectedCustomer = c;
+                this.companyName = c.company_name || '';
                 this.customerName = c.name || '';
                 this.customerPhone = c.phone || '';
                 this.shippingAddress = c.address || '';
@@ -3410,6 +3427,7 @@
             },
             clearCustomer() {
                 this.selectedCustomer = null;
+                this.companyName = '';
                 this.customerName = '';
                 this.customerPhone = '';
                 this.shippingAddress = '';
@@ -3475,14 +3493,21 @@
                     const o = d.order;
                     this.currentOrderId = orderId;
                     this.orderStatus = o.status || 'PENDING';
-                    this.salesChannel = o.sales_channel || 'Other';
+                    this.salesChannel = (o.sales_channel && o.sales_channel !== 'Other') ? o.sales_channel : 'WhatsApp';
                     this.transactionDate = o.transaction_date || this.transactionDate;
+                    this.companyName = o.company_name || '';
                     this.customerName = o.customer_name || '';
                     this.customerPhone = o.customer_phone || '';
                     this.shippingAddress = o.shipping_address || '';
                     this.remarks = o.remarks || '';
                     if (o.customer_id) {
-                        this.selectedCustomer = { id: o.customer_id, name: o.customer_name || '', phone: o.customer_phone || '', address: o.shipping_address || '' };
+                        this.selectedCustomer = {
+                            id: o.customer_id,
+                            name: o.customer_name || '',
+                            company_name: o.company_name || '',
+                            phone: o.customer_phone || '',
+                            address: o.shipping_address || ''
+                        };
                     } else {
                         this.selectedCustomer = null;
                     }
@@ -3497,6 +3522,7 @@
                         quantity: item.quantity,
                         platformPrice: item.platform_price || '',
                         actualUnitPrice: item.actual_unit_price || '0.00',
+                        discountAmount: item.discount_amount || '0',
                     }));
                 } catch (e) {
                     console.error('Failed to load manual order', e);
@@ -3513,16 +3539,27 @@
                 const label = p ? (p.display_name || p.name || '') : '';
                 return p ? ((p.sku || '') + ' – ' + label) : '—';
             },
-            lineSubtotal(line) {
+            lineGross(line) {
                 const q = parseInt(line.quantity, 10) || 0;
                 const u = parseFloat(line.actualUnitPrice) || 0;
-                return (q * u).toFixed(2);
+                return q * u;
+            },
+            lineDiscount(line) {
+                const gross = this.lineGross(line);
+                let d = parseFloat(line.discountAmount) || 0;
+                if (d < 0) d = 0;
+                if (d > gross) d = gross;
+                return d;
+            },
+            lineSubtotal(line) {
+                return (this.lineGross(line) - this.lineDiscount(line)).toFixed(2);
+            },
+            totalDiscount() {
+                return this.lines.reduce((sum, line) => sum + this.lineDiscount(line), 0);
             },
             totalAmount() {
                 return this.lines.reduce((sum, line) => {
-                    const q = parseInt(line.quantity, 10) || 0;
-                    const u = parseFloat(line.actualUnitPrice) || 0;
-                    return sum + q * u;
+                    return sum + this.lineGross(line) - this.lineDiscount(line);
                 }, 0).toFixed(2);
             },
             addProductLine(p) {
@@ -3535,7 +3572,8 @@
                     productDisplayName: p.display_name || p.name || '',
                     quantity: 1,
                     platformPrice: price,
-                    actualUnitPrice: price
+                    actualUnitPrice: price,
+                    discountAmount: '',
                 });
             },
             removeLine(idx) {
@@ -3546,7 +3584,7 @@
                 const today = new Date();
                 this.currentOrderId = null;
                 this.orderStatus = 'PENDING';
-                this.salesChannel = 'Other';
+                this.salesChannel = 'WhatsApp';
                 this.transactionDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
                 this.clearCustomer();
                 this.remarks = '';
@@ -3556,11 +3594,24 @@
             },
             async submitOrder() {
                 if (this.lines.length === 0 || this.isSubmitting) return;
+                if (!(this.customerName || '').trim()) {
+                    alert('Customer name is required.');
+                    return;
+                }
+                if (!(this.customerPhone || '').trim()) {
+                    alert('Customer phone is required.');
+                    return;
+                }
+                if (!(this.shippingAddress || '').trim()) {
+                    alert('Shipping address is required.');
+                    return;
+                }
                 this.isSubmitting = true;
                 const payload = {
                     sales_channel: this.salesChannel,
                     transaction_date: this.transactionDate || null,
                     customer_id: this.selectedCustomer ? this.selectedCustomer.id : null,
+                    company_name: this.companyName,
                     customer_name: this.customerName,
                     customer_phone: this.customerPhone,
                     shipping_address: this.shippingAddress,
@@ -3570,6 +3621,7 @@
                         quantity: line.quantity,
                         platform_price: line.platformPrice,
                         actual_unit_price: line.actualUnitPrice,
+                        discount_amount: this.lineDiscount(line),
                     }))
                 };
 

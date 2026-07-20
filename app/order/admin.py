@@ -96,7 +96,7 @@ class OrderItemInline(admin.TabularInline):
     extra = 0
     # Make the product name clickable and calculate row totals
     readonly_fields = ('product_link', 'row_total', 'profit')
-    fields = ('product_link', 'quantity', 'selling_price', 'landed_cost', 'row_total', 'profit')
+    fields = ('product_link', 'quantity', 'selling_price', 'discount_amount', 'landed_cost', 'row_total', 'profit')
     can_delete = False
 
     def product_link(self, obj):
@@ -108,7 +108,9 @@ class OrderItemInline(admin.TabularInline):
     product_link.short_description = "Product"
 
     def row_total(self, obj):
-        """Calculates total for this line item."""
+        """Calculates net total for this line item (after discount)."""
+        if obj.pk:
+            return f"{obj.total_price:.2f}"
         if obj.selling_price and obj.quantity:
             return f"{(obj.selling_price * obj.quantity):.2f}"
         return "0.00"

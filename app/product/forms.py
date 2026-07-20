@@ -41,6 +41,12 @@ class ProductForm(forms.ModelForm):
         widget=forms.HiddenInput()
     )
 
+    def clean_sku(self):
+        sku = self.cleaned_data.get('sku')
+        if isinstance(sku, str):
+            sku = sku.strip() or None
+        return sku
+
     class Meta:
         model = Product
         fields = [

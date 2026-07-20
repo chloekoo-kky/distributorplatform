@@ -754,7 +754,45 @@ def export_products_xlsx(request):
         messages.error(request, f"An error occurred during export: {e}")
         return redirect(reverse('core:manage_dashboard') + '#products')
 
+def _save_product_content_sections(product, sections_json):
+    """Replace product content sections from JSON payload (shared by create/edit)."""
+    if not sections_json:
+        return
+    sections_data = json.loads(sections_json)
+    product.content_sections.all().delete()
+    new_sections = []
+    for idx, section in enumerate(sections_data):
+        title = section.get('title', '').strip()
+        content = section.get('content', '').strip()
+        if title and content:
+            new_sections.append(ProductContentSection(
+                product=product, title=title, content=content, order=idx
+            ))
+    ProductContentSection.objects.bulk_create(new_sections)
+
+
 # --- START NEW VIEW ---
+@staff_required
+def manage_product_create(request):
+    """
+    Handles creating a new product via AJAX (Modal).
+    """
+    if request.method != 'POST' or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    form = ProductForm(request.POST, request.FILES)
+    if form.is_valid():
+        try:
+            with transaction.atomic():
+                saved_product = form.save()
+                _save_product_content_sections(saved_product, request.POST.get('sections_data'))
+            return JsonResponse({'success': True, 'id': saved_product.id})
+        except Exception as e:
+            logger.error(f"Error creating product: {e}", exc_info=True)
+            return JsonResponse({'success': False, 'errors': {'__all__': [str(e)]}}, status=500)
+    return JsonResponse({'success': False, 'errors': json.loads(form.errors.as_json())}, status=400)
+
+
 @staff_required
 def manage_product_edit(request, product_id):
     """
@@ -773,19 +811,7 @@ def manage_product_edit(request, product_id):
             try:
                 with transaction.atomic():
                     saved_product = form.save()
-                    sections_json = request.POST.get('sections_data')
-                    if sections_json:
-                        sections_data = json.loads(sections_json)
-                        saved_product.content_sections.all().delete()
-                        new_sections = []
-                        for idx, section in enumerate(sections_data):
-                            title = section.get('title', '').strip()
-                            content = section.get('content', '').strip()
-                            if title and content:
-                                new_sections.append(ProductContentSection(
-                                    product=saved_product, title=title, content=content, order=idx
-                                ))
-                        ProductContentSection.objects.bulk_create(new_sections)
+                    _save_product_content_sections(saved_product, request.POST.get('sections_data'))
                 return JsonResponse({'success': True})
             except Exception as e:
                 logger.error(f"Error saving product {product.sku}: {e}", exc_info=True)

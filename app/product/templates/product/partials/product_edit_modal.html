@@ -15,7 +15,8 @@
 
         <div class="sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
             <h3 class="min-w-0 flex-1 text-lg sm:text-2xl font-bold leading-snug text-gray-800">
-                <span class="block truncate">Edit Product: <span x-text="productEditData.name" class="text-indigo-600"></span></span>
+                <span class="block truncate" x-show="!productEditData.id">Create New Product</span>
+                <span class="block truncate" x-show="productEditData.id">Edit Product: <span x-text="productEditData.name" class="text-indigo-600"></span></span>
             </h3>
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
                 <button type="button"
@@ -27,8 +28,8 @@
                         form="product-edit-form"
                         :disabled="productEditIsSubmitting || productEditIsLoading"
                         class="px-3 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span x-show="!productEditIsSubmitting">Save Product</span>
-                    <span x-show="productEditIsSubmitting">Saving...</span>
+                    <span x-show="!productEditIsSubmitting" x-text="productEditData.id ? 'Save Product' : 'Create Product'"></span>
+                    <span x-show="productEditIsSubmitting" x-text="productEditData.id ? 'Saving...' : 'Creating...'"></span>
                 </button>
                 <button type="button"
                         @click="showProductEditModal = false"
@@ -68,6 +69,12 @@
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <template x-if="productEditErrors.name"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.name.join(', ')"></p></template>
                     </div>
+                    <div>
+                        <label for="id_edit_product_sku" class="font-semibold text-gray-700 block mb-1">SKU</label>
+                        <input type="text" name="sku" id="id_edit_product_sku" x-model="productEditData.sku"
+                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <template x-if="productEditErrors.sku"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.sku.join(', ')"></p></template>
+                    </div>
                     <div class="md:col-span-2">
                         <label for="id_edit_product_alias" class="font-semibold text-gray-700 block mb-1">Product alias name</label>
                         <input type="text" name="alias_name" id="id_edit_product_alias" x-model="productEditData.alias_name"
@@ -75,12 +82,6 @@
                                class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <p class="text-xs text-gray-500 mt-1">If set, this label is used when copying order summaries and in manual order entry. Searched together with the full product name.</p>
                         <template x-if="productEditErrors.alias_name"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.alias_name.join(', ')"></p></template>
-                    </div>
-                    <div>
-                        <label for="id_edit_product_sku" class="font-semibold text-gray-700 block mb-1">SKU</label>
-                        <input type="text" name="sku" id="id_edit_product_sku" x-model="productEditData.sku"
-                               class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <template x-if="productEditErrors.sku"><p class="text-sm text-red-600 mt-1" x-text="productEditErrors.sku.join(', ')"></p></template>
                     </div>
                     <div class="md:col-span-2">
                         <label for="id_edit_product_origin" class="font-semibold text-gray-700 block mb-1">Country of Origin</label>

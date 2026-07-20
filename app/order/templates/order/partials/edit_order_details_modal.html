@@ -132,8 +132,9 @@
                                     <tr>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-16">Qty</th>
-                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Unit (RM)</th>
-                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Platform (RM)</th>
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Unit (RM)</th>
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Platform</th>
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-16">Disc.</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Subtotal</th>
                                         <th class="px-3 py-2 w-10"></th>
                                     </tr>
@@ -151,11 +152,16 @@
                                             </td>
                                             <td class="px-3 py-2 text-right">
                                                 <input type="number" step="0.01" min="0" x-model="line.unit_price"
-                                                       class="w-24 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                                       class="w-20 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
                                             </td>
                                             <td class="px-3 py-2 text-right">
                                                 <input type="number" step="0.01" min="0" x-model="line.platform_price" placeholder="—"
-                                                       class="w-24 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                                       class="w-20 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                            </td>
+                                            <td class="px-3 py-2 text-right">
+                                                <input type="number" step="0.01" min="0" x-model="line.discount_amount" placeholder="0"
+                                                       class="w-16 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                                       title="Flat RM discount for this line">
                                             </td>
                                             <td class="px-3 py-2 text-right tabular-nums text-gray-700" x-text="editDetailsLineSubtotal(line)"></td>
                                             <td class="px-3 py-2 text-right">

@@ -14,6 +14,12 @@ class Customer(models.Model):
     salesteam can pick an existing customer or create a new one when entering orders.
     """
     name = models.CharField(max_length=255)
+    company_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text='Bill-to / trading company name (searchable in manual order entry).',
+    )
     phone = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     address = models.TextField(blank=True, null=True)
@@ -134,7 +140,6 @@ class Order(models.Model):
         SHOPEE = 'Shopee', 'Shopee'
         LAZADA = 'Lazada', 'Lazada'
         Website = 'Website', 'Website'
-        OTHER = 'Other', 'Other'
 
     # --- CHANGED: Use CharField with custom generator for ID ---
     id = models.CharField(
@@ -165,7 +170,7 @@ class Order(models.Model):
     sales_channel = models.CharField(
         max_length=50,
         choices=SalesChannel.choices,
-        default=SalesChannel.OTHER,
+        default=SalesChannel.WHATSAPP,
         blank=True
     )
 
@@ -268,12 +273,18 @@ class OrderItem(models.Model):
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text="Net amount received after platform fees; used for order total."
     )
+    discount_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Flat RM discount for this line (subtracted from qty × unit price).",
+    )
 
     # --- Calculated Profit ---
     profit = models.DecimalField(
         max_digits=10, decimal_places=2,
         editable=False,
-        help_text="(effective_unit_price - landed_cost) * quantity"
+        help_text="(effective_unit_price - landed_cost) * quantity - discount_amount"
     )
 
     @property
@@ -284,13 +295,32 @@ class OrderItem(models.Model):
         return self.selling_price
 
     @property
-    def total_price(self):
-        """Order total for this line: based on effective_unit_price (actual received for manual orders)."""
+    def line_gross(self):
+        """Pre-discount line amount: effective unit price × quantity."""
         return self.effective_unit_price * self.quantity
+
+    @property
+    def effective_discount(self):
+        """Discount capped between 0 and line gross."""
+        disc = self.discount_amount if self.discount_amount is not None else Decimal('0.00')
+        if disc < 0:
+            disc = Decimal('0.00')
+        gross = self.line_gross
+        if disc > gross:
+            return gross
+        return disc
+
+    @property
+    def total_price(self):
+        """Net line total after discount."""
+        return self.line_gross - self.effective_discount
 
     def save(self, *args, **kwargs):
         unit = self.effective_unit_price
-        self.profit = (unit - self.landed_cost) * self.quantity
+        disc = self.effective_discount
+        if self.discount_amount is None or self.discount_amount != disc:
+            self.discount_amount = disc
+        self.profit = (unit - self.landed_cost) * self.quantity - disc
         super().save(*args, **kwargs)
 
     def __str__(self):

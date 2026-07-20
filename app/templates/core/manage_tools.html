@@ -18,9 +18,11 @@
          @resize.window="if (window.innerWidth >= 768) mobileNavOpen = false"
          {# Event Listeners attached to window/root #}
          @open-product-edit-modal.window="openProductEditModal($event.detail)"
+         @open-product-create-modal.window="openProductCreateModal()"
          @open-upload-quotation-modal.window="uploadQuotationModalOpen = true"
          @open-upload-invoice-modal.window="openInvoiceImportModal()"
          @open-upload-supplier-price-matrix-modal.window="openSupplierPriceMatrixModal()"
+         @open-create-supplier-price-matrix-modal.window="openCreateSupplierPriceMatrixModal()"
          @open-create-quotation-modal.window="createQuotationModalOpen = true"
          @open-upload-batch-modal.window="uploadBatchModalOpen = true"
          @open-pricing-modal.window="openPricingModal($event.detail)"

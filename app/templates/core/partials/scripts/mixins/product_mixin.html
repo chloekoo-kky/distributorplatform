@@ -15,10 +15,11 @@
             productEditIsLoading: false,
             productEditIsSubmitting: false,
             productEditData: {
-                id: null, name: '', alias_name: '', sku: '', description: '', origin_country: '',
-                members_only: false, is_featured: false, is_best_seller: false, // <--- ADDED
+                id: null, name: '', alias_name: '', sku: '', description_title: 'Product Description',
+                description: '', origin_country: '', sections: [],
+                members_only: false, is_featured: false, is_best_seller: false,
                 categories: [], suppliers: [], featured_image: null,
-                gallery_images: [], update_url: '', selectedImageUrl: ''
+                gallery_images: [], gallery_images_detail: [], update_url: '', selectedImageUrl: ''
             },
             productEditErrors: {},
 
@@ -398,7 +399,36 @@
                 }
             },
 
-            // --- Product Edit Methods ---
+            // --- Product Edit / Create Methods ---
+            openProductCreateModal() {
+                this.productEditIsLoading = true;
+                this.showProductEditModal = true;
+                this.productEditErrors = {};
+                this.productEditData = {
+                    id: null,
+                    name: '',
+                    alias_name: '',
+                    sku: '',
+                    description_title: 'Product Description',
+                    description: '',
+                    origin_country: '',
+                    sections: [],
+                    members_only: false,
+                    is_featured: false,
+                    is_best_seller: false,
+                    categories: [],
+                    suppliers: [],
+                    featured_image: null,
+                    gallery_images: [],
+                    gallery_images_detail: [],
+                    update_url: '{% url "product:manage_product_create" %}',
+                    selectedImageUrl: ''
+                };
+                this.$nextTick(() => {
+                    this.productEditIsLoading = false;
+                });
+            },
+
             async openProductEditModal(productId) {
                 this.productEditIsLoading = true;
                 this.showProductEditModal = true;
@@ -423,6 +453,7 @@
             async submitProductEdit() {
                 this.productEditIsSubmitting = true;
                 this.productEditErrors = {};
+                const isCreate = !this.productEditData.id;
                 const formData = new FormData();
                 formData.append('name', this.productEditData.name);
                 formData.append('alias_name', this.productEditData.alias_name || '');
@@ -443,11 +474,9 @@
                     formData.append('is_featured', 'on');
                 }
 
-                // --- NEW: Handle Best Seller ---
                 if (this.productEditData.is_best_seller) {
                     formData.append('is_best_seller', 'on');
                 }
-                // ------------------------------
 
                 if (this.productEditData.featured_image) {
                     formData.append('featured_image', this.productEditData.featured_image);
@@ -455,9 +484,9 @@
                     formData.append('featured_image', '');
                 }
 
-                this.productEditData.categories.forEach(id => formData.append('categories', id));
-                this.productEditData.suppliers.forEach(id => formData.append('suppliers', id));
-                this.productEditData.gallery_images.forEach(id => formData.append('gallery_images', id));
+                (this.productEditData.categories || []).forEach(id => formData.append('categories', id));
+                (this.productEditData.suppliers || []).forEach(id => formData.append('suppliers', id));
+                (this.productEditData.gallery_images || []).forEach(id => formData.append('gallery_images', id));
 
                 try {
                     const response = await fetch(this.productEditData.update_url, {
@@ -471,7 +500,9 @@
                     const data = await response.json();
                     if (response.ok && data.success) {
                         this.showProductEditModal = false;
-                        Alpine.store('globals').showToast('Product updated successfully!');
+                        Alpine.store('globals').showToast(
+                            isCreate ? 'Product created successfully!' : 'Product updated successfully!'
+                        );
                         window.dispatchEvent(new CustomEvent('refresh-data', { detail: { tab: 'products' } }));
                     } else {
                         this.productEditErrors = data.errors || { '__all__': ['An unknown error occurred.'] };
