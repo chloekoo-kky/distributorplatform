@@ -1750,9 +1750,21 @@ def _commission_paid_for_agent(agent_user):
 
 
 def _bulk_create_finance_entries(model_cls, prefix, entries):
+    """Insert finance rows then assign stable unique transaction_ids.
+
+    ``transaction_id`` is unique and defaults to ''. PostgreSQL rejects multiple
+    empty values in one INSERT, so use temporary unique ids for the insert, then
+    replace them with the stable ``{prefix}-{pk}`` form once PKs exist.
+    """
+    if not entries:
+        return []
+    import uuid
+    for entry in entries:
+        if not (entry.transaction_id or '').strip():
+            entry.transaction_id = f'T{uuid.uuid4().hex[:15]}'
     created = model_cls.objects.bulk_create(entries)
     for entry in created:
-        if entry.pk and not entry.transaction_id:
+        if entry.pk:
             entry.transaction_id = finance_entry_transaction_id(prefix, entry.pk)
     model_cls.objects.bulk_update(created, ['transaction_id'])
     return created
