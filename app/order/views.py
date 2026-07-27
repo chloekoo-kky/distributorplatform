@@ -2043,6 +2043,7 @@ def api_revenue_breakdown(request):
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
     search_query = request.GET.get('search', '').strip()
+    agent_filter = request.GET.get('agent', '').strip()
 
     try:
         month = int(request.GET.get('month', 0))
@@ -2066,7 +2067,7 @@ def api_revenue_breakdown(request):
         except ValueError:
             end_date = None
 
-    # Same scoping rules as the Total Revenue stat (date range > month/year, plus search).
+    # Same scoping rules as the Total Revenue stat (date range > month/year, plus search/agent).
     stats_qs = Order.objects.all()
     if start_date:
         stats_qs = stats_qs.filter(
@@ -2086,6 +2087,11 @@ def api_revenue_breakdown(request):
             |
             Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
         )
+    if agent_filter:
+        try:
+            stats_qs = stats_qs.filter(agent_id=int(agent_filter))
+        except (ValueError, TypeError):
+            pass
     if search_query:
         stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
 
@@ -2133,6 +2139,7 @@ def api_orders_breakdown(request):
     (same basis as the Total Revenue stat).
     """
     search_query = request.GET.get('search', '').strip()
+    agent_filter = request.GET.get('agent', '').strip()
 
     try:
         month = int(request.GET.get('month', 0))
@@ -2156,7 +2163,7 @@ def api_orders_breakdown(request):
         except ValueError:
             end_date = None
 
-    # Same scoping rules as the Total Orders stat (date range > month/year, plus search).
+    # Same scoping rules as the Total Orders stat (date range > month/year, plus search/agent).
     stats_qs = Order.objects.all()
     if start_date:
         stats_qs = stats_qs.filter(
@@ -2176,6 +2183,11 @@ def api_orders_breakdown(request):
             |
             Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
         )
+    if agent_filter:
+        try:
+            stats_qs = stats_qs.filter(agent_id=int(agent_filter))
+        except (ValueError, TypeError):
+            pass
     if search_query:
         stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
 
@@ -2761,6 +2773,7 @@ def api_cash_received_transactions(request):
             'type': type_labels.get(entry.payment_type, entry.get_payment_type_display()),
             'type_code': entry.payment_type,
             'received_from': _title_case_received_from(entry.received_from or ''),
+            'collected_by_id': entry.collected_by_id,
             'collected_by': entry.collected_by.username if entry.collected_by_id else '',
             'amount': float(entry.amount),
         })
@@ -2798,8 +2811,74 @@ def export_cash_received_transactions(request):
 
 @staff_member_required
 @require_http_methods(['POST'])
+def api_cash_bank_receipt_update(request, entry_id):
+    """Update an existing cash/bank/loan receipt entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(CashBankReceiptEntry, pk=entry_id)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    ptype = (data.get('payment_type') or '').strip().upper()
+    if ptype not in ('CASH', 'BANK', 'LOAN'):
+        return JsonResponse({'success': False, 'error': 'payment_type must be CASH, BANK, or LOAN'}, status=400)
+
+    received_from = _title_case_received_from(data.get('received_from') or '')
+    if not received_from:
+        return JsonResponse({'success': False, 'error': 'received_from is required'}, status=400)
+
+    date_str = (data.get('transaction_date') or '').strip()
+    try:
+        tx_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'transaction_date must be YYYY-MM-DD'}, status=400)
+
+    raw_amount = data.get('amount')
+    try:
+        amount = Decimal(str(raw_amount))
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount'}, status=400)
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
+
+    collected_by = _resolve_order_agent_user(
+        agent_id=data.get('collected_by_id'),
+        agent_username=data.get('collected_by'),
+    )
+    if not collected_by:
+        return JsonResponse({'success': False, 'error': 'collected_by agent is required'}, status=400)
+
+    entry.payment_type = ptype
+    entry.received_from = received_from
+    entry.collected_by = collected_by
+    entry.transaction_date = tx_date
+    entry.amount = amount
+    entry.save()
+
+    return JsonResponse({
+        'success': True,
+        'entry': {
+            'id': entry.pk,
+            'transaction_id': entry.transaction_id,
+            'payment_type': entry.payment_type,
+            'received_from': entry.received_from,
+            'collected_by_id': entry.collected_by_id,
+            'collected_by': entry.collected_by.username if entry.collected_by_id else '',
+            'transaction_date': entry.transaction_date.isoformat(),
+            'amount': str(entry.amount),
+        },
+        'financial': _order_financial_summary(),
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
 def api_cash_bank_receipt_delete(request, entry_id):
-    """Delete a cash/bank receipt entry. Superuser only."""
+    """Delete a cash/bank/loan receipt entry. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
 
@@ -2807,12 +2886,11 @@ def api_cash_bank_receipt_delete(request, entry_id):
     entry.delete()
 
     total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
-    payload = {
+    return JsonResponse({
         'success': True,
         'total': float(total),
         'financial': _order_financial_summary(),
-    }
-    return JsonResponse(payload)
+    })
 
 
 @staff_member_required
@@ -2982,6 +3060,24 @@ def api_agent_commission_payment_update(request, entry_id):
 
 @staff_member_required
 @require_http_methods(['POST'])
+def api_agent_commission_payment_delete(request, entry_id):
+    """Delete an existing commission payment entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(AgentCommissionPaymentEntry, pk=entry_id)
+    entry.delete()
+
+    total = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return JsonResponse({
+        'success': True,
+        'total': float(total),
+        'financial': _order_financial_summary(),
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
 def api_revenue_adjustment_create(request):
     """
     Record a standalone revenue adjustment line for order exports.
@@ -3038,6 +3134,81 @@ def api_revenue_adjustment_create(request):
             'transaction_date': entry.transaction_date.isoformat(),
             'amount': str(entry.amount),
         },
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+def api_revenue_adjustment_update(request, entry_id):
+    """Update an existing revenue adjustment entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(RevenueAdjustmentEntry, pk=entry_id)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+
+    adj_type = (data.get('adjustment_type') or '').strip().upper()
+    if adj_type not in ('COMMISSION_RELEASED', 'LOAN_INTEREST'):
+        return JsonResponse(
+            {'success': False, 'error': 'adjustment_type must be COMMISSION_RELEASED or LOAN_INTEREST'},
+            status=400,
+        )
+
+    reference = (data.get('reference') or '').strip()
+    if not reference:
+        return JsonResponse({'success': False, 'error': 'reference is required'}, status=400)
+
+    date_str = (data.get('transaction_date') or '').strip()
+    try:
+        tx_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'transaction_date must be YYYY-MM-DD'}, status=400)
+
+    raw_amount = data.get('amount')
+    try:
+        amount = Decimal(str(raw_amount))
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Invalid amount'}, status=400)
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
+
+    entry.adjustment_type = adj_type
+    entry.reference = reference
+    entry.transaction_date = tx_date
+    entry.amount = amount
+    entry.save()
+
+    return JsonResponse({
+        'success': True,
+        'entry': {
+            'id': entry.pk,
+            'transaction_id': entry.transaction_id,
+            'adjustment_type': entry.adjustment_type,
+            'reference': entry.reference,
+            'transaction_date': entry.transaction_date.isoformat(),
+            'amount': str(entry.amount),
+        },
+    })
+
+
+@staff_member_required
+@require_http_methods(['POST'])
+def api_revenue_adjustment_delete(request, entry_id):
+    """Delete an existing revenue adjustment entry. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
+
+    entry = get_object_or_404(RevenueAdjustmentEntry, pk=entry_id)
+    entry.delete()
+
+    total = RevenueAdjustmentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return JsonResponse({
+        'success': True,
+        'total': float(total),
     })
 
 
