@@ -18,6 +18,11 @@ RUN adduser \
     django-user
 WORKDIR /app
 
+# System deps: postgresql-client for admin full backup/restore (pg_dump / pg_restore)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create virtualenv and install dependencies
 RUN python -m venv /py
 # 1. Install dependencies BEFORE copying the application code to optimize caching

@@ -1,0 +1,54 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% block content %}
+{% if user.is_superuser %}
+  <div class="module" id="site-backup-module" style="margin-bottom: 20px;">
+    <table>
+      <caption>
+        <a href="#" class="section" title="{% translate 'Site backup' %}">{% translate 'Site backup' %}</a>
+      </caption>
+      <tr>
+        <th scope="row" style="width: 100%;">
+          <form method="post" action="{% url 'admin:backup_create' %}" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="button" style="padding: 8px 12px;">
+              {% translate 'Create & download full backup' %}
+            </button>
+          </form>
+          <p class="help" style="margin: 8px 0 0; color: var(--body-quiet-color, #666);">
+            {% translate 'Downloads a zip of the PostgreSQL database plus all media files. Use this on live, then restore locally.' %}
+          </p>
+        </th>
+      </tr>
+      {% if debug %}
+      <tr>
+        <th scope="row">
+          <form method="post"
+                action="{% url 'admin:backup_restore' %}"
+                enctype="multipart/form-data"
+                onsubmit="return confirm('This will REPLACE the local database and media with the uploaded backup. Continue?');"
+                style="margin-top: 4px;">
+            {% csrf_token %}
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+              <input type="file" name="backup_file" accept=".zip,application/zip" required>
+              <label style="display: inline-flex; align-items: center; gap: 6px;">
+                <input type="checkbox" name="confirm" required>
+                {% translate 'I understand this replaces local DB + media' %}
+              </label>
+              <button type="submit" class="button" style="padding: 8px 12px; background: #ba2121;">
+                {% translate 'Upload & restore backup' %}
+              </button>
+            </div>
+          </form>
+          <p class="help" style="margin: 8px 0 0; color: var(--body-quiet-color, #666);">
+            {% translate 'Only available when DJANGO_DEBUG=True. Blocked on live so production cannot wipe itself from the UI.' %}
+          </p>
+        </th>
+      </tr>
+      {% endif %}
+    </table>
+  </div>
+{% endif %}
+{{ block.super }}
+{% endblock %}

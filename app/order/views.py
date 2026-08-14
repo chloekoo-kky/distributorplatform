@@ -2,7 +2,8 @@
 import csv
 import io
 from openpyxl import Workbook
-from openpyxl.styles import PatternFill, Font
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils.datetime import to_excel
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404
 from django.contrib.auth.decorators import login_required
@@ -19,7 +20,7 @@ from django.core.paginator import Paginator
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q, Prefetch, Max, Sum, F, DecimalField, Count
 from django.db.models.functions import Coalesce, TruncDate
-from datetime import date, datetime
+from datetime import date, datetime, time
 import json
 import hashlib
 import urllib.parse
@@ -160,6 +161,7 @@ def _cash_bank_receipt_export_rows(receipts_qs):
         amt = rec.amount
         rows.append({
             'month_key': month_key,
+            'sort_date': d,
             'values': [
                 rec.transaction_id or finance_entry_transaction_id('CB', rec.pk),
                 d,
@@ -192,6 +194,7 @@ def _revenue_adjustment_export_rows(adjustments_qs):
         amt = adj.amount
         rows.append({
             'month_key': month_key,
+            'sort_date': d,
             'values': [
                 adj.transaction_id or finance_entry_transaction_id('RA', adj.pk),
                 d,
@@ -219,6 +222,7 @@ def _agent_commission_payment_export_rows(payments_qs):
         amt = pay.amount
         rows.append({
             'month_key': month_key,
+            'sort_date': d,
             'values': [
                 pay.transaction_id or finance_entry_transaction_id('CP', pay.pk),
                 d,
@@ -247,24 +251,35 @@ def _export_row_line_revenue_sign_bucket(row):
     return 0
 
 
-def _export_row_sort_date(row):
-    """Chronological date for export sorting (oldest → newest)."""
-    try:
-        value = row['values'][ORDER_EXPORT_DATE_IDX]
-    except (KeyError, IndexError, TypeError):
-        return date.min
+def _coerce_export_date(value):
+    """Normalize export date values to datetime.date (or None)."""
+    if value is None or value == '':
+        return None
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
         return value
-    if isinstance(value, str) and value.strip():
+    if isinstance(value, str):
         s = value.strip()
+        if not s:
+            return None
         for fmt in ('%Y-%m-%d', '%d/%m/%Y'):
             try:
                 return datetime.strptime(s[:10], fmt).date()
             except ValueError:
                 continue
-    return date.min
+    return None
+
+
+def _export_row_sort_date(row):
+    """Chronological date for export sorting (oldest → newest)."""
+    coerced = _coerce_export_date(row.get('sort_date'))
+    if coerced is not None:
+        return coerced
+    try:
+        return _coerce_export_date(row['values'][ORDER_EXPORT_DATE_IDX]) or date.min
+    except (KeyError, IndexError, TypeError):
+        return date.min
 
 
 def _export_row_sort_key(row):
@@ -301,6 +316,13 @@ def _excel_response_for_order_rows(filename, rows):
         fill = MONTH_FILL_BLUE if use_blue else MONTH_FILL_WHITE
 
         values = list(row['values'])
+        excel_date = _coerce_export_date(row.get('sort_date'))
+        if excel_date is None and len(values) > ORDER_EXPORT_DATE_IDX:
+            excel_date = _coerce_export_date(values[ORDER_EXPORT_DATE_IDX])
+        # Avoid writing date strings via append; set a real Excel date on the cell below.
+        if len(values) > ORDER_EXPORT_DATE_IDX:
+            values[ORDER_EXPORT_DATE_IDX] = None
+
         line_rev_raw = values[ORDER_EXPORT_LINE_REVENUE_IDX]
         profit_raw = values[ORDER_EXPORT_PROFIT_IDX]
         if line_rev_raw != '' and line_rev_raw is not None:
@@ -315,18 +337,25 @@ def _excel_response_for_order_rows(filename, rows):
             ws.cell(row=current_row, column=col).fill = fill
 
         date_cell = ws.cell(row=current_row, column=ORDER_EXPORT_DATE_COL)
-        if isinstance(date_cell.value, datetime):
-            date_cell.value = date_cell.value.date()
-        if isinstance(date_cell.value, date):
+        if excel_date is not None:
+            # Write Excel date serial (float) so Excel always treats column B as a real date,
+            # not a left-aligned text string like "dd/mm/yyyy".
+            date_cell.value = float(to_excel(datetime.combine(excel_date, time.min)))
             date_cell.number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
+            date_cell.alignment = Alignment(horizontal='right')
 
         prev_month = month_key
+
+    ws.column_dimensions['B'].number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
 
     # Auto-fit column widths based on max content length (with a small cap).
     for col in ws.columns:
         max_len = 0
         col_letter = col[0].column_letter
         for cell in col:
+            if col_letter == 'B' and cell.value is not None and cell.number_format == ORDER_EXPORT_DATE_NUMBER_FORMAT:
+                max_len = max(max_len, 10)
+                continue
             value = '' if cell.value is None else str(cell.value)
             if len(value) > max_len:
                 max_len = len(value)
@@ -3388,6 +3417,7 @@ def export_selected_orders(request):
             line_revenue = actual_received * item.quantity
             rows.append({
                 'month_key': month_key,
+                'sort_date': order_date_obj,
                 'values': [
                     order.id,
                     order_date_obj or '',
@@ -3512,6 +3542,7 @@ def export_orders_range(request):
             line_revenue = actual_received * item.quantity
             rows.append({
                 'month_key': month_key,
+                'sort_date': order_date_obj,
                 'values': [
                     order.id,
                     order_date_obj or '',
@@ -3904,6 +3935,7 @@ def export_order_statement(request):
                 line_revenue = actual_received * item.quantity
                 rows.append({
                     'month_key': month_key,
+                    'sort_date': order_date,
                     'values': [
                         order.id,
                         order_date or '',

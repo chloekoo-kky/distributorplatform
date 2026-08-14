@@ -1,10 +1,46 @@
 # distributorplatform/app/core/admin.py
 from django.contrib import admin
 from django import forms
+from django.conf import settings
+from django.urls import path
 from import_export.admin import ImportExportModelAdmin
 
 from .models import SiteSetting, ThemeSetting, ProductFeature, Banner, PaymentSetting, PaymentOption
 from .resources import SiteSettingResource
+from . import backup_views
+
+# Admin index: Create & download backup (all envs); Upload & restore only when DEBUG.
+if not getattr(admin.site, '_site_backup_patched', False):
+    admin.site.index_template = 'admin/backup_index.html'
+
+    _original_get_urls = admin.site.get_urls
+
+    def _admin_get_urls():
+        custom = [
+            path(
+                'backup/create/',
+                admin.site.admin_view(backup_views.backup_create_view),
+                name='backup_create',
+            ),
+            path(
+                'backup/restore/',
+                admin.site.admin_view(backup_views.backup_restore_view),
+                name='backup_restore',
+            ),
+        ]
+        return custom + _original_get_urls()
+
+    admin.site.get_urls = _admin_get_urls
+
+    _original_each_context = admin.site.each_context
+
+    def _admin_each_context(request):
+        context = _original_each_context(request)
+        context['debug'] = settings.DEBUG
+        return context
+
+    admin.site.each_context = _admin_each_context
+    admin.site._site_backup_patched = True
 
 # --- 1. Form for Color Settings ---
 class ThemeSettingForm(forms.ModelForm):
