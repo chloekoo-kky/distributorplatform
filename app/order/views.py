@@ -19,7 +19,7 @@ from django.core.paginator import Paginator
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q, Prefetch, Max, Sum, F, DecimalField, Count
 from django.db.models.functions import Coalesce, TruncDate
-from datetime import datetime
+from datetime import date, datetime
 import json
 import hashlib
 import urllib.parse
@@ -59,6 +59,9 @@ ORDER_EXPORT_HEADERS = [
     'Quantity', 'Line Revenue', 'Profit',
     'Accumulated Line Revenue', 'Accumulated Profit',
 ]
+ORDER_EXPORT_DATE_IDX = 1
+ORDER_EXPORT_DATE_COL = 2  # 1-indexed Excel column
+ORDER_EXPORT_DATE_NUMBER_FORMAT = 'DD/MM/YYYY'
 ORDER_EXPORT_LINE_REVENUE_IDX = 9
 ORDER_EXPORT_PROFIT_IDX = 10
 MONTH_FILL_BLUE = PatternFill(fill_type='solid', fgColor='E6F2FF')
@@ -159,7 +162,7 @@ def _cash_bank_receipt_export_rows(receipts_qs):
             'month_key': month_key,
             'values': [
                 rec.transaction_id or finance_entry_transaction_id('CB', rec.pk),
-                format_display_date(d),
+                d,
                 salesteam,
                 _title_case_received_from(rec.received_from),
                 product_label,
@@ -191,7 +194,7 @@ def _revenue_adjustment_export_rows(adjustments_qs):
             'month_key': month_key,
             'values': [
                 adj.transaction_id or finance_entry_transaction_id('RA', adj.pk),
-                format_display_date(d),
+                d,
                 salesteam,
                 adj.reference.strip(),
                 product_label,
@@ -218,7 +221,7 @@ def _agent_commission_payment_export_rows(payments_qs):
             'month_key': month_key,
             'values': [
                 pay.transaction_id or finance_entry_transaction_id('CP', pay.pk),
-                format_display_date(d),
+                d,
                 salesteam,
                 pay.paid_to.strip(),
                 'Commission paid',
@@ -244,9 +247,29 @@ def _export_row_line_revenue_sign_bucket(row):
     return 0
 
 
+def _export_row_sort_date(row):
+    """Chronological date for export sorting (oldest → newest)."""
+    try:
+        value = row['values'][ORDER_EXPORT_DATE_IDX]
+    except (KeyError, IndexError, TypeError):
+        return date.min
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        s = value.strip()
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y'):
+            try:
+                return datetime.strptime(s[:10], fmt).date()
+            except ValueError:
+                continue
+    return date.min
+
+
 def _export_row_sort_key(row):
     v = row['values']
-    return (v[1] or '', _export_row_line_revenue_sign_bucket(row), str(v[0]))
+    return (_export_row_sort_date(row), _export_row_line_revenue_sign_bucket(row), str(v[0]))
 
 
 def _merge_sorted_export_rows(*row_lists):
@@ -290,6 +313,12 @@ def _excel_response_for_order_rows(filename, rows):
         current_row = ws.max_row
         for col in range(1, len(ORDER_EXPORT_HEADERS) + 1):
             ws.cell(row=current_row, column=col).fill = fill
+
+        date_cell = ws.cell(row=current_row, column=ORDER_EXPORT_DATE_COL)
+        if isinstance(date_cell.value, datetime):
+            date_cell.value = date_cell.value.date()
+        if isinstance(date_cell.value, date):
+            date_cell.number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
 
         prev_month = month_key
 
@@ -3349,7 +3378,6 @@ def export_selected_orders(request):
             or order.agent.username
         )
         order_date_obj = _logical_order_date(order)
-        order_date = format_display_date(order_date_obj) if order_date_obj else ''
         month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
@@ -3362,7 +3390,7 @@ def export_selected_orders(request):
                 'month_key': month_key,
                 'values': [
                     order.id,
-                    order_date,
+                    order_date_obj or '',
                     salesteam_username,
                     customer_name or '',
                     product.name or '',
@@ -3472,7 +3500,6 @@ def export_orders_range(request):
             or order.agent.username
         )
         order_date_obj = _logical_order_date(order)
-        order_date_str = format_display_date(order_date_obj) if order_date_obj else ''
         month_key = order_date_obj.strftime('%Y-%m') if order_date_obj else ''
 
         for item in order.items.all():
@@ -3487,7 +3514,7 @@ def export_orders_range(request):
                 'month_key': month_key,
                 'values': [
                     order.id,
-                    order_date_str,
+                    order_date_obj or '',
                     salesteam_username,
                     customer_name or '',
                     product.name or '',
@@ -3865,7 +3892,6 @@ def export_order_statement(request):
                 or order.agent.username
             )
             order_date = order.transaction_date or (order.created_at.date() if order.created_at else None)
-            order_date_str = format_display_date(order_date) if hasattr(order_date, 'strftime') else ''
             month_key = order_date.strftime('%Y-%m') if hasattr(order_date, 'strftime') else ''
 
             for item in items:
@@ -3880,7 +3906,7 @@ def export_order_statement(request):
                     'month_key': month_key,
                     'values': [
                         order.id,
-                        order_date_str,
+                        order_date or '',
                         salesteam_username,
                         customer_name or '',
                         product.name or '',
