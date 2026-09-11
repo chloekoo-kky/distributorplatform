@@ -8,7 +8,7 @@ class ManualOrderForm(forms.ModelForm):
 
     class Meta:
         model = Order
-        fields = ['sales_channel', 'transaction_date', 'customer_name', 'customer_phone', 'shipping_address']
+        fields = ['sales_channel', 'transaction_date', 'customer_name', 'customer_phone', 'company_address', 'shipping_address']
         widgets = {
             'sales_channel': forms.Select(attrs={'class': 'w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500'}),
             'transaction_date': forms.DateInput(attrs={
@@ -23,10 +23,15 @@ class ManualOrderForm(forms.ModelForm):
                 'class': 'w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500',
                 'placeholder': 'Phone number'
             }),
+            'company_address': forms.Textarea(attrs={
+                'class': 'w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500',
+                'rows': 3,
+                'placeholder': 'Company address'
+            }),
             'shipping_address': forms.Textarea(attrs={
                 'class': 'w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500',
                 'rows': 3,
-                'placeholder': 'Shipping address'
+                'placeholder': 'Shipping address (optional)'
             }),
         }
 
@@ -36,4 +41,5 @@ class ManualOrderForm(forms.ModelForm):
         self.fields['transaction_date'].required = False
         self.fields['customer_name'].required = False
         self.fields['customer_phone'].required = False
+        self.fields['company_address'].required = False
         self.fields['shipping_address'].required = False

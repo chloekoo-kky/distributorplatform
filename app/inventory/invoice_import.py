@@ -12,6 +12,8 @@ from typing import Any
 from django.utils import timezone as django_timezone
 from openpyxl import load_workbook
 
+from product.name_aliases import resolve_imported_invoice_product
+
 logger = logging.getLogger(__name__)
 
 HEADER_ALIASES = {
@@ -180,14 +182,49 @@ def _map_headers_to_columns(headers: list[str]) -> dict[str, int]:
     return col_map
 
 
+# Must be present as real headers — never inferred from column offsets.
+_REQUIRED_HEADER_FIELDS = (
+    ('original_currency', 'Original Currency'),
+    ('unit_price_myr', 'Unit Price (ex) (MYR)'),
+)
+
+# Infer layout for optional columns only (quantity, source amounts, totals).
+_INFERRED_COL_FIELDS = frozenset(_STANDARD_COL_OFFSETS) - {
+    'original_currency',
+    'unit_price_myr',
+}
+
+
 def _fill_standard_column_gaps(col_map: dict[str, int]) -> None:
-    """Infer missing columns from the standard Payable Invoice Detail layout."""
+    """Infer missing optional columns from the standard Payable Invoice Detail layout."""
     desc_idx = col_map.get('description')
     if desc_idx is None:
         return
-    for field, offset in _STANDARD_COL_OFFSETS.items():
+    for field in _INFERRED_COL_FIELDS:
         if field not in col_map:
-            col_map[field] = desc_idx + offset
+            col_map[field] = desc_idx + _STANDARD_COL_OFFSETS[field]
+
+
+def _missing_required_headers(col_map: dict[str, int]) -> list[str]:
+    return [label for key, label in _REQUIRED_HEADER_FIELDS if key not in col_map]
+
+
+def _missing_required_line_fields(line: dict) -> list[str]:
+    missing: list[str] = []
+    if not (line.get('original_currency') or '').strip():
+        missing.append('Original Currency')
+    if line.get('unit_price_myr') is None:
+        missing.append('Unit Price (ex) (MYR) / Gross (MYR)')
+    return missing
+
+
+def _format_required_field_errors(errors: list[str]) -> str:
+    preview = '; '.join(errors[:8])
+    extra = f' (+{len(errors) - 8} more)' if len(errors) > 8 else ''
+    return (
+        'Import rejected: every invoice line must include Original Currency and Price in MYR. '
+        f'{preview}{extra}'
+    )
 
 
 def _resolve_line_quantity(row: tuple | list, col_map: dict[str, int]) -> int:
@@ -352,8 +389,17 @@ def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
             'Expected columns such as Reference and Description.'
         )
 
+    missing_headers = _missing_required_headers(col_map)
+    if missing_headers:
+        return None, (
+            'Import rejected: the file is missing required column(s): '
+            + ', '.join(missing_headers)
+            + '. Every imported invoice must include Original Currency and Price in MYR.'
+        )
+
     current_supplier_key: str | None = None
     supplier_buckets: dict[str, dict] = {}
+    required_field_errors: list[str] = []
 
     for row in rows[header_idx + 1:]:
         if _is_metadata_or_blank_row(row):
@@ -404,7 +450,7 @@ def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
         if unit_source is None and gross_source is not None and qty > 0:
             unit_source = (gross_source / Decimal(qty)).quantize(Decimal('0.01'))
 
-        inv['lines'].append({
+        line = {
             'description': _cell_str(row, col_map.get('description')),
             'item_code': _cell_str(row, col_map.get('item_code')),
             'quantity': qty,
@@ -413,7 +459,17 @@ def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
             'unit_price_source': float(unit_source) if unit_source is not None else None,
             'gross_source': float(gross_source) if gross_source is not None else None,
             'original_currency': _cell_str(row, col_map.get('original_currency')),
-        })
+        }
+        missing_fields = _missing_required_line_fields(line)
+        if missing_fields:
+            required_field_errors.append(
+                f'{ref or "(no reference)"} — {line["description"] or "(no description)"}: '
+                f'missing {", ".join(missing_fields)}'
+            )
+        inv['lines'].append(line)
+
+    if required_field_errors:
+        return None, _format_required_field_errors(required_field_errors)
 
     if not supplier_buckets:
         return None, 'No invoice line items found in file.'
@@ -630,7 +686,12 @@ def _upsert_supplier_price_matrix_from_line(
         effective_date=effective,
         source_filename=record_source,
     ).first()
-    if not existing_record:
+    if existing_record:
+        existing_record.price_currency = currency
+        existing_record.conversion_rate = conversion_rate
+        existing_record.tiers = snapshot
+        existing_record.save(update_fields=['price_currency', 'conversion_rate', 'tiers'])
+    else:
         SupplierPriceMatrixUploadRecord.objects.create(
             entry=entry,
             effective_date=effective,
@@ -646,12 +707,34 @@ def _upsert_supplier_price_matrix_from_line(
         sync_saved_base_costs_for_products([product.pk])
 
 
+def _assert_payload_has_required_line_fields(payload: dict) -> None:
+    """Reject confirm payloads that omit Original Currency or MYR price."""
+    errors: list[str] = []
+    for sup_block in payload.get('suppliers') or []:
+        if _normalize_import_action(sup_block.get('action')) == 'ignore':
+            continue
+        for inv_data in sup_block.get('invoices') or []:
+            reference = (inv_data.get('reference') or '').strip() or '(no reference)'
+            for line in inv_data.get('lines') or []:
+                desc = (line.get('description') or '').strip()
+                if not desc:
+                    continue
+                missing = _missing_required_line_fields(line)
+                if missing:
+                    errors.append(f'{reference} — {desc}: missing {", ".join(missing)}')
+    if errors:
+        raise ValueError(_format_required_field_errors(errors))
+
+
 def confirm_payable_invoice_import(payload: dict, *, product_model, supplier_model, invoice_model, invoice_item_model) -> dict:
     """
     Create/update standalone invoices from preview payload and supplier mappings.
+    Reimport of the same standalone invoice overwrites source (USD/EUR) and MYR prices.
     Returns counts for toast messaging.
     """
     from sales.models import Invoice
+
+    _assert_payload_has_required_line_fields(payload)
 
     products_created = 0
     products_matched = 0
@@ -732,21 +815,15 @@ def confirm_payable_invoice_import(payload: dict, *, product_model, supplier_mod
                 if not desc:
                     continue
                 item_code = (line.get('item_code') or '').strip()
-                product = None
-                if item_code:
-                    product = product_model.objects.filter(sku__iexact=item_code).first()
+                product, created = resolve_imported_invoice_product(
+                    product_model,
+                    description=desc,
+                    item_code=item_code,
+                )
                 if not product:
-                    product = product_model.objects.filter(name__iexact=desc).first()
-                if not product:
-                    name = desc[:200]
-                    product, created = product_model.objects.get_or_create(
-                        name=name,
-                        defaults={'description': 'Auto-imported from payable invoice'},
-                    )
-                    if created:
-                        products_created += 1
-                    else:
-                        products_matched += 1
+                    continue
+                if created:
+                    products_created += 1
                 else:
                     products_matched += 1
 
@@ -755,8 +832,6 @@ def confirm_payable_invoice_import(payload: dict, *, product_model, supplier_mod
 
                 qty = _parse_quantity(line.get('quantity'))
                 unit_price = line.get('unit_price_myr')
-                if unit_price is None:
-                    unit_price = line.get('unit_price_source')
                 if unit_price is None:
                     continue
                 original_currency = (line.get('original_currency') or '').strip().upper()[:3]

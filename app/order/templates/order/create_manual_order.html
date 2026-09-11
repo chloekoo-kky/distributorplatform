@@ -30,9 +30,13 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">Customer phone <span class="text-red-500">*</span></label>
                     <input type="text" x-model="customerPhone" placeholder="Required" required class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
                 </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Shipping address <span class="text-red-500">*</span></label>
-                    <textarea x-model="shippingAddress" rows="2" placeholder="Required" required class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Company address</label>
+                    <textarea x-model="companyAddress" rows="2" placeholder="Optional" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Shipping address</label>
+                    <textarea x-model="shippingAddress" rows="2" placeholder="Optional" class="w-full rounded-md border border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
                 </div>
             </div>
         </div>
@@ -100,6 +104,7 @@ function manualOrderData() {
         salesChannel: 'WhatsApp',
         customerName: '',
         customerPhone: '',
+        companyAddress: '',
         shippingAddress: '',
         isSubmitting: false,
         productsUrl: '{% url "order:api_manual_order_products" %}',
@@ -152,8 +157,8 @@ function manualOrderData() {
         },
         async submitOrder() {
             if (this.lines.length === 0 || this.isSubmitting) return;
-            if (!(this.customerName || '').trim() || !(this.customerPhone || '').trim() || !(this.shippingAddress || '').trim()) {
-                alert('Customer name, phone, and shipping address are required.');
+            if (!(this.customerName || '').trim() || !(this.customerPhone || '').trim()) {
+                alert('Customer name and phone are required.');
                 return;
             }
             this.isSubmitting = true;
@@ -161,6 +166,7 @@ function manualOrderData() {
                 sales_channel: this.salesChannel,
                 customer_name: this.customerName,
                 customer_phone: this.customerPhone,
+                company_address: this.companyAddress,
                 shipping_address: this.shippingAddress,
                 items: this.lines.map(l => ({
                     product_id: l.productId,

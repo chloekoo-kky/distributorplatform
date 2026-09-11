@@ -365,6 +365,7 @@
                     const data = await response.json();
                     if (!response.ok || !data.ok) {
                         this.invoiceImportError = data.error || 'Could not parse file.';
+                        Alpine.store('globals').showToast(this.invoiceImportError, 'error');
                         return;
                     }
                     this.invoiceImportSourceFilename = data.source_filename || '';

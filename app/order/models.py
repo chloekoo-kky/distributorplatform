@@ -191,6 +191,11 @@ class Order(models.Model):
         null=True,
         help_text='Bill-to company name (shown on sales invoices).',
     )
+    company_address = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Bill-to / company address (shown on sales invoices).',
+    )
     customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_phone = models.CharField(max_length=50, blank=True, null=True)
     shipping_address = models.TextField(blank=True, null=True)

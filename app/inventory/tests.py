@@ -483,6 +483,20 @@ class PayableInvoiceImportParserTests(SimpleTestCase):
 
 
 class InvoiceImportConfirmTests(TestCase):
+    def _xlsx_bytes(self, rows):
+        from io import BytesIO
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        for row in rows:
+            ws.append(row)
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = 'payable-invoices.xlsx'
+        return buf
+
     def test_two_create_groups_same_code_one_supplier(self):
         payload = {
             'source_filename': 'test.xlsx',
@@ -500,6 +514,7 @@ class InvoiceImportConfirmTests(TestCase):
                             'quantity': 1,
                             'unit_price_myr': 10.0,
                             'gross_myr': 10.0,
+                            'original_currency': 'MYR',
                         }],
                     }],
                 },
@@ -516,6 +531,7 @@ class InvoiceImportConfirmTests(TestCase):
                             'quantity': 2,
                             'unit_price_myr': 20.0,
                             'gross_myr': 40.0,
+                            'original_currency': 'MYR',
                         }],
                     }],
                 },
@@ -579,4 +595,170 @@ class InvoiceImportConfirmTests(TestCase):
         item = InvoiceItem.objects.get(description='Matrix Product')
         self.assertEqual(item.quantity, 5)
         self.assertEqual(item.original_currency, 'USD')
+        self.assertEqual(float(item.unit_price), 42.0)
+        self.assertEqual(float(item.unit_price_source), 10.0)
+
+    def test_rejects_file_missing_original_currency_column(self):
+        rows = [
+            [],
+            [
+                'Invoice Date', 'Source', 'Reference', 'Item Code', 'Description', 'Quantity',
+                'Unit Price (ex) (Source)', 'Gross (Source)',
+                'Unit Price (ex) (MYR)', 'Gross (MYR)', 'Invoice Total (MYR)',
+            ],
+            ['Test Supplier'],
+            ['22 Aug 2023', 'Payable Invoice', 'INV001', '', 'Product A', 1, 10, 10, 42, 42, 42],
+        ]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(parsed)
+        self.assertIn('Original Currency', error)
+        self.assertIn('Import rejected', error)
+
+    def test_rejects_line_missing_original_currency_or_myr_price(self):
+        rows = [
+            [],
+            [
+                'Invoice Date', 'Source', 'Reference', 'Item Code', 'Description', 'Quantity',
+                'Original Currency', 'Unit Price (ex) (Source)', 'Gross (Source)',
+                'Unit Price (ex) (MYR)', 'Gross (MYR)', 'Invoice Total (MYR)',
+            ],
+            ['Test Supplier'],
+            ['22 Aug 2023', 'Payable Invoice', 'INV001', '', 'Product A', 1, '', 10, 10, 42, 42, 42],
+        ]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(parsed)
+        self.assertIn('Original Currency', error)
+
+        rows[3] = ['22 Aug 2023', 'Payable Invoice', 'INV002', '', 'Product B', 1, 'USD', 10, 10, None, None, None]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(parsed)
+        self.assertIn('MYR', error)
+
+    def test_confirm_rejects_payload_missing_required_fields(self):
+        payload = {
+            'source_filename': 'test.xlsx',
+            'suppliers': [{
+                'action': 'create',
+                'file_supplier_name': 'Bad Supplier',
+                'new_supplier_name': 'Bad Supplier',
+                'invoices': [{
+                    'reference': 'BAD001',
+                    'invoice_date': '2023-08-22',
+                    'lines': [{
+                        'description': 'Product A',
+                        'quantity': 1,
+                        'unit_price_source': 10.0,
+                        'original_currency': 'USD',
+                    }],
+                }],
+            }],
+        }
+        with self.assertRaises(ValueError) as ctx:
+            confirm_payable_invoice_import(
+                payload,
+                product_model=Product,
+                supplier_model=Supplier,
+                invoice_model=Invoice,
+                invoice_item_model=InvoiceItem,
+            )
+        self.assertIn('MYR', str(ctx.exception))
+
+    def test_reimport_overwrites_source_and_myr_prices(self):
+        payload = {
+            'source_filename': 'test.xlsx',
+            'suppliers': [{
+                'action': 'create',
+                'file_supplier_name': 'Reimport Supplier',
+                'new_supplier_name': 'Reimport Supplier',
+                'new_supplier_code': 'REIM',
+                'invoices': [{
+                    'reference': 'REI001',
+                    'invoice_date': '2023-08-22',
+                    'lines': [{
+                        'description': 'Reimport Product',
+                        'quantity': 2,
+                        'unit_price_myr': 42.0,
+                        'gross_myr': 84.0,
+                        'unit_price_source': 10.0,
+                        'gross_source': 20.0,
+                        'original_currency': 'USD',
+                    }],
+                }],
+            }],
+        }
+        confirm_payable_invoice_import(
+            payload,
+            product_model=Product,
+            supplier_model=Supplier,
+            invoice_model=Invoice,
+            invoice_item_model=InvoiceItem,
+        )
+        payload['suppliers'][0]['action'] = 'map'
+        payload['suppliers'][0]['supplier_id'] = Supplier.objects.get(code='REIM').pk
+        line = payload['suppliers'][0]['invoices'][0]['lines'][0]
+        line['unit_price_myr'] = 55.0
+        line['gross_myr'] = 110.0
+        line['unit_price_source'] = 11.0
+        line['gross_source'] = 22.0
+        stats = confirm_payable_invoice_import(
+            payload,
+            product_model=Product,
+            supplier_model=Supplier,
+            invoice_model=Invoice,
+            invoice_item_model=InvoiceItem,
+        )
+        self.assertEqual(stats['invoices_updated'], 1)
+        self.assertEqual(Invoice.objects.count(), 1)
+        item = InvoiceItem.objects.get(description='Reimport Product')
+        self.assertEqual(float(item.unit_price), 55.0)
+        self.assertEqual(float(item.unit_price_source), 11.0)
+        self.assertEqual(float(item.gross_source), 22.0)
+        from inventory.models import SupplierPriceMatrixEntry, SupplierPriceMatrixUploadRecord
+        entry = SupplierPriceMatrixEntry.objects.get(line_medication='Reimport Product')
+        self.assertEqual(entry.upload_records.count(), 1)
+        self.assertEqual(float(entry.tiers.first().unit_price), 55.0)
+        record = SupplierPriceMatrixUploadRecord.objects.get(entry=entry)
+        self.assertEqual(record.tiers[0].get('unit_price_source'), '11.0000')
+        self.assertEqual(float(entry.conversion_rate), 5.0)
+
+    def test_import_matches_merged_invoice_name_alias_without_creating_product(self):
+        from product.name_aliases import upsert_invoice_name_alias
+
+        master = Product.objects.create(name='HYALGAN (Fidia)')
+        upsert_invoice_name_alias(master, 'Hylagan - (Fidia )')
+        payload = {
+            'source_filename': 'test.xlsx',
+            'suppliers': [{
+                'action': 'create',
+                'file_supplier_name': 'Alias Supplier',
+                'new_supplier_name': 'Alias Supplier',
+                'new_supplier_code': 'ALIA',
+                'invoices': [{
+                    'reference': 'ALI001',
+                    'invoice_date': '2023-08-22',
+                    'lines': [{
+                        'description': 'Hylagan - (Fidia )',
+                        'quantity': 1,
+                        'unit_price_myr': 90.77,
+                        'gross_myr': 90.77,
+                        'original_currency': 'MYR',
+                    }],
+                }],
+            }],
+        }
+        stats = confirm_payable_invoice_import(
+            payload,
+            product_model=Product,
+            supplier_model=Supplier,
+            invoice_model=Invoice,
+            invoice_item_model=InvoiceItem,
+        )
+        self.assertEqual(stats['products_created'], 0)
+        self.assertEqual(stats['products_matched'], 1)
+        self.assertEqual(Product.objects.filter(name='Hylagan - (Fidia )').count(), 0)
+        item = InvoiceItem.objects.get(description='Hylagan - (Fidia )')
+        self.assertEqual(item.product_id, master.pk)
 

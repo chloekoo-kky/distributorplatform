@@ -1318,6 +1318,7 @@ def api_merge_products(request):
 
     Moves key references (QuotationItem, InvoiceItem, InventoryBatch, OrderItem,
     SupplierPriceMatrixEntry, ProductContentSection),
+    keeps secondary names as invoice aliases on the master,
     merges categories/suppliers/gallery_images, then deletes the merged products.
     """
     if not (request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest"):
@@ -1344,11 +1345,13 @@ def api_merge_products(request):
 
     from order.models import OrderItem
     from product.models import ProductContentSection
+    from product.name_aliases import record_merged_product_invoice_names
     from sales.models import InvoiceItem
     from inventory.models import SupplierPriceMatrixEntry
 
     try:
         with transaction.atomic():
+            record_merged_product_invoice_names(primary, secondaries)
             # 1) Merge many-to-many relations on the primary (categories, suppliers, gallery)
             for s in secondaries:
                 primary.categories.add(*s.categories.all())

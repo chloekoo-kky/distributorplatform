@@ -394,6 +394,48 @@ class ProductContentSection(models.Model):
         return f"{self.title} for {self.product.name}"
 
 
+class ProductInvoiceNameAlias(models.Model):
+    """Invoice / merged-product names that resolve to one master product."""
+    SOURCE_MERGE = 'merge'
+    SOURCE_INVOICE = 'invoice'
+    SOURCE_CHOICES = (
+        (SOURCE_MERGE, 'Product merge'),
+        (SOURCE_INVOICE, 'Invoice import'),
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='invoice_name_aliases',
+    )
+    name = models.CharField(max_length=200, help_text='Original invoice or merged product name.')
+    name_normalized = models.CharField(
+        max_length=200,
+        unique=True,
+        db_index=True,
+        help_text='Lowercased, whitespace-collapsed name used for matching.',
+    )
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_MERGE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Invoice product name alias'
+        verbose_name_plural = 'Invoice product name aliases'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} → {self.product.name}"
+
+    @staticmethod
+    def normalize_name(name):
+        return ' '.join((name or '').strip().lower().split())
+
+    def save(self, *args, **kwargs):
+        self.name = (self.name or '').strip()[:200]
+        self.name_normalized = self.normalize_name(self.name)
+        super().save(*args, **kwargs)
+
+
 class IgnoredMergeSuggestion(models.Model):
     """
     Stores product ID combinations that the user has dismissed as "Not duplicates".

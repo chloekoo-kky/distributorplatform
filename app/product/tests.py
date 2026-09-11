@@ -138,3 +138,28 @@ class ProductMergeTests(TestCase):
         self.assertFalse(Product.objects.filter(pk=self.duplicate.pk).exists())
         item = InvoiceItem.objects.get(pk=self.invoice.items.first().pk)
         self.assertEqual(item.product_id, self.master.pk)
+        from product.models import ProductInvoiceNameAlias
+        alias = ProductInvoiceNameAlias.objects.get(product=self.master)
+        self.assertEqual(alias.name, 'Hylagan - (Fidia )')
+
+    def test_merge_keeps_nested_invoice_name_aliases(self):
+        from product.models import ProductInvoiceNameAlias
+        from product.name_aliases import upsert_invoice_name_alias
+        older = Product.objects.create(name='Older invoice name')
+        upsert_invoice_name_alias(self.duplicate, 'PI line: Hyalgan inj')
+        response = self.client.post(
+            '/api/merge-products/',
+            data=json.dumps({
+                'primary_id': self.master.pk,
+                'merge_ids': [self.duplicate.pk, older.pk],
+            }),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200)
+        names = set(
+            ProductInvoiceNameAlias.objects.filter(product=self.master).values_list('name', flat=True)
+        )
+        self.assertIn('Hylagan - (Fidia )', names)
+        self.assertIn('Older invoice name', names)
+        self.assertIn('PI line: Hyalgan inj', names)

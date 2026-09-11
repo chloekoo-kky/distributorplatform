@@ -3,7 +3,15 @@ from django.db.models import Count, Min
 
 from import_export.admin import ImportExportMixin
 
-from .models import Product, Category, CategoryGroup, ProductContentSection, CategoryContentSection, ProductPriceTier
+from .models import (
+    Product,
+    Category,
+    CategoryGroup,
+    ProductContentSection,
+    CategoryContentSection,
+    ProductPriceTier,
+    ProductInvoiceNameAlias,
+)
 from .resources import ProductResource, CategoryGroupResource, CategoryResource
 
 class CategoryGroupAdmin(ImportExportMixin, admin.ModelAdmin):
@@ -53,6 +61,13 @@ class ProductPriceTierInline(admin.TabularInline):
     ordering = ['-min_quantity']
 
 
+class ProductInvoiceNameAliasInline(admin.TabularInline):
+    model = ProductInvoiceNameAlias
+    extra = 0
+    fields = ('name', 'source', 'created_at')
+    readonly_fields = ('created_at',)
+
+
 class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     resource_class = ProductResource
     # Excel on Windows treats CSV as ANSI unless UTF-8 BOM is present; needed for symbols like ®.
@@ -61,10 +76,10 @@ class ProductAdmin(ImportExportMixin, admin.ModelAdmin):
     # Add this line to make both SKU and Name clickable
     list_display_links = ('sku', 'name')
     list_filter = ('members_only', 'categories', 'suppliers', 'created_at')
-    search_fields = ('sku', 'name', 'alias_name', 'description', 'suppliers__name')
+    search_fields = ('sku', 'name', 'alias_name', 'description', 'suppliers__name', 'invoice_name_aliases__name')
     readonly_fields = ('formatted_base_cost',)
     filter_horizontal = ('categories', 'suppliers', 'gallery_images',)
-    inlines = [ProductContentSectionInline, ProductPriceTierInline]
+    inlines = [ProductContentSectionInline, ProductPriceTierInline, ProductInvoiceNameAliasInline]
 
     list_editable = ('display_order',)
 

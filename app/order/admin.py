@@ -167,6 +167,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': (
                 'customer',
                 'company_name',
+                'company_address',
                 ('customer_name', 'customer_phone'),
                 'shipping_address',
             ),

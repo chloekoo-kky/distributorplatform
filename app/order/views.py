@@ -1049,6 +1049,7 @@ def sales_invoice_print(request, order_id):
     customer_phone = (order.customer_phone or '').strip() or (order.customer.phone if order.customer_id else '') or ''
     ship_to = (order.shipping_address or '').strip()
     bill_to_company_name = (order.company_name or '').strip()
+    bill_to_company_address = (order.company_address or '').strip()
 
     payment_method = (order.payment_method or '').strip()
     terms = payment_method
@@ -1072,6 +1073,7 @@ def sales_invoice_print(request, order_id):
         'invoice_number': f'SINV-{order.id}',
         'invoice_date': invoice_date,
         'bill_to_company_name': bill_to_company_name,
+        'bill_to_company_address': bill_to_company_address,
         'customer_name': customer_name,
         'customer_phone': customer_phone,
         'ship_to': ship_to,
@@ -1171,7 +1173,7 @@ def api_customer_detail(request, customer_id):
 def api_submit_manual_order(request):
     """
     POST: create a manual order (no commission).
-    Expects JSON: sales_channel, customer_name, customer_phone, shipping_address,
+    Expects JSON: sales_channel, customer_name, customer_phone, company_address, shipping_address,
     items: [{ product_id, quantity, unit_price }]
     """
     if request.method != 'POST':
@@ -1207,35 +1209,43 @@ def api_submit_manual_order(request):
     customer = None
     customer_name = (data.get('customer_name') or '').strip() or None
     company_name = (data.get('company_name') or '').strip() or None
+    company_address = (data.get('company_address') or '').strip() or None
     customer_phone = (data.get('customer_phone') or '').strip() or None
     shipping_address = (data.get('shipping_address') or '').strip() or None
     if not customer_name:
         return JsonResponse({'success': False, 'error': 'Customer name is required.'}, status=400)
     if not customer_phone:
         return JsonResponse({'success': False, 'error': 'Customer phone is required.'}, status=400)
-    if not shipping_address:
-        return JsonResponse({'success': False, 'error': 'Shipping address is required.'}, status=400)
     customer_id = data.get('customer_id')
     if customer_id:
         try:
             customer = Customer.objects.get(id=int(customer_id))
             customer_name = customer_name or customer.name
             customer_phone = customer.phone or customer_phone
+            customer_update_fields = []
             if company_name and company_name != (customer.company_name or ''):
                 customer.company_name = company_name
-                customer.save(update_fields=['company_name', 'updated_at'])
+                customer_update_fields.append('company_name')
             elif not company_name:
                 company_name = customer.company_name or None
+            if company_address and company_address != (customer.address or ''):
+                customer.address = company_address
+                customer_update_fields.append('address')
+            elif not company_address:
+                company_address = customer.address or None
+            if customer_update_fields:
+                customer_update_fields.append('updated_at')
+                customer.save(update_fields=customer_update_fields)
             # Keep order's shipping_address payload as provided; don't force override with customer.address
         except (ValueError, TypeError, Customer.DoesNotExist):
             customer = None
-    elif customer_name or customer_phone or shipping_address or company_name:
+    elif customer_name or customer_phone or shipping_address or company_name or company_address:
         customer = Customer.objects.create(
             name=customer_name or 'Unknown',
             company_name=company_name,
             phone=customer_phone,
             email=None,
-            address=shipping_address,
+            address=company_address,
             notes=None,
         )
 
@@ -1243,6 +1253,7 @@ def api_submit_manual_order(request):
     customer_name = customer_name or (customer.name if customer else None)
     customer_phone = customer_phone or (customer.phone if customer else None)
     company_name = company_name or (customer.company_name if customer else None)
+    company_address = company_address or (customer.address if customer else None)
 
     # Persist new shipping address variant in address book (without overwriting customer.address)
     if customer and shipping_address:
@@ -1265,6 +1276,7 @@ def api_submit_manual_order(request):
         transaction_date=transaction_date,
         customer=customer,
         company_name=company_name,
+        company_address=company_address,
         customer_name=customer_name,
         customer_phone=customer_phone,
         shipping_address=shipping_address,
@@ -1399,6 +1411,7 @@ def api_manual_order_detail(request, order_id):
         'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
         'customer_id': order.customer_id,
         'company_name': order.company_name or '',
+        'company_address': order.company_address or '',
         'customer_name': order.customer_name or '',
         'customer_phone': order.customer_phone or '',
         'shipping_address': order.shipping_address or '',
@@ -1478,40 +1491,49 @@ def api_update_manual_order(request, order_id):
         customer = None
         customer_name = (data.get('customer_name') or '').strip() or None
         company_name = (data.get('company_name') or '').strip() or None
+        company_address = (data.get('company_address') or '').strip() or None
         customer_phone = (data.get('customer_phone') or '').strip() or None
         shipping_address = (data.get('shipping_address') or '').strip() or None
         if not customer_name:
             return JsonResponse({'success': False, 'error': 'Customer name is required.'}, status=400)
         if not customer_phone:
             return JsonResponse({'success': False, 'error': 'Customer phone is required.'}, status=400)
-        if not shipping_address:
-            return JsonResponse({'success': False, 'error': 'Shipping address is required.'}, status=400)
         customer_id = data.get('customer_id')
         if customer_id:
             try:
                 customer = Customer.objects.get(id=int(customer_id))
                 customer_name = customer_name or customer.name
                 customer_phone = customer_phone or customer.phone
+                customer_update_fields = []
                 if company_name and company_name != (customer.company_name or ''):
                     customer.company_name = company_name
-                    customer.save(update_fields=['company_name', 'updated_at'])
+                    customer_update_fields.append('company_name')
                 elif not company_name:
                     company_name = customer.company_name or None
+                if company_address and company_address != (customer.address or ''):
+                    customer.address = company_address
+                    customer_update_fields.append('address')
+                elif not company_address:
+                    company_address = customer.address or None
+                if customer_update_fields:
+                    customer_update_fields.append('updated_at')
+                    customer.save(update_fields=customer_update_fields)
             except (ValueError, TypeError, Customer.DoesNotExist):
                 pass
-        elif customer_name or customer_phone or shipping_address or company_name:
+        elif customer_name or customer_phone or shipping_address or company_name or company_address:
             customer = Customer.objects.create(
                 name=customer_name or 'Unknown',
                 company_name=company_name,
                 phone=customer_phone,
                 email=None,
-                address=shipping_address,
+                address=company_address,
                 notes=None,
             )
         # snapshot fields from final values / customer
         customer_name = customer_name or (customer.name if customer else None)
         customer_phone = customer_phone or (customer.phone if customer else None)
         company_name = company_name or (customer.company_name if customer else None)
+        company_address = company_address or (customer.address if customer else None)
 
         # maintain address book
         if customer and shipping_address:
@@ -1528,6 +1550,7 @@ def api_update_manual_order(request, order_id):
                     )
         order.customer = customer
         order.company_name = company_name
+        order.company_address = company_address
         order.customer_name = customer_name
         order.customer_phone = customer_phone
         order.shipping_address = shipping_address
@@ -2476,6 +2499,7 @@ def api_manage_order_edit_details(request, order_id):
             'sales_channel': order.sales_channel or '',
             'transaction_date': order.transaction_date.isoformat() if order.transaction_date else '',
             'company_name': order.company_name or '',
+            'company_address': order.company_address or '',
             'customer_name': order.customer_name or '',
             'customer_phone': order.customer_phone or '',
             'shipping_address': order.shipping_address or '',
@@ -2513,6 +2537,7 @@ def api_manage_order_edit_details(request, order_id):
                 order.sales_channel = sc
                 order.transaction_date = new_td
                 order.company_name = (payload.get('company_name') or '').strip() or None
+                order.company_address = (payload.get('company_address') or '').strip() or None
                 order.customer_name = (payload.get('customer_name') or '').strip() or None
                 order.customer_phone = (payload.get('customer_phone') or '').strip() or None
                 order.shipping_address = (payload.get('shipping_address') or '').strip() or None

@@ -1918,6 +1918,7 @@
             editDetailsSaving: false,
             editDetailsForm: {
                 company_name: '',
+                company_address: '',
                 customer_name: '',
                 customer_phone: '',
                 shipping_address: '',
@@ -3253,6 +3254,7 @@
                     this.editDetailsCanEditItems = !!o.can_edit_items;
                     this.editDetailsForm = {
                         company_name: o.company_name || '',
+                        company_address: o.company_address || '',
                         customer_name: o.customer_name || '',
                         customer_phone: o.customer_phone || '',
                         shipping_address: o.shipping_address || '',
@@ -3519,6 +3521,7 @@
             salesChannel: 'WhatsApp',
             transactionDate: '',
             companyName: '',
+            companyAddress: '',
             customerName: '',
             customerPhone: '',
             shippingAddress: '',
@@ -3557,9 +3560,10 @@
             selectCustomer(c) {
                 this.selectedCustomer = c;
                 this.companyName = c.company_name || '';
+                this.companyAddress = c.address || '';
                 this.customerName = c.name || '';
                 this.customerPhone = c.phone || '';
-                this.shippingAddress = c.address || '';
+                this.shippingAddress = '';
                 this.customerSearchOpen = false;
                 this.customerSearchQuery = '';
                 this.customerSearchResults = [];
@@ -3567,6 +3571,7 @@
             clearCustomer() {
                 this.selectedCustomer = null;
                 this.companyName = '';
+                this.companyAddress = '';
                 this.customerName = '';
                 this.customerPhone = '';
                 this.shippingAddress = '';
@@ -3635,6 +3640,7 @@
                     this.salesChannel = (o.sales_channel && o.sales_channel !== 'Other') ? o.sales_channel : 'WhatsApp';
                     this.transactionDate = o.transaction_date || this.transactionDate;
                     this.companyName = o.company_name || '';
+                    this.companyAddress = o.company_address || '';
                     this.customerName = o.customer_name || '';
                     this.customerPhone = o.customer_phone || '';
                     this.shippingAddress = o.shipping_address || '';
@@ -3645,7 +3651,7 @@
                             name: o.customer_name || '',
                             company_name: o.company_name || '',
                             phone: o.customer_phone || '',
-                            address: o.shipping_address || ''
+                            address: o.company_address || ''
                         };
                     } else {
                         this.selectedCustomer = null;
@@ -3741,16 +3747,13 @@
                     alert('Customer phone is required.');
                     return;
                 }
-                if (!(this.shippingAddress || '').trim()) {
-                    alert('Shipping address is required.');
-                    return;
-                }
                 this.isSubmitting = true;
                 const payload = {
                     sales_channel: this.salesChannel,
                     transaction_date: this.transactionDate || null,
                     customer_id: this.selectedCustomer ? this.selectedCustomer.id : null,
                     company_name: this.companyName,
+                    company_address: this.companyAddress,
                     customer_name: this.customerName,
                     customer_phone: this.customerPhone,
                     shipping_address: this.shippingAddress,

@@ -39,6 +39,12 @@
         .dropdown-menu {
             transition: opacity 0.2s ease-out, transform 0.2s ease-out;
         }
+        .nav-action-item {
+            color: {{ site_settings.site_name_color|default:'#1e3a8a' }};
+        }
+        .nav-action-item:hover {
+            background-color: #f9fafb;
+        }
     </style>
 </head>
 
@@ -172,10 +178,10 @@
         });
     </script>
 
-    <nav class="shadow-md sticky top-0 z-50" style="background-color: {{ site_settings.nav_background_color|default:'#FFFFFF' }};">
+    <nav class="sticky top-0 z-50 border-b border-gray-200" style="background-color: {{ site_settings.nav_background_color|default:'#FFFFFF' }};">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center space-x-8">
+            <div class="flex justify-between items-center h-16 md:h-20">
+                <div class="flex items-center space-x-8 min-w-0">
                     <a href="{% url 'product:home' %}" class="flex items-center gap-2">
                         {% if site_settings.site_logo %}
                             <img src="{{ site_settings.site_logo.url }}" alt="{{ site_settings.site_name }}" class="h-10 w-auto object-contain" onerror="this.style.display='none'">
@@ -228,51 +234,88 @@
                     </div>
                 </div>
 
-                <div class="flex items-center space-x-4" x-data>
+                <div class="flex items-center h-full" x-data>
                     {% if user.is_authenticated %}
 
                         {% if user.is_staff %}
-                            <a href="{% url 'order:manage_orders' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Orders</a>
-                            <a href="{% url 'core:manage_dashboard' %}#agents" class="hidden md:inline text-gray-500 hover:text-gray-900">Agents</a>
-                            <a href="{% url 'core:manage_dashboard' %}" class="hidden md:inline text-gray-500 hover:text-gray-900">Manage</a>
+                            <a href="{% url 'order:manage_orders' %}" class="hidden lg:flex items-center px-3 text-sm font-medium nav-action-item">Orders</a>
+                            <a href="{% url 'core:manage_dashboard' %}" class="hidden lg:flex items-center px-3 text-sm font-medium nav-action-item">Manage</a>
                         {% endif %}
 
-                        <span class="hidden sm:inline text-sm text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
-                            {% with user_groups=user.user_groups.all %}
-                                {% if user_groups %}
-                                    {{ user_groups|join:", " }}
-                                {% else %}
-                                    Member
-                                {% endif %}
-                            {% endwith %}
-                        </span>
+                        {# Desktop: KenkoShop-style icon + bilingual label links #}
+                        <div class="hidden md:flex items-stretch self-stretch h-full">
+                            <a href="{% url 'user:settings' %}"
+                               class="nav-action-item flex flex-col items-center justify-center px-3.5 min-w-[4.75rem] border-l border-gray-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                                </svg>
+                                {% with lines=site_settings.user_menu_settings_lines %}
+                                    <span class="mt-0.5 text-[10px] leading-tight font-medium">{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="text-[9px] leading-tight opacity-70">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
 
-                        {# Shopping Cart Icon #}
-                        <a href="{% url 'order:place_order' %}" class="relative text-gray-500 hover:text-indigo-600 mx-2" title="View Shopping Cart">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                            </svg>
-                            <span x-show="$store.cartStore.cartCount > 0"
-                                  x-text="$store.cartStore.cartCount"
-                                  class="absolute -top-2 -right-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-600 rounded-full ring-2 ring-white"
-                                  style="display: none;">
-                            </span>
-                        </a>
+                            <a href="{% url 'user:profile' %}"
+                               class="nav-action-item flex flex-col items-center justify-center px-3.5 min-w-[4.75rem] border-l border-gray-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                </svg>
+                                {% with lines=site_settings.user_menu_profile_lines %}
+                                    <span class="mt-0.5 text-[10px] leading-tight font-medium">{{ lines.0 }}</span>
+                                    {% if lines|length > 1 %}
+                                        <span class="text-[9px] leading-tight opacity-70">{{ lines.1 }}</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </a>
 
-                        <div class="relative">
-                            <div>
-                                <button type="button" class="relative flex rounded-full bg-gray-100 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" id="user-menu-button" aria-expanded="false" aria-haspopup="true">
-                                    <span class="absolute -inset-1.5"></span>
-                                    <span class="sr-only">Open user menu</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
-                                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <form action="{% url 'user:logout' %}" method="post" class="h-full border-l border-gray-200">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="nav-action-item h-full flex flex-col items-center justify-center px-3.5 min-w-[4.75rem] bg-transparent border-0 cursor-pointer">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                                     </svg>
+                                    {% with lines=site_settings.user_menu_signout_lines %}
+                                        <span class="mt-0.5 text-[10px] leading-tight font-medium">{{ lines.0 }}</span>
+                                        {% if lines|length > 1 %}
+                                            <span class="text-[9px] leading-tight opacity-70">{{ lines.1 }}</span>
+                                        {% endif %}
+                                    {% endwith %}
                                 </button>
-                            </div>
+                            </form>
+                        </div>
 
-                            <div id="user-menu" class="dropdown-menu absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden opacity-0 transform scale-95" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
+                        {# User profile box #}
+                        <div class="relative flex items-center self-stretch h-full border-l border-gray-200 pl-3">
+                            <button type="button"
+                                    class="flex items-center gap-2 rounded-full border border-gray-200 bg-white py-1 pl-1 pr-3 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 {% if not user.is_superuser %}md:pointer-events-none md:cursor-default{% endif %}"
+                                    id="user-menu-button"
+                                    aria-expanded="false"
+                                    aria-haspopup="true">
+                                <span class="sr-only">Open user menu</span>
+                                <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 nav-action-item">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                                    </svg>
+                                </span>
+                                <span class="hidden sm:flex flex-col min-w-0 max-w-[9.5rem]">
+                                    <span class="truncate text-sm font-bold leading-tight nav-action-item">{{ user.get_full_name|default:user.username }}</span>
+                                    <span class="truncate text-[10px] leading-tight text-gray-400">
+                                        {% with user_groups=user.user_groups.all %}
+                                            {% if user_groups %}
+                                                {{ user_groups|join:", " }}
+                                            {% else %}
+                                                {% with lines=site_settings.profile_hello_lines %}{{ lines.0|default:"Welcome" }}{% endwith %}
+                                            {% endif %}
+                                        {% endwith %}
+                                    </span>
+                                </span>
+                            </button>
 
-                                {# 1. Signed in as #}
+                            <div id="user-menu" class="dropdown-menu absolute right-0 top-full z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none hidden opacity-0 transform scale-95" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
+
                                 <span class="block px-4 py-2 text-sm text-gray-700 border-b border-gray-100" role="none">
                                     <div class="flex flex-col items-start">
                                         {% with lines=site_settings.user_menu_signed_in_lines %}
@@ -285,8 +328,7 @@
                                     </div>
                                 </span>
 
-                                {# 2. Your Profile #}
-                                <a href="{% url 'user:profile' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-0">
+                                <a href="{% url 'user:profile' %}" class="md:hidden block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-0">
                                     <div class="flex flex-col items-start">
                                         {% with lines=site_settings.user_menu_profile_lines %}
                                             <span class="group-hover:text-gray-900">{{ lines.0 }}</span>
@@ -297,8 +339,7 @@
                                     </div>
                                 </a>
 
-                                {# 3. Profile / Settings Link #}
-                                <a href="{% url 'user:settings' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-1">
+                                <a href="{% url 'user:settings' %}" class="md:hidden block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-1">
                                     <div class="flex flex-col items-start">
                                         {% with lines=site_settings.user_menu_settings_lines %}
                                             <span class="group-hover:text-gray-900">{{ lines.0 }}</span>
@@ -310,7 +351,6 @@
                                 </a>
 
                                 {% if user.is_superuser %}
-                                {# Django admin (superuser only) #}
                                 <a href="{% url 'admin:index' %}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group border-t border-gray-100" role="menuitem" tabindex="-1" id="user-menu-item-django-admin">
                                     <div class="flex flex-col items-start">
                                         <span class="group-hover:text-gray-900 font-medium">Django admin</span>
@@ -319,10 +359,9 @@
                                 </a>
                                 {% endif %}
 
-                                {# Sign Out #}
-                                <form action="{% url 'user:logout' %}" method="post" role="none">
+                                <form action="{% url 'user:logout' %}" method="post" role="none" class="md:hidden">
                                     {% csrf_token %}
-                                    <button type="submit" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-2">
+                                    <button type="submit" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 group" role="menuitem" tabindex="-1" id="user-menu-item-2">
                                         <div class="flex flex-col items-start">
                                             {% with lines=site_settings.user_menu_signout_lines %}
                                                 <span class="font-medium">{{ lines.0 }}</span>
@@ -335,6 +374,23 @@
                                 </form>
                             </div>
                         </div>
+
+                        {# Shopping cart with total #}
+                        <a href="{% url 'order:place_order' %}" class="nav-action-item flex items-center gap-2 self-stretch h-full border-l border-gray-200 pl-3 pr-1" title="View Shopping Cart">
+                            <span class="relative flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                                </svg>
+                                <span x-text="$store.cartStore.cartCount"
+                                      class="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-0.5 text-[10px] font-bold text-white rounded-full"
+                                      style="background-color: {{ site_settings.site_name_color|default:'#1e3a8a' }};">
+                                </span>
+                            </span>
+                            <span class="hidden sm:flex flex-col leading-tight">
+                                <span class="text-base font-bold" x-text="$store.cartStore.formatPrice($store.cartStore.cartTotal)"></span>
+                                <span class="text-[10px] text-gray-400">Cart / 购物车</span>
+                            </span>
+                        </a>
                     {% else %}
                         <span class="text-sm text-gray-500 px-3 py-1 bg-gray-100 rounded-full">
                             Guest
@@ -424,7 +480,7 @@
 
     {% block full_width_sticky_nav %}
     {% if allowed_categories_list %}
-    <div class="sticky top-16 z-40 bg-white shadow-sm border-b border-gray-200"
+    <div class="sticky top-16 md:top-20 z-40 bg-white shadow-sm border-b border-gray-200"
          x-data="categoryStickyNav()"
          @keydown.escape.window="categoryNavOpen = false"
          @resize.window="if (window.innerWidth >= 768) categoryNavOpen = false">

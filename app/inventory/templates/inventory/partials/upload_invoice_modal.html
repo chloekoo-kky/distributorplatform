@@ -36,7 +36,10 @@
                 <ul class="text-sm text-gray-500 list-disc pl-5 space-y-1">
                     <li>Invoice reference → system invoice ID</li>
                     <li>Description → product (created if not found)</li>
-                    <li>Unit Price (ex) (MYR) → line unit price</li>
+                    <li><strong>Original Currency</strong> and <strong>Unit Price (ex) (MYR)</strong> are required on every line — import is rejected if either is missing</li>
+                    <li>Unit Price (ex) (MYR) → line unit price (MYR)</li>
+                    <li>Unit Price (ex) (Source) → original-currency unit price (USD/EUR)</li>
+                    <li>Reimport of the same standalone invoice overwrites source and MYR prices (use this to fix a conversion-rate mismatch)</li>
                     <li>Status is set to <strong>Paid</strong> for imported invoices</li>
                 </ul>
                 <div>

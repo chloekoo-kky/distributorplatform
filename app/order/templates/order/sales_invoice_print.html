@@ -268,8 +268,11 @@
                 {% endif %}
                 <p class="party-line">Attn: {{ customer_name }}</p>
                 <p class="party-line">TEL: {% if customer_phone %}{{ customer_phone }}{% endif %}</p>
+                {% if bill_to_company_address %}
+                <p class="party-line whitespace-pre-line text-gray-700">{{ bill_to_company_address }}</p>
+                {% endif %}
                 {% if ship_to %}
-                <p class="party-line whitespace-pre-line text-gray-700">{{ ship_to }}</p>
+                <p class="party-line whitespace-pre-line text-gray-700">{% if bill_to_company_address %}Ship to: {% endif %}{{ ship_to }}</p>
                 {% endif %}
             </div>
             <div class="invoice-meta">
