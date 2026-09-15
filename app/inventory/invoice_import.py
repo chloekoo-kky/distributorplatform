@@ -31,6 +31,10 @@ HEADER_ALIASES = {
     'unit price (ex) (myr)': 'unit_price_myr',
     'gross (myr)': 'gross_myr',
     'invoice total (myr)': 'invoice_total_myr',
+    'contact': 'supplier_name',
+    'contact name': 'supplier_name',
+    'supplier': 'supplier_name',
+    'supplier name': 'supplier_name',
 }
 
 # Standard Payable Invoice Detail column order (after description).
@@ -179,6 +183,13 @@ def _map_headers_to_columns(headers: list[str]) -> dict[str, int]:
             continue
         if 'invoice_total_myr' not in col_map and 'invoice total' in h and 'myr' in h:
             col_map['invoice_total_myr'] = idx
+            continue
+        if 'supplier_name' not in col_map and (
+            h in ('contact', 'contact name', 'supplier', 'supplier name')
+            or (h.startswith('contact') and 'email' not in h)
+            or (h.startswith('supplier') and 'code' not in h and 'price' not in h)
+        ):
+            col_map['supplier_name'] = idx
     return col_map
 
 
@@ -303,6 +314,79 @@ def _is_line_row(row: tuple, col_map: dict[str, int]) -> bool:
     return bool(ref and desc)
 
 
+def _looks_like_supplier_name(val: str) -> bool:
+    if not val:
+        return False
+    if _parse_date_cell(val):
+        return False
+    lowered = val.lower()
+    if lowered in HEADER_ALIASES or lowered in HEADER_ALIASES.values():
+        return False
+    if _parse_decimal(val) is not None and not any(c.isalpha() for c in val):
+        return False
+    return any(c.isalpha() for c in val)
+
+
+def _line_supplier_name(row: tuple, col_map: dict[str, int]) -> str:
+    """Supplier from a Contact/Supplier column, or an unnamed leading name cell."""
+    idx = col_map.get('supplier_name')
+    if idx is not None:
+        name = _cell_str(row, idx)
+        if name:
+            return name
+    date_idx = col_map.get('invoice_date')
+    first = _cell_str(row, 0)
+    if first and date_idx not in (None, 0) and _looks_like_supplier_name(first):
+        return first
+    return ''
+
+
+def _ensure_supplier_bucket(supplier_buckets: dict[str, dict], supplier_name: str) -> str:
+    bucket_key = _supplier_key(supplier_name)
+    if bucket_key not in supplier_buckets:
+        supplier_buckets[bucket_key] = {
+            'file_supplier_name': supplier_name,
+            'invoices': defaultdict(_empty_invoice),
+        }
+    return bucket_key
+
+
+def _apply_leading_supplier_shift(rows: list[tuple], header_idx: int, col_map: dict[str, int]) -> None:
+    """If supplier names were filled into column A without a matching header, shift mapped columns right."""
+    if col_map.get('supplier_name') is not None:
+        return
+    date_idx = col_map.get('invoice_date')
+    ref_idx = col_map.get('reference')
+    desc_idx = col_map.get('description')
+    if None in (date_idx, ref_idx, desc_idx):
+        return
+
+    sample = 0
+    votes = 0
+    for row in rows[header_idx + 1:]:
+        if _is_metadata_or_blank_row(row):
+            continue
+        if _is_supplier_row(row, col_map):
+            continue
+        first = _cell_str(row, 0)
+        if not _looks_like_supplier_name(first):
+            return
+        mapped_date = _parse_date_cell(_cell_at(row, date_idx))
+        shifted_date = _parse_date_cell(_cell_at(row, date_idx + 1))
+        shifted_ref = _cell_str(row, ref_idx + 1)
+        shifted_desc = _cell_str(row, desc_idx + 1)
+        sample += 1
+        if not mapped_date and shifted_date and shifted_ref and shifted_desc:
+            votes += 1
+        if sample >= 8:
+            break
+    if sample == 0 or votes != sample:
+        return
+    for key in list(col_map):
+        col_map[key] += 1
+    col_map['supplier_name'] = 0
+
+
 def _supplier_key(name: str) -> str:
     return ' '.join(name.strip().lower().split())
 
@@ -371,6 +455,10 @@ def _read_xlsx_rows(file) -> list[tuple]:
 def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
     """
     Parse a Payable Invoice Detail .xlsx export.
+
+    Supplier names may appear on every invoice line (Contact/Supplier column) or as
+    older-style group titles above each block. Repeated names are merged.
+
     Returns ({ suppliers: [...], summary: {...} }, None) or (None, error_message).
     """
     name = getattr(file, 'name', '') or ''
@@ -397,6 +485,8 @@ def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
             + '. Every imported invoice must include Original Currency and Price in MYR.'
         )
 
+    _apply_leading_supplier_shift(rows, header_idx, col_map)
+
     current_supplier_key: str | None = None
     supplier_buckets: dict[str, dict] = {}
     required_field_errors: list[str] = []
@@ -405,24 +495,23 @@ def parse_payable_invoice_detail_file(file) -> tuple[dict | None, str | None]:
         if _is_metadata_or_blank_row(row):
             continue
         if _is_supplier_row(row, col_map):
-            supplier_name = _cell_str(row, 0)
-            bucket_key = _supplier_key(supplier_name)
-            if bucket_key not in supplier_buckets:
-                supplier_buckets[bucket_key] = {
-                    'file_supplier_name': supplier_name,
-                    'invoices': defaultdict(_empty_invoice),
-                }
-            current_supplier_key = bucket_key
+            current_supplier_key = _ensure_supplier_bucket(supplier_buckets, _cell_str(row, 0))
             continue
         if not _is_line_row(row, col_map):
             continue
-        if not current_supplier_key:
+
+        row_supplier = _line_supplier_name(row, col_map)
+        if row_supplier:
+            bucket_key = _ensure_supplier_bucket(supplier_buckets, row_supplier)
+        elif current_supplier_key:
+            bucket_key = current_supplier_key
+        else:
             return None, (
-                f'Line item "{_cell_str(row, col_map.get("description"))}" '
-                'appears before any supplier group title.'
+                f'Line item "{_cell_str(row, col_map.get("description"))}" has no supplier name. '
+                'Include a Contact/Supplier column on each row, or a supplier group title above the invoice lines.'
             )
 
-        invoices_map = supplier_buckets[current_supplier_key]['invoices']
+        invoices_map = supplier_buckets[bucket_key]['invoices']
         ref = _cell_str(row, col_map.get('reference'))
         inv = invoices_map[ref]
         inv['reference'] = ref

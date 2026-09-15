@@ -474,6 +474,91 @@ class PayableInvoiceImportParserTests(SimpleTestCase):
         self.assertEqual(parsed['summary']['supplier_count'], 1)
         self.assertEqual(parsed['summary']['invoice_count'], 2)
 
+    def test_parses_contact_column_on_every_line(self):
+        rows = [
+            ['Payable Invoice Detail'],
+            [],
+            [
+                'Invoice Date', 'Contact', 'Source', 'Reference', 'Item Code', 'Description', 'Quantity',
+                'Original Currency', 'Unit Price (ex) (Source)', 'Gross (Source)',
+                'Unit Price (ex) (MYR)', 'Gross (MYR)', 'Invoice Total (MYR)',
+            ],
+            [
+                '22 Aug 2023', 'Alb Medikal A.S.', 'Payable Invoice', 'ALB20230027', '',
+                'NEXPLANON Implant 68mg', 50, 'USD', 79.9, 3995, 79.9, 3995, 5000,
+            ],
+            [
+                '22 Aug 2023', 'Alb Medikal A.S.', 'Payable Invoice', 'ALB20230027', '',
+                'BOTOX 100iu', 10, 'USD', 100, 1000, 100, 1000, 5000,
+            ],
+            [
+                '23 Aug 2023', 'Corena Ecza Deposu', 'Payable Invoice', 'COR001', '',
+                'Product C', 2, 'USD', 20, 40, 20, 40, 40,
+            ],
+        ]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(error)
+        self.assertEqual(parsed['summary']['supplier_count'], 2)
+        self.assertEqual(parsed['summary']['invoice_count'], 2)
+        self.assertEqual(parsed['summary']['line_count'], 3)
+        by_name = {sup['file_supplier_name']: sup for sup in parsed['suppliers']}
+        self.assertEqual(by_name['Alb Medikal A.S.']['invoice_count'], 1)
+        self.assertEqual(len(by_name['Alb Medikal A.S.']['invoices'][0]['lines']), 2)
+        self.assertEqual(by_name['Corena Ecza Deposu']['invoices'][0]['reference'], 'COR001')
+
+    def test_parses_supplier_name_filled_into_each_item_row(self):
+        """Group titles unmerged into column A on every line; headers still start at Invoice Date."""
+        rows = [
+            ['Payable Invoice Detail'],
+            [],
+            [
+                'Invoice Date', 'Source', 'Reference', 'Item Code', 'Description', 'Quantity',
+                'Original Currency', 'Unit Price (ex) (Source)', 'Gross (Source)',
+                'Unit Price (ex) (MYR)', 'Gross (MYR)', 'Invoice Total (MYR)',
+            ],
+            [
+                'Alb Medikal A.S.', '22 Aug 2023', 'Payable Invoice', 'ALB001', '',
+                'Product A', 1, 'USD', 10, 10, 10, 10, 10,
+            ],
+            [
+                'Alb Medikal A.S.', '22 Aug 2023', 'Payable Invoice', 'ALB001', '',
+                'Product B', 2, 'USD', 20, 40, 20, 40, 40,
+            ],
+        ]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(error)
+        self.assertEqual(parsed['summary']['supplier_count'], 1)
+        self.assertEqual(parsed['summary']['invoice_count'], 1)
+        self.assertEqual(parsed['summary']['line_count'], 2)
+        sup = parsed['suppliers'][0]
+        self.assertEqual(sup['file_supplier_name'], 'Alb Medikal A.S.')
+        self.assertEqual(sup['invoices'][0]['reference'], 'ALB001')
+        self.assertEqual(sup['invoices'][0]['invoice_date'], '2023-08-22')
+        self.assertEqual(sup['invoices'][0]['lines'][0]['description'], 'Product A')
+        self.assertEqual(sup['invoices'][0]['lines'][1]['quantity'], 2)
+
+    def test_parses_unnamed_leading_supplier_column(self):
+        rows = [
+            ['Payable Invoice Detail'],
+            [],
+            [
+                '', 'Invoice Date', 'Source', 'Reference', 'Item Code', 'Description', 'Quantity',
+                'Original Currency', 'Unit Price (ex) (Source)', 'Gross (Source)',
+                'Unit Price (ex) (MYR)', 'Gross (MYR)', 'Invoice Total (MYR)',
+            ],
+            [
+                'Alb Medikal A.S.', '22 Aug 2023', 'Payable Invoice', 'ALB001', '',
+                'Product A', 1, 'USD', 10, 10, 10, 10, 10,
+            ],
+        ]
+        file_obj = self._xlsx_bytes(rows)
+        parsed, error = parse_payable_invoice_detail_file(file_obj)
+        self.assertIsNone(error)
+        self.assertEqual(parsed['suppliers'][0]['file_supplier_name'], 'Alb Medikal A.S.')
+        self.assertEqual(parsed['suppliers'][0]['invoices'][0]['reference'], 'ALB001')
+
     def test_suggest_supplier_code_from_name(self):
         self.assertEqual(suggest_supplier_code('Alb Medikal A.S.'), 'ALBM')
         self.assertEqual(suggest_supplier_code('Corena Ecza Deposu'), 'CORE')

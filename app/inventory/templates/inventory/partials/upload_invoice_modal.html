@@ -17,7 +17,7 @@
             <div>
                 <h3 class="text-xl font-bold text-gray-800">Import invoices</h3>
                 <p class="text-sm text-gray-500 mt-1">
-                    Map each file supplier group to a system supplier. Repeated group titles for the same supplier are merged automatically.
+                    Map each file supplier to a system supplier. Repeated supplier names are merged automatically.
                 </p>
             </div>
             <button type="button" @click="closeInvoiceImportModal()" class="text-gray-400 hover:text-gray-600">
@@ -31,7 +31,7 @@
                 <p class="text-sm text-gray-600">
                     Upload an Excel file exported as <strong>Payable Invoice Detail</strong>.
                     Header rows (company name, period, filters) are skipped automatically.
-                    Supplier names in the file appear as group titles above each block of invoices.
+                    Supplier names on each invoice line (Contact/Supplier column) are grouped together; older files that use supplier group titles still work.
                 </p>
                 <ul class="text-sm text-gray-500 list-disc pl-5 space-y-1">
                     <li>Invoice reference → system invoice ID</li>
