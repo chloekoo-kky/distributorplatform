@@ -12,8 +12,10 @@ services:
     # If False: Runs Gunicorn (production optimized).
     command: >
       sh -c "
+      mkdir -p /vol/web/static /vol/web/media &&
       /py/bin/python manage.py migrate &&
       /py/bin/python manage.py collectstatic --noinput &&
+      chmod -R a+rX /vol/web &&
       if [ \"$$DJANGO_DEBUG\" = \"True\" ]; then
         echo 'Running in DEVELOPMENT mode (runserver)' &&
         /py/bin/python manage.py runserver 0.0.0.0:8324;
