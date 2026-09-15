@@ -48,7 +48,12 @@
             <code class="text-xs bg-gray-100 p-1 rounded">suppliers</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">selling_price</code>,
             <code class="text-xs bg-gray-100 p-1 rounded">profit_margin</code>,
-            and read-only <code class="text-xs bg-gray-100 p-1 rounded">base_cost</code> (export only).
+            read-only <code class="text-xs bg-gray-100 p-1 rounded">base_cost</code> (export only),
+            and optional price-tier columns
+            <code class="text-xs bg-gray-100 p-1 rounded">tier_N_min_qty</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">tier_N_profit_margin</code>,
+            <code class="text-xs bg-gray-100 p-1 rounded">tier_N_selling_price</code>.
+            Exported selling prices are Excel formulas from base cost and margin; if a cell is still a formula on import, the price is recalculated from those two columns.
         </p>
 
         <!-- Error Banner -->

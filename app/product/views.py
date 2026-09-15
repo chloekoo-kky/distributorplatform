@@ -28,6 +28,7 @@ from .models import Product, Category, CategoryGroup, ProductContentSection, Ign
 from .pricing_sync import reconcile_saved_base_cost_with_quotations
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
+from .excel_export import build_products_xlsx
 
 from blog.models import Post
 from blog.views import get_accessible_posts
@@ -726,7 +727,6 @@ def export_products_xlsx(request):
     """
     logger.info("[export_products_xlsx] View called. Starting export.")
     try:
-        product_resource = ProductResource()
         queryset = Product.objects.all().order_by('name')
         ids_param = (request.GET.get('ids') or '').strip()
         id_list = []
@@ -735,8 +735,7 @@ def export_products_xlsx(request):
             if id_list:
                 queryset = Product.objects.filter(id__in=id_list).order_by('name')
 
-        dataset = product_resource.export(queryset)
-        xlsx_bytes = dataset.export('xlsx')
+        xlsx_bytes = build_products_xlsx(queryset)
         response = HttpResponse(
             xlsx_bytes,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

@@ -20,6 +20,7 @@
         </div>
 
         {{ order_agents|json_script:"order-agents-data" }}
+        {{ order_customers|json_script:"order-customers-data" }}
 
         {# --- Dashboard: 4-col row — period overview (2 cols) + all-time financial cards (2 cols) --- #}
         <div class="grid grid-cols-1 {% if request.user.is_superuser %}md:grid-cols-4{% else %}md:grid-cols-1{% endif %} gap-3 sm:gap-5 mb-4 sm:mb-6">
@@ -194,13 +195,15 @@
              style="display: none;"
              @keydown.escape.window="showOrdersModal = false"
              x-cloak>
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-auto max-h-[85vh] flex flex-col overflow-hidden"
+            <div class="bg-white rounded-xl shadow-2xl w-full {% if request.user.is_superuser %}max-w-xl{% else %}max-w-lg{% endif %} mx-auto max-h-[85vh] flex flex-col overflow-hidden"
                  @click.away="showOrdersModal = false">
 
                 <div class="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900">Order Items Breakdown</h3>
                         <p class="mt-0.5 text-sm text-gray-500">Contribution by product &middot; <span x-text="currentMonthLabel"></span></p>
+                        <p class="mt-1 text-xs text-amber-700" x-show="filters.exclude_customers.length"
+                           x-text="'Excluding ' + filters.exclude_customers.length + ' customer' + (filters.exclude_customers.length === 1 ? '' : 's')"></p>
                     </div>
                     <button type="button" @click="showOrdersModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,15 +212,25 @@
                     </button>
                 </div>
 
-                <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 grid grid-cols-2 gap-4">
+                <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 grid {% if request.user.is_superuser %}grid-cols-3{% else %}grid-cols-2{% endif %} gap-4">
                     <div>
                         <span class="text-sm font-medium text-gray-500">Total Items Sold</span>
                         <p class="text-lg font-bold text-gray-900" x-text="ordersTotal.toLocaleString('en-US')"></p>
                     </div>
-                    <div class="text-right">
+                    <div class="{% if request.user.is_superuser %}text-center{% else %}text-right{% endif %}">
                         <span class="text-sm font-medium text-gray-500">Total Revenue</span>
                         <p class="text-lg font-bold text-gray-900" x-text="formatRevenue(ordersRevenueTotal)"></p>
                     </div>
+                    {% if request.user.is_superuser %}
+                    <div class="text-right">
+                        <span class="text-sm font-medium text-gray-500">Total Profit</span>
+                        <p class="text-lg font-bold tabular-nums"
+                           :class="(ordersProfitTotal || 0) >= 0 ? 'text-green-700' : 'text-red-600'"
+                           x-text="formatRevenue(ordersProfitTotal)"></p>
+                        <p class="text-xs text-gray-500"
+                           x-text="ordersProfitMargin != null ? (Number(ordersProfitMargin).toFixed(2) + '% margin') : '—'"></p>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <div class="flex-1 overflow-y-auto">
@@ -245,6 +258,11 @@
                                         <div class="text-xs text-gray-500" x-text="row.percentage.toFixed(2) + '% of items'"></div>
                                         <div class="mt-1 text-sm font-semibold text-gray-900" x-text="formatRevenue(row.revenue)"></div>
                                         <div class="text-xs text-gray-500" x-text="row.revenue_percentage.toFixed(2) + '% of revenue'"></div>
+                                        {% if request.user.is_superuser %}
+                                        <div class="mt-1 text-sm font-semibold tabular-nums"
+                                             :class="(row.profit || 0) >= 0 ? 'text-green-700' : 'text-red-600'"
+                                             x-text="formatOrdersProfit(row)"></div>
+                                        {% endif %}
                                     </div>
                                 </div>
                                 <div class="mt-2 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
@@ -287,6 +305,8 @@
                     <div>
                         <h3 class="text-lg font-semibold text-gray-900">Revenue Breakdown</h3>
                         <p class="mt-0.5 text-sm text-gray-500">Contribution by customer &middot; <span x-text="currentMonthLabel"></span></p>
+                        <p class="mt-1 text-xs text-amber-700" x-show="filters.exclude_customers.length"
+                           x-text="'Excluding ' + filters.exclude_customers.length + ' customer' + (filters.exclude_customers.length === 1 ? '' : 's')"></p>
                     </div>
                     <button type="button" @click="showRevenueModal = false" class="text-gray-400 hover:text-gray-600 focus:outline-none">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -602,9 +622,9 @@
         {% endif %}
 
 
-        {# --- Filters: status > agent > search --- #}
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200/80 mb-4 sm:mb-6 overflow-hidden">
-            <div class="px-3 py-3 sm:px-6 sm:py-4">
+        {# --- Filters: status > agent > search; exclude customers --- #}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200/80 mb-4 sm:mb-6">
+            <div class="px-3 py-3 sm:px-6 sm:py-4 space-y-2.5 sm:space-y-3">
                 <div class="grid grid-cols-2 md:grid-cols-12 gap-2.5 sm:gap-4 items-end">
 
                     {# Status #}
@@ -646,6 +666,9 @@
                                         filters.search = '';
                                         filters.status = '';
                                         filters.agent = '';
+                                        filters.exclude_customers = [];
+                                        excludeCustomerSearch = '';
+                                        excludeCustomersOpen = false;
                                         filters.start_date = '';
                                         filters.end_date = '';
                                         filters.month = 0;
@@ -658,6 +681,74 @@
                                 <span class="hidden sm:inline">Refresh</span>
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                {# Exclude customers — order list, dashboard cards, and breakdowns #}
+                <div class="relative" @click.away="excludeCustomersOpen = false">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-1 sm:mb-1.5">
+                        <label class="block text-xs sm:text-sm font-medium text-gray-700" for="exclude-customers-search">Exclude customers</label>
+                        <p class="text-[11px] sm:text-xs text-gray-500">Applies to list, cards &amp; breakdowns</p>
+                    </div>
+                    <div class="relative">
+                        <input id="exclude-customers-search"
+                               type="text"
+                               x-model="excludeCustomerSearch"
+                               @focus="excludeCustomersOpen = true"
+                               @click="excludeCustomersOpen = true"
+                               @input="excludeCustomersOpen = true"
+                               @keydown.escape.prevent="excludeCustomersOpen = false"
+                               class="block w-full pl-2.5 sm:pl-3 pr-9 py-2 h-9 sm:h-10 text-xs sm:text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-400"
+                               placeholder="Type to search customers…"
+                               autocomplete="off"
+                               role="combobox"
+                               :aria-expanded="excludeCustomersOpen"
+                               aria-autocomplete="list">
+                        <button type="button"
+                                tabindex="-1"
+                                class="absolute inset-y-0 right-0 px-2.5 text-gray-400 hover:text-gray-600"
+                                @click="excludeCustomersOpen = !excludeCustomersOpen"
+                                aria-label="Toggle customer list">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                    </div>
+                    <div x-show="excludeCustomersOpen"
+                         x-cloak
+                         class="absolute z-40 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                        <div class="max-h-52 overflow-y-auto py-1">
+                            <template x-for="name in filteredExcludeCustomerOptions" :key="name">
+                                <label class="flex items-start gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+                                       @mousedown.prevent="toggleExcludeCustomer(name)">
+                                    <input type="checkbox"
+                                           class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
+                                           :checked="isCustomerExcluded(name)"
+                                           tabindex="-1">
+                                    <span class="text-xs sm:text-sm text-gray-800 leading-snug break-words" x-text="name"></span>
+                                </label>
+                            </template>
+                            <p x-show="!filteredExcludeCustomerOptions.length"
+                               class="px-3 py-3 text-xs text-gray-500">No matching customers.</p>
+                        </div>
+                        <div class="px-3 py-2 border-t border-gray-100 flex items-center justify-between gap-2 bg-gray-50"
+                             x-show="filters.exclude_customers.length">
+                            <span class="text-xs text-gray-500" x-text="filters.exclude_customers.length + ' excluded'"></span>
+                            <button type="button"
+                                    @mousedown.prevent="filters.exclude_customers = []; excludeCustomerSearch = ''; fetchOrders(1)"
+                                    class="text-xs font-medium text-indigo-700 hover:text-indigo-900">Clear</button>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-1.5" x-show="filters.exclude_customers.length">
+                        <template x-for="name in filters.exclude_customers" :key="'ex-' + name">
+                            <span class="inline-flex items-center gap-1 max-w-full rounded-md bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 text-[11px] sm:text-xs">
+                                <span class="truncate" x-text="name"></span>
+                                <button type="button"
+                                        class="shrink-0 text-amber-700 hover:text-amber-950"
+                                        @click="toggleExcludeCustomer(name)"
+                                        :aria-label="'Remove ' + name">
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </span>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -1811,12 +1902,16 @@
                 search: '',
                 status: '',
                 agent: '',
+                exclude_customers: [],
                 // Initializing to current Month/Year
                 month: new Date().getMonth() + 1,
                 year: new Date().getFullYear(),
                 start_date: '',
                 end_date: ''
             },
+            orderCustomers: [],
+            excludeCustomersOpen: false,
+            excludeCustomerSearch: '',
             // Separate filters for the export modal to prevent issues when main view is "All Time"
             exportFilters: {
                 month: new Date().getMonth() + 1,
@@ -1844,8 +1939,11 @@
             ordersLoading: false,
             ordersTotal: 0,
             ordersRevenueTotal: 0,
+            ordersProfitTotal: 0,
+            ordersProfitMargin: null,
             ordersBreakdown: [],
             ordersCopied: false,
+            isSuperuser: {{ request.user.is_superuser|yesno:"true,false" }},
             // --- Revenue breakdown modal ---
             showRevenueModal: false,
             revenueLoading: false,
@@ -1982,11 +2080,52 @@
                 if (agentsEl) {
                     try { this.orderAgents = JSON.parse(agentsEl.textContent); } catch (e) { this.orderAgents = []; }
                 }
+                const customersEl = document.getElementById('order-customers-data');
+                if (customersEl) {
+                    try { this.orderCustomers = JSON.parse(customersEl.textContent); } catch (e) { this.orderCustomers = []; }
+                }
                 try {
                     const v = localStorage.getItem('manageOrdersViewMode');
                     if (v === 'grid' || v === 'list') this.ordersViewMode = v;
                 } catch (e) { /* ignore */ }
                 this.fetchOrders(1);
+            },
+
+            get excludeCustomersSummary() {
+                const n = (this.filters.exclude_customers || []).length;
+                if (!n) return 'None excluded';
+                if (n === 1) return this.filters.exclude_customers[0];
+                return `${n} customers excluded`;
+            },
+
+            get filteredExcludeCustomerOptions() {
+                const q = (this.excludeCustomerSearch || '').trim().toLowerCase();
+                const list = this.orderCustomers || [];
+                if (!q) return list;
+                return list.filter(name => (name || '').toLowerCase().includes(q));
+            },
+
+            isCustomerExcluded(name) {
+                return (this.filters.exclude_customers || []).includes(name);
+            },
+
+            toggleExcludeCustomer(name) {
+                if (!name) return;
+                const list = this.filters.exclude_customers || [];
+                const idx = list.indexOf(name);
+                if (idx >= 0) {
+                    this.filters.exclude_customers = list.filter(n => n !== name);
+                } else {
+                    this.filters.exclude_customers = [...list, name];
+                }
+                this.fetchOrders(1);
+            },
+
+            appendExcludeCustomerParams(params) {
+                (this.filters.exclude_customers || []).forEach(name => {
+                    params.append('exclude_customer', name);
+                });
+                return params;
             },
 
             get filteredCommissionAgents() {
@@ -3037,6 +3176,7 @@
                     start_date: this.filters.start_date || '',
                     end_date: this.filters.end_date || ''
                 });
+                this.appendExcludeCustomerParams(params);
 
                 try {
                     const response = await fetch(`{% url 'order:api_manage_orders' %}?${params.toString()}`);
@@ -3090,9 +3230,19 @@
                 lines.push(`Order Items Breakdown — ${this.currentMonthLabel}`);
                 lines.push(`Total Items Sold: ${this.ordersTotal.toLocaleString('en-US')}`);
                 lines.push(`Total Revenue: ${this.formatRevenue(this.ordersRevenueTotal)}`);
+                if (this.isSuperuser) {
+                    const margin = this.ordersProfitMargin != null
+                        ? ` (${Number(this.ordersProfitMargin).toFixed(2)}% margin)`
+                        : '';
+                    lines.push(`Total Profit: ${this.formatRevenue(this.ordersProfitTotal)}${margin}`);
+                }
                 lines.push('');
                 this.ordersBreakdown.forEach((row, idx) => {
-                    lines.push(`${idx + 1}. ${row.product} — ${row.quantity.toLocaleString('en-US')} units (${row.percentage.toFixed(2)}% of items), ${this.formatRevenue(row.revenue)} (${row.revenue_percentage.toFixed(2)}% of revenue)`);
+                    let line = `${idx + 1}. ${row.product} — ${row.quantity.toLocaleString('en-US')} units (${row.percentage.toFixed(2)}% of items), ${this.formatRevenue(row.revenue)} (${row.revenue_percentage.toFixed(2)}% of revenue)`;
+                    if (this.isSuperuser) {
+                        line += `, ${this.formatOrdersProfit(row)}`;
+                    }
+                    lines.push(line);
                 });
                 try {
                     await this.copyToClipboard(lines.join('\n'));
@@ -3129,6 +3279,8 @@
                 this.ordersBreakdown = [];
                 this.ordersTotal = 0;
                 this.ordersRevenueTotal = 0;
+                this.ordersProfitTotal = 0;
+                this.ordersProfitMargin = null;
 
                 const params = new URLSearchParams({
                     search: this.filters.search,
@@ -3138,6 +3290,7 @@
                     end_date: this.filters.end_date || '',
                     agent: this.filters.agent || '',
                 });
+                this.appendExcludeCustomerParams(params);
 
                 try {
                     const response = await fetch(`{% url 'order:api_orders_breakdown' %}?${params.toString()}`);
@@ -3145,6 +3298,8 @@
                     const data = await response.json();
                     this.ordersTotal = data.total;
                     this.ordersRevenueTotal = data.total_revenue || 0;
+                    this.ordersProfitTotal = data.total_profit || 0;
+                    this.ordersProfitMargin = data.total_profit_margin != null ? data.total_profit_margin : null;
                     this.ordersBreakdown = data.breakdown;
                 } catch (error) {
                     console.error('Error:', error);
@@ -3169,6 +3324,7 @@
                     end_date: this.filters.end_date || '',
                     agent: this.filters.agent || '',
                 });
+                this.appendExcludeCustomerParams(params);
 
                 try {
                     const response = await fetch(`{% url 'order:api_revenue_breakdown' %}?${params.toString()}`);
@@ -3488,6 +3644,13 @@
             formatRevenue(amount) {
                  if (amount === null || amount === undefined) return 'RM 0.00';
                  return 'RM ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            },
+
+            formatOrdersProfit(row) {
+                if (!row || row.profit === null || row.profit === undefined) return '—';
+                const money = this.formatRevenue(row.profit);
+                if (row.profit_margin === null || row.profit_margin === undefined) return money;
+                return `${money} (${Number(row.profit_margin).toFixed(2)}% margin)`;
             },
 
             formatTransactionDate(isoDate) {

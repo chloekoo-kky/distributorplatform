@@ -2,9 +2,10 @@ import logging
 import re
 import random
 import string
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from import_export import resources, fields
 from import_export.widgets import BooleanWidget, ManyToManyWidget, ForeignKeyWidget
-from .models import Product, Category, CategoryGroup
+from .models import Product, Category, CategoryGroup, ProductPriceTier
 from inventory.models import Supplier
 
 # --- SETUP LOGGER ---
@@ -157,6 +158,156 @@ class ProductResource(resources.ModelResource):
         cost = product.base_cost
         return cost if cost is not None else None
 
+    @staticmethod
+    def _is_excel_formula(val):
+        return isinstance(val, str) and val.lstrip().startswith('=')
+
+    @staticmethod
+    def _parse_decimal(val):
+        if val is None or val == '':
+            return None
+        if isinstance(val, str) and not val.strip():
+            return None
+        if ProductResource._is_excel_formula(val):
+            return None
+        try:
+            return Decimal(str(val))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _price_from_margin(base_cost, margin_percent):
+        if base_cost is None or margin_percent is None:
+            return None
+        if margin_percent >= 100:
+            return None
+        try:
+            return (base_cost / (1 - margin_percent / Decimal('100'))).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+        except (InvalidOperation, ZeroDivisionError):
+            return None
+
+    @staticmethod
+    def _margin_from_price(base_cost, price):
+        if base_cost is None or price is None or price == 0:
+            return None
+        try:
+            return ((price - base_cost) / price * Decimal('100')).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+        except (InvalidOperation, ZeroDivisionError):
+            return None
+
+    def _resolve_formula_pair(self, row, price_key, margin_key, cost_key='base_cost'):
+        """Replace Excel formula cells with computed numbers for import."""
+        cost = self._parse_decimal(row.get(cost_key))
+        price_raw = row.get(price_key)
+        margin_raw = row.get(margin_key)
+        price_is_formula = self._is_excel_formula(price_raw)
+        margin_is_formula = self._is_excel_formula(margin_raw)
+        price = None if price_is_formula else self._parse_decimal(price_raw)
+        margin = None if margin_is_formula else self._parse_decimal(margin_raw)
+
+        if price_is_formula:
+            computed = self._price_from_margin(cost, margin)
+            if computed is not None:
+                row[price_key] = computed
+            else:
+                row.pop(price_key, None)
+        if margin_is_formula:
+            resolved_price = price
+            if resolved_price is None:
+                resolved_price = self._parse_decimal(row.get(price_key))
+            computed = self._margin_from_price(cost, resolved_price)
+            if computed is not None:
+                row[margin_key] = computed
+            else:
+                row.pop(margin_key, None)
+
+    def _resolve_pricing_formula_cells(self, row):
+        self._resolve_formula_pair(row, 'selling_price', 'profit_margin')
+        tier_indexes = set()
+        for key in row.keys():
+            if not isinstance(key, str):
+                continue
+            match = re.match(r'^tier_(\d+)_(min_qty|selling_price|profit_margin)$', key)
+            if match:
+                tier_indexes.add(int(match.group(1)))
+        for i in sorted(tier_indexes):
+            self._resolve_formula_pair(
+                row,
+                f'tier_{i}_selling_price',
+                f'tier_{i}_profit_margin',
+            )
+
+    def _parse_price_tiers_from_row(self, row):
+        """
+        Return a list of (min_qty, price) from tier_* columns, or None if the
+        file has no tier columns / all tier cells are blank (leave existing tiers).
+        """
+        tier_indexes = set()
+        for key in row.keys():
+            if not isinstance(key, str):
+                continue
+            match = re.match(r'^tier_(\d+)_(min_qty|selling_price|profit_margin)$', key)
+            if match:
+                tier_indexes.add(int(match.group(1)))
+        if not tier_indexes:
+            return None
+
+        cost = self._parse_decimal(row.get('base_cost'))
+        parsed = []
+        saw_value = False
+        for i in sorted(tier_indexes):
+            qty_raw = row.get(f'tier_{i}_min_qty')
+            price_raw = row.get(f'tier_{i}_selling_price')
+            margin_raw = row.get(f'tier_{i}_profit_margin')
+            if (
+                not self._is_blank_import_val(qty_raw)
+                or not self._is_blank_import_val(price_raw)
+                or not self._is_blank_import_val(margin_raw)
+            ):
+                saw_value = True
+            try:
+                min_qty = int(qty_raw) if qty_raw not in (None, '') else 0
+            except (TypeError, ValueError):
+                continue
+            if min_qty < 1:
+                continue
+            price = self._parse_decimal(price_raw)
+            if price is None:
+                price = self._price_from_margin(cost, self._parse_decimal(margin_raw))
+            if price is None or price <= 0:
+                continue
+            parsed.append((min_qty, price))
+
+        if not saw_value:
+            return None
+        return parsed
+
+    @staticmethod
+    def _is_blank_import_val(val):
+        if val is None:
+            return True
+        if isinstance(val, str) and not val.strip():
+            return True
+        return False
+
+    def after_save_instance(self, instance, row, **kwargs):
+        if kwargs.get('dry_run'):
+            return
+        tiers = self._parse_price_tiers_from_row(row)
+        if tiers is None:
+            return
+        ProductPriceTier.objects.filter(product=instance).delete()
+        for min_qty, price in tiers:
+            ProductPriceTier.objects.create(
+                product=instance,
+                min_quantity=min_qty,
+                price=price,
+            )
+
     def _assign_sku_from_name(self, row):
         """Set row['sku'] from English portion of row['name'] when sku is missing (collision-aware)."""
         if row.get('sku') or not row.get('name'):
@@ -194,6 +345,8 @@ class ProductResource(resources.ModelResource):
     def before_import_row(self, row, **kwargs):
         # Do not apply exported database PK — updates are keyed by SKU only.
         row.pop('id', None)
+
+        self._resolve_pricing_formula_cells(row)
 
         # 0. Normalize product name: replace underscores with spaces, then PascalCase to Title Case
         if row.get('name') and isinstance(row['name'], str):

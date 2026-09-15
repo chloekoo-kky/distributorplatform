@@ -140,6 +140,76 @@ def _order_customer_display(order):
     )
 
 
+def _order_customer_label_from_parts(company_name=None, customer_name=None, agent_username=None):
+    """Same identity used in breakdowns and the exclude-customers filter."""
+    return _customer_display_label(
+        company_name,
+        customer_name,
+        fallback=(agent_username or '').strip(),
+    ) or 'Unknown'
+
+
+def _parse_exclude_customer_labels(request):
+    """Read exclude_customer / exclude_customers query params as a list of labels."""
+    labels = []
+    for raw in request.GET.getlist('exclude_customer'):
+        cleaned = (raw or '').strip()
+        if cleaned:
+            labels.append(cleaned)
+    combined = (request.GET.get('exclude_customers') or '').strip()
+    if combined:
+        for part in combined.split(','):
+            cleaned = part.strip()
+            if cleaned:
+                labels.append(cleaned)
+    # Preserve order, drop duplicates (case-insensitive)
+    seen = set()
+    unique = []
+    for label in labels:
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(label)
+    return unique
+
+
+def _exclude_orders_by_customer_labels(qs, labels):
+    """Drop orders whose display customer label is in labels (case-insensitive)."""
+    if not labels:
+        return qs
+    wanted = {label.casefold() for label in labels if label}
+    if not wanted:
+        return qs
+
+    exclude_ids = []
+    for row in qs.values('id', 'company_name', 'customer_name', 'agent__username').iterator(chunk_size=500):
+        label = _order_customer_label_from_parts(
+            row.get('company_name'),
+            row.get('customer_name'),
+            row.get('agent__username'),
+        ).casefold()
+        if label in wanted:
+            exclude_ids.append(row['id'])
+    if not exclude_ids:
+        return qs
+    return qs.exclude(id__in=exclude_ids)
+
+
+def _distinct_order_customer_labels():
+    """Sorted unique customer labels from all orders (for exclude filter options)."""
+    labels = set()
+    for row in Order.objects.values('company_name', 'customer_name', 'agent__username').iterator(chunk_size=500):
+        labels.add(
+            _order_customer_label_from_parts(
+                row.get('company_name'),
+                row.get('customer_name'),
+                row.get('agent__username'),
+            )
+        )
+    return sorted(labels, key=lambda s: s.casefold())
+
+
 def _cash_bank_receipt_export_rows(receipts_qs):
     """Build export row dicts for CashBankReceiptEntry (same columns as order item rows)."""
     type_labels = {
@@ -1851,10 +1921,11 @@ def _bulk_create_finance_entries(model_cls, prefix, entries):
     return created
 
 
-def _order_financial_summary(agent_filter=''):
-    """Order financial figures. When agent_filter is set, scopes to that agent's orders and related cash/commission."""
+def _order_financial_summary(agent_filter='', exclude_customers=None):
+    """Order financial figures. When agent_filter / exclude_customers are set, scopes accordingly."""
     from django.contrib.auth import get_user_model
     User = get_user_model()
+    exclude_customers = exclude_customers or []
 
     order_qs = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
     agent_user = None
@@ -1868,6 +1939,8 @@ def _order_financial_summary(agent_filter=''):
         except (ValueError, TypeError):
             agent_filter = ''
 
+    order_qs = _exclude_orders_by_customer_labels(order_qs, exclude_customers)
+
     rev_agg = (
         OrderItem.objects
         .filter(order__in=order_qs)
@@ -1879,7 +1952,18 @@ def _order_financial_summary(agent_filter=''):
         total_cash_received = _cash_received_for_agent(agent_user, order_qs)
         total_commission_paid = _commission_paid_for_agent(agent_user)
     else:
-        cash_agg = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))
+        cash_qs = CashBankReceiptEntry.objects.all()
+        if exclude_customers:
+            # Drop cash rows whose payer label matches an excluded customer (case-insensitive).
+            wanted = {label.casefold() for label in exclude_customers if label}
+            cash_exclude_ids = [
+                pk for pk, received_from in cash_qs.values_list('id', 'received_from')
+                if _title_case_received_from(received_from or '').casefold() in wanted
+                or (received_from or '').strip().casefold() in wanted
+            ]
+            if cash_exclude_ids:
+                cash_qs = cash_qs.exclude(id__in=cash_exclude_ids)
+        cash_agg = cash_qs.aggregate(t=Sum('amount'))
         total_cash_received = cash_agg['t'] or Decimal('0')
         comm_agg = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))
         total_commission_paid = comm_agg['t'] or Decimal('0')
@@ -1892,6 +1976,7 @@ def _order_financial_summary(agent_filter=''):
         'total_commission_paid': float(total_commission_paid),
         'pending_cash_receivable': float(pending),
         'agent_scoped': bool(agent_filter and agent_user),
+        'customers_excluded': bool(exclude_customers),
     }
 
 
@@ -1911,6 +1996,7 @@ def manage_orders_dashboard(request):
         'sales_channel_choices': Order.SalesChannel.choices,
         'show_manual_order_link': _user_can_manual_order(request.user),
         'order_agents': order_agents,
+        'order_customers': _distinct_order_customer_labels(),
         'stats': {
             'total_orders': 0,
             'revenue': 0,
@@ -1929,6 +2015,7 @@ def api_manage_orders(request):
     search_query = request.GET.get('search', '').strip()
     status_filter = request.GET.get('status', '')
     agent_filter = request.GET.get('agent', '').strip()
+    exclude_customers = _parse_exclude_customer_labels(request)
 
     # --- Date Filter Params (Period + Range) ---
     try:
@@ -2010,6 +2097,9 @@ def api_manage_orders(request):
     if search_query:
         orders = orders.filter(_manage_orders_search_q(search_query)).distinct()
 
+    # 4. Exclude selected customers (same identity as breakdowns / order cards)
+    orders = _exclude_orders_by_customer_labels(orders, exclude_customers)
+
     # --- Statistics Calculation (Scoped to current Month/Search filters) ---
     # We create a separate queryset for stats to respect Date/Search filters
     # but IGNORE Pagination and usually ignore status filter (to show full overview of the month).
@@ -2043,6 +2133,8 @@ def api_manage_orders(request):
         except (ValueError, TypeError):
             pass
 
+    stats_qs = _exclude_orders_by_customer_labels(stats_qs, exclude_customers)
+
     total_orders = stats_qs.exclude(status=Order.OrderStatus.CANCELLED).count()
 
     revenue = 0
@@ -2057,7 +2149,11 @@ def api_manage_orders(request):
         'revenue': revenue,
     }
 
-    financial = _order_financial_summary(agent_filter=agent_filter) if request.user.is_superuser else None
+    financial = (
+        _order_financial_summary(agent_filter=agent_filter, exclude_customers=exclude_customers)
+        if request.user.is_superuser
+        else None
+    )
 
     # --- Pagination & Serialization ---
     orders = orders.select_related('created_by')
@@ -2137,6 +2233,7 @@ def api_revenue_breakdown(request):
 
     search_query = request.GET.get('search', '').strip()
     agent_filter = request.GET.get('agent', '').strip()
+    exclude_customers = _parse_exclude_customer_labels(request)
 
     try:
         month = int(request.GET.get('month', 0))
@@ -2187,19 +2284,24 @@ def api_revenue_breakdown(request):
             pass
     if search_query:
         stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
+    stats_qs = _exclude_orders_by_customer_labels(stats_qs, exclude_customers)
 
     rev_rows = (
         OrderItem.objects
         .filter(order__in=stats_qs)
         .exclude(order__status=Order.OrderStatus.CANCELLED)
-        .values('order__customer_name', 'order__agent__username')
+        .values('order__company_name', 'order__customer_name', 'order__agent__username')
         .annotate(amount=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()))
     )
 
-    # Group by the displayed customer identity: customer_name snapshot, else agent username.
+    # Group by the same customer identity used in the exclude filter / order cards.
     grouped = {}
     for row in rev_rows:
-        name = (row['order__customer_name'] or '').strip() or row['order__agent__username'] or 'Unknown'
+        name = _order_customer_label_from_parts(
+            row.get('order__company_name'),
+            row.get('order__customer_name'),
+            row.get('order__agent__username'),
+        )
         grouped[name] = grouped.get(name, Decimal('0')) + (row['amount'] or Decimal('0'))
 
     total = sum(grouped.values()) if grouped else Decimal('0')
@@ -2218,6 +2320,7 @@ def api_revenue_breakdown(request):
     return JsonResponse({
         'total': float(total),
         'breakdown': breakdown,
+        'excluded_customers': exclude_customers,
     })
 
 
@@ -2229,10 +2332,12 @@ def api_orders_breakdown(request):
     `api_manage_orders` (status filter and pagination are ignored, cancelled orders
     excluded). Contribution is measured by units sold (sum of OrderItem quantity);
     quantity percentages sum to 100%. Revenue per product uses selling_price × quantity
-    (same basis as the Total Revenue stat).
+    (same basis as the Total Revenue stat). Superusers also receive profit (sum of
+    OrderItem.profit) and profit_margin = profit / revenue × 100.
     """
     search_query = request.GET.get('search', '').strip()
     agent_filter = request.GET.get('agent', '').strip()
+    exclude_customers = _parse_exclude_customer_labels(request)
 
     try:
         month = int(request.GET.get('month', 0))
@@ -2283,50 +2388,87 @@ def api_orders_breakdown(request):
             pass
     if search_query:
         stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
+    stats_qs = _exclude_orders_by_customer_labels(stats_qs, exclude_customers)
+
+    include_profit = request.user.is_superuser
+    annotations = {
+        'qty': Sum('quantity'),
+        'revenue': Sum(F('selling_price') * F('quantity'), output_field=DecimalField()),
+    }
+    if include_profit:
+        annotations['profit'] = Sum('profit')
 
     item_rows = (
         OrderItem.objects
         .filter(order__in=stats_qs)
         .exclude(order__status=Order.OrderStatus.CANCELLED)
-        .values('product__name')
-        .annotate(
-            qty=Sum('quantity'),
-            revenue=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()),
-        )
+        .values('product_id', 'product__name', 'product__display_order')
+        .annotate(**annotations)
     )
 
     grouped = {}
     for row in item_rows:
         name = (row['product__name'] or '').strip() or 'Unknown product'
-        if name not in grouped:
-            grouped[name] = {'quantity': 0, 'revenue': Decimal('0')}
-        grouped[name]['quantity'] += row['qty'] or 0
-        grouped[name]['revenue'] += row['revenue'] or Decimal('0')
+        # Prefer product_id so same-named products stay distinct; fall back to name.
+        key = row['product_id'] if row['product_id'] is not None else name
+        if key not in grouped:
+            display_order = row['product__display_order']
+            if display_order is None:
+                display_order = 10**9
+            grouped[key] = {
+                'product': name,
+                'display_order': display_order,
+                'quantity': 0,
+                'revenue': Decimal('0'),
+                'profit': Decimal('0'),
+            }
+        grouped[key]['quantity'] += row['qty'] or 0
+        grouped[key]['revenue'] += row['revenue'] or Decimal('0')
+        if include_profit:
+            grouped[key]['profit'] += row['profit'] or Decimal('0')
 
     total_qty = sum(v['quantity'] for v in grouped.values()) if grouped else 0
     total_revenue = sum(v['revenue'] for v in grouped.values()) if grouped else Decimal('0')
+    total_profit = sum(v['profit'] for v in grouped.values()) if grouped else Decimal('0')
+
+    def _margin_pct(profit, revenue):
+        if not revenue:
+            return None
+        return round(float(profit / revenue * 100), 2)
 
     breakdown = []
-    for name, data in grouped.items():
+    for data in grouped.values():
         qty = data['quantity']
         revenue = data['revenue']
         qty_pct = (qty / total_qty * 100) if total_qty else 0.0
         rev_pct = float(revenue / total_revenue * 100) if total_revenue else 0.0
-        breakdown.append({
-            'product': name,
+        entry = {
+            'product': data['product'],
             'quantity': int(qty),
             'percentage': round(qty_pct, 2),
             'revenue': float(revenue),
             'revenue_percentage': round(rev_pct, 2),
-        })
+            'display_order': data['display_order'],
+        }
+        if include_profit:
+            profit = data['profit']
+            entry['profit'] = float(profit)
+            entry['profit_margin'] = _margin_pct(profit, revenue)
+        breakdown.append(entry)
 
-    breakdown.sort(key=lambda r: r['quantity'], reverse=True)
+    # Match product catalog ordering (display_order ascending, then name).
+    breakdown.sort(key=lambda r: (r['display_order'], (r['product'] or '').casefold()))
 
-    return JsonResponse({
+    payload = {
         'total': int(total_qty),
         'total_revenue': float(total_revenue),
         'breakdown': breakdown,
-    })
+        'excluded_customers': exclude_customers,
+    }
+    if include_profit:
+        payload['total_profit'] = float(total_profit)
+        payload['total_profit_margin'] = _margin_pct(total_profit, total_revenue)
+    return JsonResponse(payload)
 
 
 @staff_member_required
