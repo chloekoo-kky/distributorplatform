@@ -49,7 +49,7 @@ services:
         condition: service_started
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.28-alpine
     ports:
       - "8324:80"
     volumes:

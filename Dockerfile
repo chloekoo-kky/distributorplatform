@@ -18,9 +18,10 @@ RUN adduser \
     django-user
 WORKDIR /app
 
-# System deps: postgresql-client for admin full backup/restore (pg_dump / pg_restore)
+# postgresql-client: admin full backup/restore (pg_dump / pg_restore)
+# gosu: drop root -> django-user after fixing /vol/web permissions for nginx
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends postgresql-client && \
+    apt-get install -y --no-install-recommends postgresql-client gosu && \
     rm -rf /var/lib/apt/lists/*
 
 # Create virtualenv and install dependencies
@@ -33,14 +34,17 @@ RUN /py/bin/pip install --upgrade pip && \
 
 # Copy application code
 COPY ./app /app
+COPY ./scripts/docker-entrypoint.sh /docker-entrypoint.sh
 # Set ownership and permissions for the non-root user
 RUN mkdir -p /vol/web/media && \
     mkdir -p /vol/web/static && \
     chown -R django-user:django-user /vol /app /py && \
-    chmod -R 755 /vol
+    chmod -R 755 /vol && \
+    sed -i 's/\r$//' /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
 
-# Switch to the non-root user
-USER django-user
+# Stay root so the entrypoint can chown/chmod the runtime volume, then gosu.
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Expose the port
 EXPOSE 8324
