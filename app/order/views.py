@@ -1768,10 +1768,12 @@ def _user_can_manual_order(user):
 
 
 def _manage_orders_search_q(search_query: str) -> Q:
-    """Q object for Order Management search: ID, customer (name/phone), agent, line items (product name/alias)."""
+    """Q object for Order Management search: ID, customer (company/name/phone), agent, line items (product name/alias)."""
     normalized_id_term = search_query.lstrip('#').strip()
     search_q = (
         Q(id__icontains=search_query) |
+        Q(company_name__icontains=search_query) |
+        Q(customer__company_name__icontains=search_query) |
         Q(customer_name__icontains=search_query) |
         Q(customer_phone__icontains=search_query) |
         Q(customer__phone__icontains=search_query) |
