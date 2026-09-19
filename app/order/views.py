@@ -1092,23 +1092,17 @@ def sales_invoice_print(request, order_id):
 
     items_rows = []
     gross = Decimal('0.00')
-    discount_total = Decimal('0.00')
     for idx, item in enumerate(order.items.all(), start=1):
-        unit = item.list_unit_price
-        line_gross = item.line_gross
-        line_discount = item.effective_discount
-        gross += line_gross
-        discount_total += line_discount
+        unit = item.effective_unit_price
+        line_total = item.total_price
+        gross += line_total
         items_rows.append({
             'no': idx,
             'description': item.product.order_display_name,
             'sku': item.product.sku or '—',
             'quantity': item.quantity,
             'unit_price': unit,
-            'price_after_discount': item.effective_unit_price,
-            'discount': line_discount,
-            'line_total': line_gross,
-            'line_net': item.total_price,
+            'line_total': line_total,
         })
 
     if order.transaction_date:
@@ -1126,17 +1120,14 @@ def sales_invoice_print(request, order_id):
     if payment_method.upper() in ('COD', 'C.O.D', 'C.O.D.'):
         terms = 'C.O.D.'
 
-    subtotal = gross - discount_total
     rounding = Decimal('0.00')
-    total_payable = subtotal + rounding
+    total_payable = gross + rounding
 
     context = {
         'order': order,
         'issuer': issuer,
         'items_rows': items_rows,
-        'subtotal': subtotal,
         'gross': gross,
-        'discount': discount_total,
         'rounding': rounding,
         'total_payable': total_payable,
         'amount_in_words': ringgit_amount_in_words(total_payable),
