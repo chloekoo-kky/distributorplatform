@@ -1505,7 +1505,7 @@ def api_product_search(request):
         limit = min(int(request.GET.get("limit", "50")), 100)
     except ValueError:
         limit = 50
-    qs = Product.objects.all().only("id", "name", "sku", "selling_price")
+    qs = Product.objects.all().prefetch_related("price_tiers").only("id", "name", "sku", "selling_price")
     if search_query:
         qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
     products = list(qs.order_by("name")[:limit])
@@ -1516,6 +1516,7 @@ def api_product_search(request):
                 "sku": p.sku or "",
                 "name": p.name,
                 "selling_price": str(p.selling_price) if p.selling_price is not None else None,
+                "price_tiers": p.price_tiers_payload(),
             }
             for p in products
         ]

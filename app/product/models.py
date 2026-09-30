@@ -347,6 +347,15 @@ class Product(models.Model):
                 return tier.price
         return self.selling_price
 
+    def price_tiers_payload(self):
+        """JSON list of tiers, highest min_quantity first (same order as get_price_for_quantity)."""
+        tiers = [
+            {'min_quantity': t.min_quantity, 'price': float(t.price)}
+            for t in self.price_tiers.all()
+        ]
+        tiers.sort(key=lambda x: -x['min_quantity'])
+        return tiers
+
     def __str__(self):
         return self.name
 

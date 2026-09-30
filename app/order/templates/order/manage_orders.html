@@ -3427,6 +3427,8 @@
                             sku: item.sku || '',
                             quantity: item.quantity,
                             unit_price: item.unit_price,
+                            selling_price: item.selling_price || '',
+                            price_tiers: item.price_tiers || [],
                             platform_price: item.platform_price || '',
                             discount_amount: item.discount_amount || '0',
                         }));
@@ -3469,6 +3471,7 @@
                         display_name: p.name,
                         sku: p.sku || '',
                         selling_price: p.selling_price,
+                        price_tiers: p.price_tiers || [],
                     }));
                 } catch (e) {
                     if (requestId === this.editDetailsProductSearchRequestId) {
@@ -3489,47 +3492,74 @@
             addEditDetailsItem(product) {
                 if (!product || !product.id) return;
                 const price = product.selling_price || '0';
-                this.editDetailsItems.push({
+                const line = {
                     id: null,
                     product_id: product.id,
                     name: product.display_name || product.name,
                     sku: product.sku || '',
                     quantity: 1,
                     unit_price: price,
+                    selling_price: product.selling_price || '',
+                    price_tiers: product.price_tiers || [],
                     platform_price: '',
                     discount_amount: '',
-                });
+                };
+                this.applyEditDetailsPlatformFromTiers(line, false);
+                this.editDetailsItems.push(line);
             },
 
             removeEditDetailsItem(index) {
                 this.editDetailsItems.splice(index, 1);
             },
 
+            catalogPriceForQuantity(source, qty) {
+                if (!source) return null;
+                const q = parseInt(qty, 10);
+                const fallback = (source.selling_price != null && source.selling_price !== '')
+                    ? source.selling_price
+                    : null;
+                if (isNaN(q) || q < 1) return fallback;
+                const tiers = (source.price_tiers || []).slice().sort((a, b) => (b.min_quantity || 0) - (a.min_quantity || 0));
+                for (let i = 0; i < tiers.length; i++) {
+                    if (q >= (tiers[i].min_quantity || 0)) return tiers[i].price;
+                }
+                return fallback;
+            },
+
+            applyEditDetailsPlatformFromTiers(line, defer) {
+                const apply = () => {
+                    const price = this.catalogPriceForQuantity(line, line.quantity);
+                    if (price == null || price === '') return;
+                    line.platform_price = Number(price).toFixed(2);
+                };
+                if (defer === false) apply();
+                else this.$nextTick(apply);
+            },
+
+            editDetailsLineUnitDiscount(line) {
+                const platform = parseFloat(line.platform_price) || 0;
+                const actual = parseFloat(line.unit_price) || 0;
+                const unitDisc = platform - actual;
+                return unitDisc > 0 ? unitDisc : 0;
+            },
+
             editDetailsLineSubtotal(line) {
                 const qty = parseFloat(line.quantity) || 0;
                 const unit = parseFloat(line.unit_price) || 0;
-                const gross = qty * unit;
-                let disc = parseFloat(line.discount_amount) || 0;
-                if (disc < 0) disc = 0;
-                if (disc > gross) disc = gross;
-                return 'RM ' + (gross - disc).toFixed(2);
+                return 'RM ' + (qty * unit).toFixed(2);
             },
 
             buildEditDetailsItemsPayload() {
                 return this.editDetailsItems.map(line => {
                     const qty = parseFloat(line.quantity) || 0;
-                    const unit = parseFloat(line.unit_price) || 0;
-                    const gross = qty * unit;
-                    let disc = parseFloat(line.discount_amount) || 0;
-                    if (disc < 0) disc = 0;
-                    if (disc > gross) disc = gross;
+                    const unitDisc = this.editDetailsLineUnitDiscount(line);
                     return {
                         id: line.id || null,
                         product_id: line.product_id,
                         quantity: line.quantity,
                         unit_price: line.unit_price,
                         platform_price: line.platform_price,
-                        discount_amount: disc,
+                        discount_amount: unitDisc * (qty > 0 ? qty : 0),
                     };
                 });
             },
@@ -3822,19 +3852,46 @@
 
                     this.loadProducts();
 
-                    this.lines = (o.items || []).map(item => ({
-                        productId: item.product_id,
-                        productSku: item.sku || '',
-                        productName: item.name || '',
-                        productDisplayName: item.display_name || item.name || '',
-                        quantity: item.quantity,
-                        platformPrice: item.platform_price || item.actual_unit_price || '0.00',
-                        actualUnitPrice: item.actual_unit_price || '0.00',
-                    }));
+                    this.lines = (o.items || []).map(item => {
+                        const product = (this.products || []).find(x => x.id === item.product_id);
+                        return {
+                            productId: item.product_id,
+                            productSku: item.sku || '',
+                            productName: item.name || '',
+                            productDisplayName: item.display_name || item.name || '',
+                            quantity: item.quantity,
+                            selling_price: item.selling_price || (product && product.selling_price) || '',
+                            price_tiers: item.price_tiers || (product && product.price_tiers) || [],
+                            platformPrice: item.platform_price || item.actual_unit_price || '0.00',
+                            actualUnitPrice: item.actual_unit_price || '0.00',
+                        };
+                    });
                 } catch (e) {
                     console.error('Failed to load manual order', e);
                     alert('Failed to load order for editing.');
                 }
+            },
+            catalogPriceForQuantity(source, qty) {
+                if (!source) return null;
+                const q = parseInt(qty, 10);
+                const fallback = (source.selling_price != null && source.selling_price !== '')
+                    ? source.selling_price
+                    : null;
+                if (isNaN(q) || q < 1) return fallback;
+                const tiers = (source.price_tiers || []).slice().sort((a, b) => (b.min_quantity || 0) - (a.min_quantity || 0));
+                for (let i = 0; i < tiers.length; i++) {
+                    if (q >= (tiers[i].min_quantity || 0)) return tiers[i].price;
+                }
+                return fallback;
+            },
+            applyPlatformPriceFromTiers(line, defer) {
+                const apply = () => {
+                    const price = this.catalogPriceForQuantity(line, line.quantity);
+                    if (price == null || price === '') return;
+                    line.platformPrice = Number(price).toFixed(2);
+                };
+                if (defer === false) apply();
+                else this.$nextTick(apply);
             },
             lineName(line) {
                 const sku = (line.productSku || '').toString();
@@ -3874,15 +3931,19 @@
             addProductLine(p) {
                 if (this.orderStatus !== 'PENDING') return;
                 const price = p.selling_price || '0.00';
-                this.lines.push({
+                const line = {
                     productId: parseInt(p.id, 10),
                     productSku: p.sku || '',
                     productName: p.name || '',
                     productDisplayName: p.display_name || p.name || '',
                     quantity: 1,
+                    selling_price: p.selling_price || '',
+                    price_tiers: p.price_tiers || [],
                     platformPrice: price,
                     actualUnitPrice: price,
-                });
+                };
+                this.applyPlatformPriceFromTiers(line, false);
+                this.lines.push(line);
             },
             removeLine(idx) {
                 if (this.orderStatus !== 'PENDING') return;

@@ -709,7 +709,7 @@ def api_manual_order_products(request):
         products_query = Product.objects.all()
     else:
         products_query = Product.objects.filter(categories__in=allowed_categories)
-    products_query = products_query.distinct().order_by('name')
+    products_query = products_query.prefetch_related('price_tiers').distinct().order_by('name')
     product_list = []
     for p in products_query:
         product_list.append({
@@ -720,6 +720,7 @@ def api_manual_order_products(request):
             'sku': p.sku or '-',
             'selling_price': str(p.selling_price) if p.selling_price is not None else None,
             'base_cost': str(p.base_cost) if p.base_cost is not None else '0.00',
+            'price_tiers': p.price_tiers_payload(),
         })
     return JsonResponse({'success': True, 'products': product_list})
 
@@ -1446,7 +1447,7 @@ def api_manual_order_detail(request, order_id):
         Order.OrderStatus.TO_RECEIVE,
     ]
     order = get_object_or_404(
-        Order.objects.prefetch_related('items__product'),
+        Order.objects.prefetch_related('items__product__price_tiers'),
         id=order_id,
         created_by=request.user,
         status__in=allowed_statuses,
@@ -1460,6 +1461,8 @@ def api_manual_order_detail(request, order_id):
             'name': item.product.name,
             'display_name': item.product.order_display_name,
             'quantity': item.quantity,
+            'selling_price': str(item.product.selling_price) if item.product.selling_price is not None else '',
+            'price_tiers': item.product.price_tiers_payload(),
             'platform_price': str(item.platform_price) if item.platform_price is not None else '',
             'actual_unit_price': str(item.actual_unit_price or item.selling_price),
             'discount_amount': str(item.discount_amount or '0.00'),
@@ -2488,13 +2491,16 @@ def api_get_order_items(request, order_id):
 
 def _serialize_order_item_for_edit(item):
     unit_price = item.actual_unit_price if item.actual_unit_price is not None else item.selling_price
+    product = item.product
     return {
         'id': item.id,
         'product_id': item.product_id,
-        'name': item.product.order_display_name,
-        'sku': item.product.sku or '',
+        'name': product.order_display_name,
+        'sku': product.sku or '',
         'quantity': item.quantity,
         'unit_price': str(unit_price),
+        'selling_price': str(product.selling_price) if product.selling_price is not None else '',
+        'price_tiers': product.price_tiers_payload(),
         'platform_price': str(item.platform_price) if item.platform_price is not None else '',
         'discount_amount': str(item.discount_amount or '0.00'),
     }
@@ -2552,15 +2558,18 @@ def _superuser_update_order_items(order, items_payload):
             if platform_price is not None and platform_price < 0:
                 platform_price = None
 
-        try:
-            discount_amount = Decimal(str(row.get('discount_amount') or 0))
-        except Exception:
-            discount_amount = Decimal('0.00')
-        if discount_amount < 0:
-            discount_amount = Decimal('0.00')
-        line_gross = unit_price * quantity
-        if discount_amount > line_gross:
-            discount_amount = line_gross
+        if platform_price is not None:
+            discount_amount = _line_discount_from_prices(platform_price, unit_price, quantity)
+        else:
+            try:
+                discount_amount = Decimal(str(row.get('discount_amount') or 0))
+            except Exception:
+                discount_amount = Decimal('0.00')
+            if discount_amount < 0:
+                discount_amount = Decimal('0.00')
+            line_gross = unit_price * quantity
+            if discount_amount > line_gross:
+                discount_amount = line_gross
 
         landed_cost = product.base_cost if product.base_cost is not None else Decimal('0.00')
 
@@ -2620,7 +2629,7 @@ def api_manage_order_edit_details(request, order_id):
     Superusers may also update order items via an `items` array in the POST body.
     """
     order = get_object_or_404(
-        Order.objects.prefetch_related('items__product'),
+        Order.objects.prefetch_related('items__product__price_tiers'),
         pk=order_id,
     )
 

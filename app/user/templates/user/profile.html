@@ -675,19 +675,46 @@ document.addEventListener('alpine:init', () => {
                 // Ensure products start loading, but don't block showing existing lines.
                 this.loadProducts();
 
-                this.lines = (o.items || []).map(item => ({
-                    productId: item.product_id,
-                    productSku: item.sku || '',
-                    productName: item.name || '',
-                    productDisplayName: item.display_name || item.name || '',
-                    quantity: item.quantity,
-                    platformPrice: item.platform_price || item.actual_unit_price || '0.00',
-                    actualUnitPrice: item.actual_unit_price || '0.00',
-                }));
+                this.lines = (o.items || []).map(item => {
+                    const product = (this.products || []).find(x => x.id === item.product_id);
+                    return {
+                        productId: item.product_id,
+                        productSku: item.sku || '',
+                        productName: item.name || '',
+                        productDisplayName: item.display_name || item.name || '',
+                        quantity: item.quantity,
+                        selling_price: item.selling_price || (product && product.selling_price) || '',
+                        price_tiers: item.price_tiers || (product && product.price_tiers) || [],
+                        platformPrice: item.platform_price || item.actual_unit_price || '0.00',
+                        actualUnitPrice: item.actual_unit_price || '0.00',
+                    };
+                });
             } catch (e) {
                 console.error('Failed to load manual order', e);
                 alert('Failed to load order for editing.');
             }
+        },
+        catalogPriceForQuantity(source, qty) {
+            if (!source) return null;
+            const q = parseInt(qty, 10);
+            const fallback = (source.selling_price != null && source.selling_price !== '')
+                ? source.selling_price
+                : null;
+            if (isNaN(q) || q < 1) return fallback;
+            const tiers = (source.price_tiers || []).slice().sort((a, b) => (b.min_quantity || 0) - (a.min_quantity || 0));
+            for (let i = 0; i < tiers.length; i++) {
+                if (q >= (tiers[i].min_quantity || 0)) return tiers[i].price;
+            }
+            return fallback;
+        },
+        applyPlatformPriceFromTiers(line, defer) {
+            const apply = () => {
+                const price = this.catalogPriceForQuantity(line, line.quantity);
+                if (price == null || price === '') return;
+                line.platformPrice = Number(price).toFixed(2);
+            };
+            if (defer === false) apply();
+            else this.$nextTick(apply);
         },
         lineName(line) {
             const sku = (line.productSku || '').toString();
@@ -726,15 +753,19 @@ document.addEventListener('alpine:init', () => {
         addProductLine(p) {
             if (this.orderStatus !== 'PENDING') return;
             const price = p.selling_price || '0.00';
-            this.lines.push({
+            const line = {
                 productId: parseInt(p.id, 10),
                 productSku: p.sku || '',
                 productName: p.name || '',
                 productDisplayName: p.display_name || p.name || '',
                 quantity: 1,
+                selling_price: p.selling_price || '',
+                price_tiers: p.price_tiers || [],
                 platformPrice: price,
                 actualUnitPrice: price,
-            });
+            };
+            this.applyPlatformPriceFromTiers(line, false);
+            this.lines.push(line);
         },
         removeLine(idx) {
             if (this.orderStatus !== 'PENDING') return;

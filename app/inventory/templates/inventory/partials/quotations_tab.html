@@ -934,8 +934,11 @@ document.addEventListener('alpine:init', () => {
                 Alpine.store('globals').showToast('No rows selected', 'error');
                 return;
             }
-            const keys = encodeURIComponent(this.selectedKeys.join(','));
-            window.location.href = `${this.exportSelectedUrl}?keys=${keys}`;
+            const params = new URLSearchParams({
+                keys: this.selectedKeys.join(','),
+                rate_usd: String(this.rateUSD || 4.2),
+            });
+            window.location.href = `${this.exportSelectedUrl}?${params}`;
         },
 
         async deleteSelected() {
@@ -989,6 +992,7 @@ document.addEventListener('alpine:init', () => {
                 supplier: this.filters.suppliers.join(','),
                 sort_by: this.sort.field,
                 sort_dir: this.sort.direction,
+                rate_usd: String(this.rateUSD || 4.2),
             });
             window.location.href = `${this.exportSelectedUrl}?${params}`;
         },

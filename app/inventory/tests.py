@@ -12,6 +12,7 @@ from inventory.invoice_import import (
 from inventory.models import Supplier
 from product.models import Product
 from sales.models import Invoice, InvoiceItem
+from inventory.views import _matrix_export_price_fields
 from inventory.supplier_pricing import (
     _clean_pdf_table,
     _find_matrix_header_row,
@@ -846,4 +847,48 @@ class InvoiceImportConfirmTests(TestCase):
         self.assertEqual(Product.objects.filter(name='Hylagan - (Fidia )').count(), 0)
         item = InvoiceItem.objects.get(description='Hylagan - (Fidia )')
         self.assertEqual(item.product_id, master.pk)
+
+
+class MatrixExportPriceTests(SimpleTestCase):
+    def test_myr_row_includes_usd_using_display_rate(self):
+        row = {'price_currency': 'MYR', 'tiers': [{'unit_price': '100.00'}]}
+        usd, myr = _matrix_export_price_fields(row, row['tiers'][0], rate_usd=4.2)
+        self.assertEqual(myr, 100.0)
+        self.assertEqual(usd, round(100 / 4.2, 2))
+
+    def test_usd_source_uses_stored_rate(self):
+        row = {
+            'price_currency': 'USD',
+            'conversion_rate': '5.0',
+            'tiers': [
+                {'unit_price': '50.00'},
+                {'unit_price': '40.00'},
+            ],
+        }
+        usd, myr = _matrix_export_price_fields(row, row['tiers'][0], rate_usd=4.2)
+        self.assertEqual(myr, 50.0)
+        self.assertEqual(usd, 10.0)
+        usd2, myr2 = _matrix_export_price_fields(row, row['tiers'][1], rate_usd=4.2)
+        self.assertEqual(myr2, 40.0)
+        self.assertEqual(usd2, 8.0)
+
+    def test_usd_quotation_uses_input_value(self):
+        row = {
+            'price_currency': 'USD',
+            'input_value': '21.50',
+            'tiers': [{'unit_price': '90.30'}],
+        }
+        usd, myr = _matrix_export_price_fields(row, row['tiers'][0], rate_usd=4.2)
+        self.assertEqual(usd, 21.5)
+        self.assertEqual(myr, 90.3)
+
+    def test_eur_row_converts_myr_to_usd(self):
+        row = {
+            'price_currency': 'EUR',
+            'conversion_rate': '4.9',
+            'tiers': [{'unit_price': '98.00'}],
+        }
+        usd, myr = _matrix_export_price_fields(row, row['tiers'][0], rate_usd=4.0)
+        self.assertEqual(myr, 98.0)
+        self.assertEqual(usd, 24.5)
 

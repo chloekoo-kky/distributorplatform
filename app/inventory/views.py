@@ -1984,31 +1984,48 @@ def _matrix_export_round_usd(value) -> object:
     return round(float(value), 2)
 
 
-def _matrix_export_price_fields(row: dict, tier: dict | None) -> tuple[object, object]:
-    """Return original-currency unit price (USD column) and MYR unit price."""
+def _parse_matrix_export_usd_rate(raw) -> float:
+    """Display rate: 1 USD → MYR. Falls back to the matrix UI default."""
+    try:
+        rate = float(raw)
+    except (TypeError, ValueError):
+        return 4.2
+    if rate <= 0:
+        return 4.2
+    return rate
+
+
+def _matrix_export_price_fields(row: dict, tier: dict | None, rate_usd: float = 4.2) -> tuple[object, object]:
+    """Return unit price in USD and the stored MYR unit price."""
     currency = (row.get('price_currency') or 'MYR').upper()
-    rate = row.get('conversion_rate')
+    stored_rate = row.get('conversion_rate')
     myr_price = tier.get('unit_price') if tier else None
 
     if myr_price is None:
         return '', ''
 
     myr_f = round(float(myr_price), 2)
-    if currency == 'MYR':
-        return '', myr_f
 
-    input_value = row.get('input_value')
-    if input_value is not None:
-        return _matrix_export_round_usd(input_value), myr_f
+    if currency == 'USD':
+        tiers = row.get('tiers') or []
+        input_value = row.get('input_value')
+        # Quotation lines store one original USD amount for the single tier.
+        if input_value is not None and len(tiers) <= 1:
+            return _matrix_export_round_usd(input_value), myr_f
+        try:
+            if stored_rate is not None and float(stored_rate) > 0:
+                return _matrix_export_round_usd(myr_f / float(stored_rate)), myr_f
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+        if input_value is not None:
+            return _matrix_export_round_usd(input_value), myr_f
 
-    if rate is not None and float(rate) > 0:
-        return _matrix_export_round_usd(myr_f / float(rate)), myr_f
-
-    return '', myr_f
+    display_rate = _parse_matrix_export_usd_rate(rate_usd)
+    return _matrix_export_round_usd(myr_f / display_rate), myr_f
 
 
-def _matrix_export_row_values(row: dict, tier: dict | None) -> list:
-    usd_price, myr_price = _matrix_export_price_fields(row, tier)
+def _matrix_export_row_values(row: dict, tier: dict | None, rate_usd: float = 4.2) -> list:
+    usd_price, myr_price = _matrix_export_price_fields(row, tier, rate_usd)
     return [
         row.get('line_medication') or '',
         row.get('product_name') or '',
@@ -2154,7 +2171,11 @@ def _matrix_export_rows_by_keys(matrix_ids: list[int], quotation_ids: list[int])
     return export_rows
 
 
-def _build_matrix_export_xlsx_response(export_rows: list[dict], filename: str) -> HttpResponse:
+def _build_matrix_export_xlsx_response(
+    export_rows: list[dict],
+    filename: str,
+    rate_usd: float = 4.2,
+) -> HttpResponse:
     from openpyxl import Workbook
 
     wb = Workbook()
@@ -2177,9 +2198,9 @@ def _build_matrix_export_xlsx_response(export_rows: list[dict], filename: str) -
         tiers = row.get('tiers') or []
         if tiers:
             for tier in tiers:
-                ws.append(_matrix_export_row_values(row, tier))
+                ws.append(_matrix_export_row_values(row, tier, rate_usd))
         else:
-            ws.append(_matrix_export_row_values(row, None))
+            ws.append(_matrix_export_row_values(row, None, rate_usd))
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -2196,6 +2217,7 @@ MATRIX_EXPORT_ALL_MAX = 5000
 def export_supplier_price_matrix_xlsx(request):
     """Export supplier price matrix rows (selected keys or all rows matching filters)."""
     export_all = (request.GET.get('all') or '').strip().lower() in ('1', 'true', 'yes')
+    rate_usd = _parse_matrix_export_usd_rate(request.GET.get('rate_usd'))
 
     if export_all:
         supplier_ids = _parse_matrix_supplier_ids(request.GET.get('supplier', ''))
@@ -2214,7 +2236,7 @@ def export_supplier_price_matrix_xlsx(request):
             return redirect(reverse('core:manage_dashboard') + '#quotations')
         export_rows = _matrix_rows_for_export_from_dicts(combined)
         fname = f'supplier-price-matrix-all-{datetime.date.today()}.xlsx'
-        return _build_matrix_export_xlsx_response(export_rows, fname)
+        return _build_matrix_export_xlsx_response(export_rows, fname, rate_usd)
 
     keys_param = (request.GET.get('keys') or '').strip()
     matrix_ids, quotation_ids = _parse_matrix_export_keys(keys_param)
@@ -2226,7 +2248,7 @@ def export_supplier_price_matrix_xlsx(request):
     quotation_ids = list(dict.fromkeys(quotation_ids))[:500]
     export_rows = _matrix_export_rows_by_keys(matrix_ids, quotation_ids)
     fname = f'supplier-price-matrix-selected-{datetime.date.today()}.xlsx'
-    return _build_matrix_export_xlsx_response(export_rows, fname)
+    return _build_matrix_export_xlsx_response(export_rows, fname, rate_usd)
 
 
 MATRIX_DELETE_MAX = 500

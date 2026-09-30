@@ -143,7 +143,7 @@
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-16">Qty</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Unit (RM)</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Platform</th>
-                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-16">Disc.</th>
+                                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Disc.</th>
                                         <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">Subtotal</th>
                                         <th class="px-3 py-2 w-10"></th>
                                     </tr>
@@ -157,6 +157,7 @@
                                             </td>
                                             <td class="px-3 py-2 text-right">
                                                 <input type="number" min="1" x-model.number="line.quantity"
+                                                       @input="applyEditDetailsPlatformFromTiers(line)"
                                                        class="w-14 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
                                             </td>
                                             <td class="px-3 py-2 text-right">
@@ -165,13 +166,13 @@
                                             </td>
                                             <td class="px-3 py-2 text-right">
                                                 <input type="number" step="0.01" min="0" x-model="line.platform_price" placeholder="—"
-                                                       class="w-20 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                                       readonly tabindex="-1"
+                                                       class="w-20 text-right rounded border border-gray-200 bg-gray-50 py-1 px-1.5 text-sm text-gray-600 cursor-default"
+                                                       title="Catalog / tier price for this quantity">
                                             </td>
-                                            <td class="px-3 py-2 text-right">
-                                                <input type="number" step="0.01" min="0" x-model="line.discount_amount" placeholder="0"
-                                                       class="w-16 text-right rounded border border-gray-300 py-1 px-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                                       title="Flat RM discount for this line">
-                                            </td>
+                                            <td class="px-3 py-2 text-right tabular-nums text-gray-600"
+                                                x-text="editDetailsLineUnitDiscount(line).toFixed(2)"
+                                                title="Per-item discount: platform − unit"></td>
                                             <td class="px-3 py-2 text-right tabular-nums text-gray-700" x-text="editDetailsLineSubtotal(line)"></td>
                                             <td class="px-3 py-2 text-right">
                                                 <button type="button" @click="removeEditDetailsItem(idx)"
@@ -183,7 +184,7 @@
                                         </tr>
                                     </template>
                                     <tr x-show="editDetailsItems.length === 0">
-                                        <td colspan="6" class="px-3 py-6 text-center text-sm text-gray-400">No items. Search above to add a product.</td>
+                                        <td colspan="7" class="px-3 py-6 text-center text-sm text-gray-400">No items. Search above to add a product.</td>
                                     </tr>
                                 </tbody>
                             </table>
