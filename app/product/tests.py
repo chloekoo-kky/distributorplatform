@@ -9,8 +9,17 @@ from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+from tablib import Dataset
+
 from inventory.models import Supplier
-from product.models import Product, ProductPriceTier
+from product.invoice_sku import (
+    build_invoice_sku_preview,
+    dataset_is_invoice_item_sheet,
+    extract_invoice_item_rows,
+    normalize_item_code,
+)
+from product.models import Product, ProductInvoiceNameAlias, ProductPriceTier
 from product.views import _build_merge_candidate_groups, _products_are_merge_candidates
 from sales.models import Invoice, InvoiceItem
 
@@ -314,3 +323,363 @@ class ProductImportFormulaTests(TestCase):
             'tier_1_selling_price': '',
             'tier_1_profit_margin': '',
         }))
+
+
+class InvoiceSkuUploadTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username='skuupload',
+            password='testpass123',
+            is_staff=True,
+        )
+        self.client = Client()
+        self.client.force_login(self.user)
+        self.product = Product.objects.create(name='Re N Tox 100u')
+        self.other = Product.objects.create(name='REJURAN Healer', sku='OLD-SKU')
+
+    def _sheet(self, headers, data_rows):
+        dataset = Dataset()
+        dataset.headers = headers
+        for row in data_rows:
+            dataset.append(row)
+        return dataset
+
+    def _xlsx_bytes(self, headers, data_rows):
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(headers)
+        for row in data_rows:
+            sheet.append(row)
+        buffer = BytesIO()
+        workbook.save(buffer)
+        return buffer.getvalue()
+
+    def test_code_description_price_sheet_imports_reference_price(self):
+        dataset = self._sheet(
+            ['Code', 'Description', 'Price'],
+            [
+                [89693, 'Re N Tox 100U', 109],
+                [89693, 'Re N Tox 100U', 109],
+                [89639, 'Innotox 50U', 68],
+            ],
+        )
+        self.assertTrue(dataset_is_invoice_item_sheet(dataset))
+        rows = extract_invoice_item_rows(dataset, require_item_code=False)
+        by_desc = {row['description']: row for row in rows}
+        self.assertEqual(len(by_desc), 2)
+        self.assertEqual(by_desc['Re N Tox 100U']['item_code'], '89693')
+        self.assertEqual(by_desc['Re N Tox 100U']['reference_price'], '109.00')
+        self.assertEqual(by_desc['Innotox 50U']['reference_price'], '68.00')
+
+        upload = SimpleUploadedFile(
+            'pd-local-sales-mapping.xlsx',
+            self._xlsx_bytes(['Code', 'Description', 'Price'], [[89693, 'Re N Tox 100U', 109]]),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        preview = self.client.post(
+            '/api/product-alias-import/',
+            {'file': upload},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(preview.status_code, 200, preview.content)
+        row = preview.json()['rows'][0]
+        self.assertEqual(row['reference_price'], '109.00')
+        self.assertEqual(row['product_id'], self.product.pk)
+
+    def test_item_code_sheet_is_detected_and_numeric_codes_are_clean(self):
+        titled = Dataset()
+        titled.headers = ['Payable Invoice Detail', '']
+        titled.append(['Item Code', 'Description'])
+        titled.append([89693.0, 'Re N Tox 100u'])
+        self.assertTrue(dataset_is_invoice_item_sheet(titled))
+        rows = extract_invoice_item_rows(titled)
+        self.assertEqual(rows[0]['item_code'], '89693')
+        self.assertEqual(rows[0]['description'], 'Re N Tox 100u')
+        self.assertEqual(normalize_item_code(89694), '89694')
+
+        catalog = self._sheet(['sku', 'name', 'description'], [['A', 'B', 'C']])
+        self.assertFalse(dataset_is_invoice_item_sheet(catalog))
+
+    def test_preview_matches_name_alias_and_conflict(self):
+        ProductInvoiceNameAlias.objects.create(
+            product=self.other,
+            name='REJURAN® Healer',
+            name_normalized=ProductInvoiceNameAlias.normalize_name('REJURAN® Healer'),
+        )
+        taken = Product.objects.create(name='Already coded', sku='100017')
+        blocked = Product.objects.create(name='Bellast Ultra')
+        dataset = self._sheet(
+            ['Item Code', 'Description'],
+            [
+                ['89693', 'Re N Tox 100u'],
+                ['89710', 'REJURAN® Healer'],
+                ['100017', 'Bellast Ultra'],
+                ['', 'Special Discount'],
+            ],
+        )
+        preview = {row['description']: row for row in build_invoice_sku_preview(extract_invoice_item_rows(dataset))}
+        self.assertEqual(preview['Re N Tox 100u']['status'], 'update')
+        self.assertEqual(preview['Re N Tox 100u']['product_id'], self.product.pk)
+        self.assertEqual(preview['REJURAN® Healer']['status'], 'update')
+        self.assertEqual(preview['REJURAN® Healer']['product_id'], self.other.pk)
+        self.assertEqual(preview['REJURAN® Healer']['current_sku'], 'OLD-SKU')
+        self.assertEqual(preview['Bellast Ultra']['status'], 'conflict')
+        self.assertIn('Already coded', preview['Bellast Ultra']['message'])
+        self.assertNotIn('Special Discount', preview)
+        self.assertEqual(blocked.name, 'Bellast Ultra')
+        self.assertEqual(taken.sku, '100017')
+
+    def test_upload_sets_sku_and_saves_mapping_for_unmatched_choice(self):
+        upload = SimpleUploadedFile(
+            'items.csv',
+            b'Item Code,Description\n89693,Re N Tox 100u\n89710,REJURAN(r) Healer\n',
+            content_type='text/csv',
+        )
+        preview = self.client.post(
+            '/upload-products/',
+            {'file': upload},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(preview.status_code, 200, preview.content)
+        data = preview.json()
+        self.assertEqual(data['mode'], 'invoice_sku')
+        by_desc = {row['description']: row for row in data['preview_data']}
+        self.assertEqual(by_desc['Re N Tox 100u']['status'], 'update')
+        self.assertEqual(by_desc['REJURAN(r) Healer']['status'], 'unmatched')
+
+        confirm = self.client.post(
+            '/upload-products/',
+            {
+                'confirm': 'true',
+                'mode': 'invoice_sku',
+                'temp_file_path': data['temp_file_path'],
+                'assignments': json.dumps([
+                    {'row_key': by_desc['Re N Tox 100u']['row_key'], 'product_id': self.product.pk},
+                    {'row_key': by_desc['REJURAN(r) Healer']['row_key'], 'product_id': self.other.pk},
+                ]),
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(confirm.status_code, 200, confirm.content)
+        self.product.refresh_from_db()
+        self.other.refresh_from_db()
+        self.assertEqual(self.product.sku, '89693')
+        self.assertEqual(self.other.sku, '89710')
+        alias = ProductInvoiceNameAlias.objects.get(
+            name_normalized=ProductInvoiceNameAlias.normalize_name('REJURAN(r) Healer')
+        )
+        self.assertEqual(alias.product_id, self.other.pk)
+        self.assertFalse(ProductInvoiceNameAlias.objects.filter(
+            name_normalized=ProductInvoiceNameAlias.normalize_name('Re N Tox 100u')
+        ).exists())
+
+    def test_mapping_api_creates_lists_and_deletes_alias(self):
+        created = self.client.post(
+            '/api/product-aliases/',
+            data=json.dumps({'name': 'Xeomin 100u', 'product_id': self.product.pk}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(created.status_code, 200, created.content)
+        alias_id = created.json()['item']['id']
+        self.assertEqual(created.json()['item']['source'], 'manual')
+
+        listed = self.client.get(
+            '/api/product-aliases/?search=Xeomin',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()['pagination']['total_count'], 1)
+
+        deleted = self.client.post(
+            f'/api/product-aliases/{alias_id}/',
+            data=json.dumps({'delete': True}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(ProductInvoiceNameAlias.objects.filter(pk=alias_id).exists())
+
+    def test_mapping_import_reviews_descriptions_without_changing_sku(self):
+        from product.invoice_sku import build_invoice_mapping_preview
+
+        self.other.alias_name = 'Xeomin vial'
+        self.other.save(update_fields=['alias_name'])
+        ProductInvoiceNameAlias.objects.create(
+            product=self.product,
+            name='Re N Tox 100 units',
+            name_normalized=ProductInvoiceNameAlias.normalize_name('Re N Tox 100 units'),
+            source=ProductInvoiceNameAlias.SOURCE_MANUAL,
+        )
+        dataset = self._sheet(
+            ['Item Code', 'Description'],
+            [
+                ['89693', 'Re N Tox 100u'],
+                ['1', 'Re N Tox 100 units'],
+                ['2', 'Xeomin vial'],
+                ['', 'Brand new line'],
+            ],
+        )
+        preview = {row['description']: row for row in build_invoice_mapping_preview(
+            extract_invoice_item_rows(dataset, require_item_code=False)
+        )}
+        self.assertEqual(preview['Re N Tox 100u']['status'], 'catalog')
+        self.assertEqual(preview['Re N Tox 100 units']['status'], 'mapped')
+        self.assertEqual(preview['Xeomin vial']['status'], 'suggested')
+        self.assertEqual(preview['Brand new line']['status'], 'unmatched')
+        self.assertEqual(preview['Brand new line']['item_code'], '')
+
+        upload = SimpleUploadedFile(
+            'map.csv',
+            b'Item Code,Description\n89693,Re N Tox 100u\n2,Xeomin vial\n,Brand new line\n',
+            content_type='text/csv',
+        )
+        response = self.client.post(
+            '/api/product-alias-import/',
+            {'file': upload},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        data = response.json()
+        by_desc = {row['description']: row for row in data['rows']}
+        confirm = self.client.post(
+            '/api/product-alias-import/',
+            {
+                'confirm': 'true',
+                'temp_file_path': data['temp_file_path'],
+                'assignments': json.dumps([
+                    {'row_key': by_desc['Xeomin vial']['row_key'], 'product_id': self.other.pk},
+                    {'row_key': by_desc['Brand new line']['row_key'], 'product_id': self.product.pk},
+                ]),
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(confirm.status_code, 200, confirm.content)
+        self.assertEqual(confirm.json()['created'], 2)
+        self.other.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertEqual(self.other.sku, 'OLD-SKU')
+        self.assertIsNone(self.product.sku)
+        self.assertTrue(ProductInvoiceNameAlias.objects.filter(
+            name_normalized=ProductInvoiceNameAlias.normalize_name('Brand new line'),
+            product=self.product,
+        ).exists())
+
+    def test_mapping_lists_every_product_and_saves_reference_price(self):
+        bare = Product.objects.create(name='Unaliased Serum ZZZ')
+        listed = self.client.get(
+            '/api/product-aliases/?search=Unaliased Serum',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(listed.status_code, 200, listed.content)
+        items = listed.json()['items']
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], bare.pk)
+        self.assertEqual(items[0]['aliases'], [])
+        self.assertEqual(items[0]['reference_price'], '')
+
+        saved = self.client.post(
+            f'/api/product-reference-price/{bare.pk}/',
+            data=json.dumps({'reference_price': '88.5'}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(saved.status_code, 200, saved.content)
+        self.assertEqual(saved.json()['reference_price'], '88.50')
+        bare.refresh_from_db()
+        self.assertEqual(bare.reference_price, Decimal('88.50'))
+
+        cleared = self.client.post(
+            f'/api/product-reference-price/{bare.pk}/',
+            data=json.dumps({'reference_price': ''}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.content)
+        bare.refresh_from_db()
+        self.assertIsNone(bare.reference_price)
+
+        page = self.client.get('/manage/', HTTP_HOST='localhost')
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Reference price')
+        self.assertContains(page, 'No alias')
+        self.assertContains(page, 'Remove alias')
+        self.assertContains(page, 'Add alias')
+        self.assertContains(page, 'x-show="aliasOpen"')
+        self.assertNotContains(page, 'Add mapping')
+
+    def test_mapping_import_saves_reference_price_without_changing_sku(self):
+        price_file = SimpleUploadedFile(
+            'prices.csv',
+            b'SKU,Reference Price\nOLD-SKU,42.00\n',
+            content_type='text/csv',
+        )
+        preview = self.client.post(
+            '/api/product-alias-import/',
+            {'file': price_file},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(preview.status_code, 200, preview.content)
+        row = preview.json()['rows'][0]
+        self.assertEqual(row['product_id'], self.other.pk)
+        self.assertEqual(row['reference_price'], '42.00')
+        self.assertEqual(row['status'], 'catalog')
+
+        confirm = self.client.post(
+            '/api/product-alias-import/',
+            {
+                'confirm': 'true',
+                'temp_file_path': preview.json()['temp_file_path'],
+                'assignments': json.dumps([{
+                    'row_key': row['row_key'],
+                    'product_id': self.other.pk,
+                    'reference_price': '42.00',
+                }]),
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(confirm.status_code, 200, confirm.content)
+        self.assertEqual(confirm.json()['prices'], 1)
+        self.assertEqual(confirm.json()['created'], 0)
+        self.other.refresh_from_db()
+        self.assertEqual(self.other.reference_price, Decimal('42.00'))
+        self.assertEqual(self.other.sku, 'OLD-SKU')
+        self.assertFalse(ProductInvoiceNameAlias.objects.filter(product=self.other).exists())
+
+        invoice = SimpleUploadedFile(
+            'invoice.csv',
+            b'Item Code,Description,Unit Price\n89693,Re N Tox 100u,15.5\n',
+            content_type='text/csv',
+        )
+        invoice_preview = self.client.post(
+            '/api/product-alias-import/',
+            {'file': invoice},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(invoice_preview.status_code, 200, invoice_preview.content)
+        invoice_row = invoice_preview.json()['rows'][0]
+        self.assertEqual(invoice_row['status'], 'catalog')
+        self.assertEqual(invoice_row['reference_price'], '15.50')
+        invoice_confirm = self.client.post(
+            '/api/product-alias-import/',
+            {
+                'confirm': 'true',
+                'temp_file_path': invoice_preview.json()['temp_file_path'],
+                'assignments': json.dumps([{
+                    'row_key': invoice_row['row_key'],
+                    'product_id': self.product.pk,
+                    'reference_price': '15.50',
+                }]),
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(invoice_confirm.status_code, 200, invoice_confirm.content)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reference_price, Decimal('15.50'))
+        self.assertIsNone(self.product.sku)
+        self.assertFalse(ProductInvoiceNameAlias.objects.filter(
+            name_normalized=ProductInvoiceNameAlias.normalize_name('Re N Tox 100u')
+        ).exists())

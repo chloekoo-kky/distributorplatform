@@ -1,6 +1,6 @@
 # distributorplatform/app/product/urls.py
 from django.urls import path
-from . import views
+from . import mapping_views, views
 
 app_name = 'product'
 
@@ -19,6 +19,10 @@ urlpatterns = [
     path('api/delete-selected-products/', views.api_delete_selected_products, name='api_delete_selected_products'),
     path('api/ignore-merge-suggestion/', views.api_ignore_merge_suggestion, name='api_ignore_merge_suggestion'),
     path('api/product-search/', views.api_product_search, name='api_product_search'),
+    path('api/product-aliases/', mapping_views.api_product_aliases, name='api_product_aliases'),
+    path('api/product-alias-import/', mapping_views.api_import_invoice_mappings, name='api_import_invoice_mappings'),
+    path('api/product-aliases/<int:alias_id>/', mapping_views.api_product_alias_detail, name='api_product_alias_detail'),
+    path('api/product-reference-price/<int:product_id>/', mapping_views.api_product_reference_price, name='api_product_reference_price'),
 
     # --- NEW: Category Management API ---
     path('api/manage-categories/', views.api_manage_categories, name='api_manage_categories'),

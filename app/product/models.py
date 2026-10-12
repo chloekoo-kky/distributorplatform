@@ -146,6 +146,13 @@ class Product(models.Model):
         blank=True,
         help_text="The customer-facing selling price."
     )
+    reference_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Internal reference price shown on product mapping. Not the customer selling price.",
+    )
     profit_margin = models.DecimalField(
         max_digits=5, # e.g., 999.99%
         decimal_places=2,
@@ -407,9 +414,11 @@ class ProductInvoiceNameAlias(models.Model):
     """Invoice / merged-product names that resolve to one master product."""
     SOURCE_MERGE = 'merge'
     SOURCE_INVOICE = 'invoice'
+    SOURCE_MANUAL = 'manual'
     SOURCE_CHOICES = (
         (SOURCE_MERGE, 'Product merge'),
         (SOURCE_INVOICE, 'Invoice import'),
+        (SOURCE_MANUAL, 'Manual mapping'),
     )
 
     product = models.ForeignKey(

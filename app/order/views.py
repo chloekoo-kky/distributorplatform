@@ -196,6 +196,87 @@ def _exclude_orders_by_customer_labels(qs, labels):
     return qs.exclude(id__in=exclude_ids)
 
 
+def _parse_optional_iso_date(value):
+    raw = (value or '').strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+def _parse_dashboard_filters(request):
+    """Order Management toolbar filters shared by stats, cash, and pending figures."""
+    try:
+        month = int(request.GET.get('month', 0) or 0)
+        year = int(request.GET.get('year', 0) or 0)
+    except (TypeError, ValueError):
+        month = 0
+        year = 0
+    return {
+        'month': month,
+        'year': year,
+        'start_date': _parse_optional_iso_date(request.GET.get('start_date')),
+        'end_date': _parse_optional_iso_date(request.GET.get('end_date')),
+        'search': (request.GET.get('search') or '').strip(),
+        'agent': (request.GET.get('agent') or '').strip(),
+        'status': (request.GET.get('status') or '').strip(),
+        'exclude_customers': _parse_exclude_customer_labels(request),
+    }
+
+
+def _apply_calendar_date_filter(qs, field_name, start_date=None, end_date=None, month=0, year=0):
+    """Filter a date field. An explicit range wins over month/year; month 0 is all periods."""
+    if start_date:
+        qs = qs.filter(**{f'{field_name}__gte': start_date})
+    if end_date:
+        qs = qs.filter(**{f'{field_name}__lte': end_date})
+    if not (start_date or end_date) and month and year:
+        qs = qs.filter(**{f'{field_name}__year': year, f'{field_name}__month': month})
+    return qs
+
+
+def _apply_order_period_filters(qs, start_date=None, end_date=None, month=0, year=0):
+    """Logical order date: transaction_date when set, otherwise created_at."""
+    if start_date:
+        qs = qs.filter(
+            Q(transaction_date__gte=start_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
+        )
+    if end_date:
+        qs = qs.filter(
+            Q(transaction_date__lte=end_date)
+            |
+            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
+        )
+    if not (start_date or end_date) and month and year:
+        qs = qs.filter(
+            Q(transaction_date__year=year, transaction_date__month=month)
+            |
+            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+        )
+    return qs
+
+
+def _exclude_rows_by_label_field(qs, field_name, labels):
+    """Drop rows whose text field matches a customer label (case-insensitive)."""
+    if not labels:
+        return qs
+    wanted = {label.casefold() for label in labels if label}
+    if not wanted:
+        return qs
+    exclude_ids = [
+        pk for pk, raw in qs.values_list('id', field_name)
+        if _title_case_received_from(raw or '').casefold() in wanted
+        or (raw or '').strip().casefold() in wanted
+    ]
+    if not exclude_ids:
+        return qs
+    return qs.exclude(id__in=exclude_ids)
+
+
 def _distinct_order_customer_labels():
     """Sorted unique customer labels from all orders (for exclude filter options)."""
     labels = set()
@@ -256,9 +337,14 @@ def _revenue_adjustment_export_rows(adjustments_qs):
         RevenueAdjustmentEntry.AdjustmentType.LOAN_INTEREST: 'Interest of loan',
     }
     rows = []
-    for adj in adjustments_qs.select_related('recorded_by'):
+    for adj in adjustments_qs.select_related('recorded_by', 'agent'):
         product_label = type_labels.get(adj.adjustment_type, adj.get_adjustment_type_display())
-        salesteam = adj.recorded_by.username if adj.recorded_by_id else ''
+        if adj.agent_id:
+            salesteam = adj.agent.username
+        elif adj.recorded_by_id:
+            salesteam = adj.recorded_by.username
+        else:
+            salesteam = ''
         d = adj.transaction_date
         month_key = d.strftime('%Y-%m')
         amt = adj.amount
@@ -438,6 +524,173 @@ def _excel_response_for_order_rows(filename, rows):
     response = HttpResponse(
         output.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+SIMPLE_SALE_HEADERS = [
+    'Order Date', 'Customer Name', 'Product ID', 'Product Name',
+    'Price', 'Quantity', 'Line Revenue (MYR)', 'Line Revenue (USD)',
+]
+SIMPLE_SALE_SHEET_NAME = 'Sale Transactions'
+SIMPLE_SALE_MONTHLY_SHEET_NAME = 'Monthly Sales'
+SIMPLE_SALE_PRODUCT_SHEET_NAME = 'Product Sales'
+SIMPLE_SALE_MONTHLY_HEADERS = ['Year', 'Month', 'Revenue (USD)']
+SIMPLE_SALE_PRODUCT_HEADERS = ['Product ID', 'Product Name', 'Revenue (USD)']
+
+
+def _parse_positive_decimal(raw):
+    try:
+        value = Decimal(str(raw).strip())
+    except Exception:
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
+def _write_simple_sale_header_row(ws, headers, row_index=1):
+    for col, header in enumerate(headers, start=1):
+        cell = ws.cell(row=row_index, column=col, value=header)
+        cell.fill = HEADER_FILL_GRAY
+        cell.font = HEADER_FONT_BOLD
+
+
+def _write_simple_sale_summary_sheets(wb, rows):
+    """Monthly and product totals. USD amounts sum the live line formulas."""
+    data_start = 4
+    data_end = data_start + len(rows) - 1
+    usd_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$H${data_start}:$H${data_end}"
+    date_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$A${data_start}:$A${data_end}"
+    sku_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$C${data_start}:$C${data_end}"
+    name_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$D${data_start}:$D${data_end}"
+
+    monthly = wb.create_sheet(SIMPLE_SALE_MONTHLY_SHEET_NAME)
+    _write_simple_sale_header_row(monthly, SIMPLE_SALE_MONTHLY_HEADERS)
+    months = []
+    seen_months = set()
+    for row in rows:
+        excel_date = _coerce_export_date(row.get('sort_date'))
+        if excel_date is None:
+            continue
+        key = (excel_date.year, excel_date.month)
+        if key not in seen_months:
+            seen_months.add(key)
+            months.append(key)
+    months.sort()
+    for offset, (year, month) in enumerate(months):
+        excel_row = 2 + offset
+        monthly.cell(row=excel_row, column=1, value=year)
+        monthly.cell(row=excel_row, column=2, value=month)
+        if rows:
+            formula = (
+                f'=SUMIFS({usd_range},{date_range},">="&DATE(A{excel_row},B{excel_row},1),'
+                f'{date_range},"<"&DATE(A{excel_row},B{excel_row}+1,1))'
+            )
+            revenue = monthly.cell(row=excel_row, column=3, value=formula)
+            revenue.number_format = '0.00'
+    monthly.column_dimensions['A'].width = 12
+    monthly.column_dimensions['B'].width = 12
+    monthly.column_dimensions['C'].width = 18
+
+    products_sheet = wb.create_sheet(SIMPLE_SALE_PRODUCT_SHEET_NAME)
+    _write_simple_sale_header_row(products_sheet, SIMPLE_SALE_PRODUCT_HEADERS)
+    products = []
+    seen_products = set()
+    for row in rows:
+        key = (row.get('sku') or '', row.get('product') or '')
+        if key not in seen_products:
+            seen_products.add(key)
+            products.append(key)
+    products.sort(key=lambda item: (item[0].casefold(), item[1].casefold()))
+    for offset, (sku, name) in enumerate(products):
+        excel_row = 2 + offset
+        products_sheet.cell(row=excel_row, column=1, value=sku)
+        products_sheet.cell(row=excel_row, column=2, value=name)
+        if rows:
+            formula = (
+                f'=SUMIFS({usd_range},{sku_range},A{excel_row},{name_range},B{excel_row})'
+            )
+            revenue = products_sheet.cell(row=excel_row, column=3, value=formula)
+            revenue.number_format = '0.00'
+    products_sheet.column_dimensions['A'].width = 18
+    products_sheet.column_dimensions['B'].width = 36
+    products_sheet.column_dimensions['C'].width = 18
+
+
+def _excel_response_for_simple_sale_rows(filename, rows, usd_rate):
+    """Sales-only statement: reference price, live MYR and USD formulas."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = SIMPLE_SALE_SHEET_NAME
+
+    ws['A1'] = 'Convert rate (MYR per 1 USD)'
+    ws['A1'].font = HEADER_FONT_BOLD
+    rate_cell = ws['B1']
+    rate_cell.value = float(usd_rate)
+    rate_cell.number_format = '0.0000'
+
+    header_row = 3
+    for col, header in enumerate(SIMPLE_SALE_HEADERS, start=1):
+        cell = ws.cell(row=header_row, column=col, value=header)
+        cell.fill = HEADER_FILL_GRAY
+        cell.font = HEADER_FONT_BOLD
+
+    prev_month = None
+    use_blue = True
+    for offset, row in enumerate(rows):
+        excel_row = header_row + 1 + offset
+        month_key = row.get('month_key')
+        if prev_month is not None and month_key != prev_month:
+            use_blue = not use_blue
+        fill = MONTH_FILL_BLUE if use_blue else MONTH_FILL_WHITE
+
+        date_cell = ws.cell(row=excel_row, column=1, value=None)
+        excel_date = _coerce_export_date(row.get('sort_date'))
+        if excel_date is not None:
+            date_cell.value = float(to_excel(datetime.combine(excel_date, time.min)))
+            date_cell.number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
+            date_cell.alignment = Alignment(horizontal='right')
+        ws.cell(row=excel_row, column=2, value=row['customer'])
+        ws.cell(row=excel_row, column=3, value=row['sku'])
+        ws.cell(row=excel_row, column=4, value=row['product'])
+
+        price_cell = ws.cell(row=excel_row, column=5, value=row['price'])
+        if row['price'] is not None:
+            price_cell.number_format = '0.00'
+        qty_cell = ws.cell(row=excel_row, column=6, value=row['quantity'])
+        qty_cell.number_format = '0'
+
+        myr_cell = ws.cell(row=excel_row, column=7, value=f'=E{excel_row}*F{excel_row}')
+        myr_cell.number_format = '0.00'
+        usd_cell = ws.cell(row=excel_row, column=8, value=f'=IF($B$1=0,"",G{excel_row}/$B$1)')
+        usd_cell.number_format = '0.00'
+
+        for col in range(1, len(SIMPLE_SALE_HEADERS) + 1):
+            ws.cell(row=excel_row, column=col).fill = fill
+        prev_month = month_key
+
+    _write_simple_sale_summary_sheets(wb, rows)
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            if cell.number_format == ORDER_EXPORT_DATE_NUMBER_FORMAT and cell.value is not None:
+                max_len = max(max_len, 10)
+                continue
+            value = '' if cell.value is None else str(cell.value)
+            if len(value) > max_len:
+                max_len = len(value)
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 12), 48)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
@@ -1871,31 +2124,6 @@ def _finance_name_match_q(field_name, names):
     return q
 
 
-def _cash_received_for_agent(agent_user, order_qs):
-    if not agent_user:
-        return Decimal('0')
-    qs = _filter_cash_receipts_for_agent(
-        CashBankReceiptEntry.objects.all(),
-        agent_filter=str(agent_user.pk),
-        order_qs=order_qs,
-    )
-    agg = qs.aggregate(t=Sum('amount'))
-    return agg['t'] or Decimal('0')
-
-
-def _commission_paid_for_agent(agent_user):
-    if not agent_user:
-        return Decimal('0')
-    names = {agent_user.username}
-    full = agent_user.get_full_name()
-    if full and full.strip():
-        names.add(full.strip())
-    agg = AgentCommissionPaymentEntry.objects.filter(
-        _finance_name_match_q('paid_to', names)
-    ).aggregate(t=Sum('amount'))
-    return agg['t'] or Decimal('0')
-
-
 def _bulk_create_finance_entries(model_cls, prefix, entries):
     """Insert finance rows then assign stable unique transaction_ids.
 
@@ -1917,63 +2145,258 @@ def _bulk_create_finance_entries(model_cls, prefix, entries):
     return created
 
 
-def _order_financial_summary(agent_filter='', exclude_customers=None):
-    """Order financial figures. When agent_filter / exclude_customers are set, scopes accordingly."""
+def _resolve_dashboard_agent(agent_filter):
     from django.contrib.auth import get_user_model
     User = get_user_model()
+    if not agent_filter:
+        return '', None
+    try:
+        agent_user = User.objects.filter(pk=int(agent_filter)).first()
+    except (ValueError, TypeError):
+        return '', None
+    if not agent_user:
+        return '', None
+    return str(agent_user.pk), agent_user
+
+
+def _cash_receipt_search_q(search_query):
+    return (
+        Q(received_from__icontains=search_query)
+        | Q(transaction_id__icontains=search_query)
+        | Q(collected_by__username__icontains=search_query)
+        | Q(collected_by__first_name__icontains=search_query)
+        | Q(collected_by__last_name__icontains=search_query)
+    )
+
+
+def _commission_payment_search_q(search_query):
+    return (
+        Q(paid_to__icontains=search_query)
+        | Q(notes__icontains=search_query)
+        | Q(transaction_id__icontains=search_query)
+    )
+
+
+def _revenue_adjustment_search_q(search_query):
+    return (
+        Q(reference__icontains=search_query)
+        | Q(transaction_id__icontains=search_query)
+        | Q(agent__username__icontains=search_query)
+        | Q(agent__first_name__icontains=search_query)
+        | Q(agent__last_name__icontains=search_query)
+    )
+
+
+def _scoped_cash_receipts(
+    agent_filter='',
+    exclude_customers=None,
+    search_query='',
+    start_date=None,
+    end_date=None,
+    month=0,
+    year=0,
+    agent_user=None,
+):
+    """Cash/bank/loan receipts for the current Order Management filters."""
     exclude_customers = exclude_customers or []
+    agent_filter, resolved = _resolve_dashboard_agent(agent_filter)
+    if agent_user is None:
+        agent_user = resolved
 
-    order_qs = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
-    agent_user = None
-    if agent_filter:
-        try:
-            agent_user = User.objects.filter(pk=int(agent_filter)).first()
-            if agent_user:
-                order_qs = order_qs.filter(agent_id=agent_user.pk)
-            else:
-                agent_filter = ''
-        except (ValueError, TypeError):
-            agent_filter = ''
+    identity_orders = Order.objects.exclude(status=Order.OrderStatus.CANCELLED)
+    if agent_user:
+        identity_orders = identity_orders.filter(agent_id=agent_user.pk)
+    identity_orders = _exclude_orders_by_customer_labels(identity_orders, exclude_customers)
 
+    if agent_user:
+        qs = _filter_cash_receipts_for_agent(
+            CashBankReceiptEntry.objects.all(),
+            agent_filter=str(agent_user.pk),
+            order_qs=identity_orders,
+        )
+    else:
+        qs = _exclude_rows_by_label_field(
+            CashBankReceiptEntry.objects.all(),
+            'received_from',
+            exclude_customers,
+        )
+
+    qs = _apply_calendar_date_filter(
+        qs, 'transaction_date', start_date, end_date, month, year,
+    )
+    if search_query:
+        qs = qs.filter(_cash_receipt_search_q(search_query))
+    return qs, agent_user, agent_filter
+
+
+def _scoped_commission_payments(
+    agent_user=None,
+    search_query='',
+    start_date=None,
+    end_date=None,
+    month=0,
+    year=0,
+):
+    qs = AgentCommissionPaymentEntry.objects.all()
+    if agent_user:
+        names = {agent_user.username}
+        full = agent_user.get_full_name()
+        if full and full.strip():
+            names.add(full.strip())
+        qs = qs.filter(_finance_name_match_q('paid_to', names))
+    qs = _apply_calendar_date_filter(
+        qs, 'payment_date', start_date, end_date, month, year,
+    )
+    if search_query:
+        qs = qs.filter(_commission_payment_search_q(search_query))
+    return qs
+
+
+def _scoped_revenue_adjustments(
+    exclude_customers=None,
+    search_query='',
+    start_date=None,
+    end_date=None,
+    month=0,
+    year=0,
+    agent_filter='',
+):
+    qs = _exclude_rows_by_label_field(
+        RevenueAdjustmentEntry.objects.all(),
+        'reference',
+        exclude_customers or [],
+    )
+    _agent_filter, agent_user = _resolve_dashboard_agent(agent_filter)
+    if agent_user:
+        qs = qs.filter(agent_id=agent_user.pk)
+    qs = _apply_calendar_date_filter(
+        qs, 'transaction_date', start_date, end_date, month, year,
+    )
+    if search_query:
+        qs = qs.filter(_revenue_adjustment_search_q(search_query))
+    return qs
+
+
+def _order_financial_summary(
+    agent_filter='',
+    exclude_customers=None,
+    search_query='',
+    start_date=None,
+    end_date=None,
+    month=0,
+    year=0,
+):
+    """Cash received and pending receivable for the Order Management filters.
+
+    Pending is period revenue minus cash received minus commission paid, using the
+    same date, search, agent, and exclude-customer scope as Total Revenue.
+    Order status is ignored, matching the period overview cards.
+    """
+    exclude_customers = exclude_customers or []
+    search_query = (search_query or '').strip()
+
+    order_qs = _apply_order_period_filters(
+        Order.objects.all(), start_date, end_date, month, year,
+    )
+    agent_filter, agent_user = _resolve_dashboard_agent(agent_filter)
+    if agent_user:
+        order_qs = order_qs.filter(agent_id=agent_user.pk)
+    if search_query:
+        order_qs = order_qs.filter(_manage_orders_search_q(search_query)).distinct()
     order_qs = _exclude_orders_by_customer_labels(order_qs, exclude_customers)
 
     rev_agg = (
         OrderItem.objects
         .filter(order__in=order_qs)
+        .exclude(order__status=Order.OrderStatus.CANCELLED)
         .aggregate(t=Sum(F('selling_price') * F('quantity'), output_field=DecimalField()))
     )
-    all_time_revenue = rev_agg['t'] or Decimal('0')
+    period_revenue = rev_agg['t'] or Decimal('0')
 
-    if agent_filter and agent_user:
-        total_cash_received = _cash_received_for_agent(agent_user, order_qs)
-        total_commission_paid = _commission_paid_for_agent(agent_user)
-    else:
-        cash_qs = CashBankReceiptEntry.objects.all()
-        if exclude_customers:
-            # Drop cash rows whose payer label matches an excluded customer (case-insensitive).
-            wanted = {label.casefold() for label in exclude_customers if label}
-            cash_exclude_ids = [
-                pk for pk, received_from in cash_qs.values_list('id', 'received_from')
-                if _title_case_received_from(received_from or '').casefold() in wanted
-                or (received_from or '').strip().casefold() in wanted
-            ]
-            if cash_exclude_ids:
-                cash_qs = cash_qs.exclude(id__in=cash_exclude_ids)
-        cash_agg = cash_qs.aggregate(t=Sum('amount'))
-        total_cash_received = cash_agg['t'] or Decimal('0')
-        comm_agg = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))
-        total_commission_paid = comm_agg['t'] or Decimal('0')
+    cash_qs, agent_user, agent_filter = _scoped_cash_receipts(
+        agent_filter=agent_filter,
+        exclude_customers=exclude_customers,
+        search_query=search_query,
+        start_date=start_date,
+        end_date=end_date,
+        month=month,
+        year=year,
+        agent_user=agent_user,
+    )
+    total_cash_received = cash_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    commission_qs = _scoped_commission_payments(
+        agent_user=agent_user,
+        search_query=search_query,
+        start_date=start_date,
+        end_date=end_date,
+        month=month,
+        year=year,
+    )
+    total_commission_paid = commission_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
-    pending = all_time_revenue - total_cash_received - total_commission_paid
+    pending = period_revenue - total_cash_received - total_commission_paid
 
     return {
-        'all_time_revenue': float(all_time_revenue),
+        'all_time_revenue': float(period_revenue),
         'total_cash_received': float(total_cash_received),
         'total_commission_paid': float(total_commission_paid),
         'pending_cash_receivable': float(pending),
         'agent_scoped': bool(agent_filter and agent_user),
         'customers_excluded': bool(exclude_customers),
     }
+
+
+def _order_financial_summary_from_request(request):
+    filters = _parse_dashboard_filters(request)
+    return _order_financial_summary(
+        agent_filter=filters['agent'],
+        exclude_customers=filters['exclude_customers'],
+        search_query=filters['search'],
+        start_date=filters['start_date'],
+        end_date=filters['end_date'],
+        month=filters['month'],
+        year=filters['year'],
+    )
+
+
+def _scoped_cash_receipts_from_request(request):
+    filters = _parse_dashboard_filters(request)
+    qs, _agent_user, _agent_filter = _scoped_cash_receipts(
+        agent_filter=filters['agent'],
+        exclude_customers=filters['exclude_customers'],
+        search_query=filters['search'],
+        start_date=filters['start_date'],
+        end_date=filters['end_date'],
+        month=filters['month'],
+        year=filters['year'],
+    )
+    return qs
+
+
+def _scoped_commission_payments_from_request(request):
+    filters = _parse_dashboard_filters(request)
+    _agent_filter, agent_user = _resolve_dashboard_agent(filters['agent'])
+    return _scoped_commission_payments(
+        agent_user=agent_user,
+        search_query=filters['search'],
+        start_date=filters['start_date'],
+        end_date=filters['end_date'],
+        month=filters['month'],
+        year=filters['year'],
+    )
+
+
+def _scoped_revenue_adjustments_from_request(request):
+    filters = _parse_dashboard_filters(request)
+    return _scoped_revenue_adjustments(
+        exclude_customers=filters['exclude_customers'],
+        search_query=filters['search'],
+        start_date=filters['start_date'],
+        end_date=filters['end_date'],
+        month=filters['month'],
+        year=filters['year'],
+        agent_filter=filters['agent'],
+    )
 
 
 @staff_member_required
@@ -2008,34 +2431,15 @@ def api_manage_orders(request):
     limit = request.GET.get('limit', 20)
     sort_by = request.GET.get('sort_by', 'order_date')
     sort_dir = request.GET.get('sort_dir', 'desc')
-    search_query = request.GET.get('search', '').strip()
-    status_filter = request.GET.get('status', '')
-    agent_filter = request.GET.get('agent', '').strip()
-    exclude_customers = _parse_exclude_customer_labels(request)
-
-    # --- Date Filter Params (Period + Range) ---
-    try:
-        month = int(request.GET.get('month', 0))
-        year = int(request.GET.get('year', 0))
-    except ValueError:
-        month = 0
-        year = 0
-
-    # Optional explicit date range (overrides month/year if provided)
-    start_date = None
-    end_date = None
-    start_str = request.GET.get('start_date') or ''
-    end_str = request.GET.get('end_date') or ''
-    if start_str:
-        try:
-            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
-        except ValueError:
-            start_date = None
-    if end_str:
-        try:
-            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
-        except ValueError:
-            end_date = None
+    dashboard = _parse_dashboard_filters(request)
+    search_query = dashboard['search']
+    status_filter = dashboard['status']
+    agent_filter = dashboard['agent']
+    exclude_customers = dashboard['exclude_customers']
+    month = dashboard['month']
+    year = dashboard['year']
+    start_date = dashboard['start_date']
+    end_date = dashboard['end_date']
 
     # --- Sorting ---
     # Order date (sort_by order_date or created_at): sort by transaction_date when set, else the local
@@ -2064,27 +2468,8 @@ def api_manage_orders(request):
             )
         ).order_by(f'{sort_prefix}_order_sort_date', 'id')
 
-    # 1. Apply Date Filter (if provided)
-    # Date range takes precedence over month/year when supplied.
-    if start_date:
-        orders = orders.filter(
-            Q(transaction_date__gte=start_date)
-            |
-            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
-        )
-    if end_date:
-        orders = orders.filter(
-            Q(transaction_date__lte=end_date)
-            |
-            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
-        )
-    if not (start_date or end_date) and month and year:
-        # Filter by logical "order date": prefer transaction_date if set, else created_at
-        orders = orders.filter(
-            Q(transaction_date__year=year, transaction_date__month=month)
-            |
-            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
-        )
+    # 1. Apply Date Filter (if provided). Date range takes precedence over month/year.
+    orders = _apply_order_period_filters(orders, start_date, end_date, month, year)
 
     # 2. Apply Status Filter
     orders = _apply_order_status_agent_filters(orders, status_filter, agent_filter)
@@ -2099,26 +2484,9 @@ def api_manage_orders(request):
     # --- Statistics Calculation (Scoped to current Month/Search filters) ---
     # We create a separate queryset for stats to respect Date/Search filters
     # but IGNORE Pagination and usually ignore status filter (to show full overview of the month).
-    stats_qs = Order.objects.all()
-
-    if start_date:
-        stats_qs = stats_qs.filter(
-            Q(transaction_date__gte=start_date)
-            |
-            Q(transaction_date__isnull=True, created_at__date__gte=start_date)
-        )
-    if end_date:
-        stats_qs = stats_qs.filter(
-            Q(transaction_date__lte=end_date)
-            |
-            Q(transaction_date__isnull=True, created_at__date__lte=end_date)
-        )
-    if not (start_date or end_date) and month and year:
-        stats_qs = stats_qs.filter(
-            Q(transaction_date__year=year, transaction_date__month=month)
-            |
-            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
-        )
+    stats_qs = _apply_order_period_filters(
+        Order.objects.all(), start_date, end_date, month, year,
+    )
 
     if search_query:
         stats_qs = stats_qs.filter(_manage_orders_search_q(search_query)).distinct()
@@ -2146,7 +2514,15 @@ def api_manage_orders(request):
     }
 
     financial = (
-        _order_financial_summary(agent_filter=agent_filter, exclude_customers=exclude_customers)
+        _order_financial_summary(
+            agent_filter=agent_filter,
+            exclude_customers=exclude_customers,
+            search_query=search_query,
+            start_date=start_date,
+            end_date=end_date,
+            month=month,
+            year=year,
+        )
         if request.user.is_superuser
         else None
     )
@@ -2808,7 +3184,7 @@ def api_cash_bank_receipt_create(request):
         },
     }
     if request.user.is_superuser:
-        payload['financial'] = _order_financial_summary()
+        payload['financial'] = _order_financial_summary_from_request(request)
     return JsonResponse(payload)
 
 
@@ -2879,7 +3255,7 @@ def api_cash_bank_receipt_bulk_upload(request):
         'message': f'{" and ".join(parts).capitalize()} receipt(s).',
     }
     if request.user.is_superuser:
-        payload['financial'] = _order_financial_summary()
+        payload['financial'] = _order_financial_summary_from_request(request)
     return JsonResponse(payload)
 
 
@@ -2936,12 +3312,13 @@ def api_cash_bank_received_from_suggestions(request):
 
 @staff_member_required
 def api_cash_received_breakdown(request):
-    """Global cash/bank receipt totals grouped by payer (not filter-scoped). Superuser only."""
+    """Cash/bank receipt totals grouped by payer for the current dashboard filters. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
+    cash_qs = _scoped_cash_receipts_from_request(request)
     rows = (
-        CashBankReceiptEntry.objects
+        cash_qs
         .values('received_from', 'payment_type')
         .annotate(amount=Sum('amount'), entry_count=Count('id'))
         .order_by('-amount')
@@ -2969,7 +3346,7 @@ def api_cash_received_breakdown(request):
         else:
             grouped[name]['loan'] += amount
 
-    total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = cash_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
 
     breakdown = []
     for name, row in grouped.items():
@@ -2993,7 +3370,7 @@ def api_cash_received_breakdown(request):
 
 @staff_member_required
 def api_cash_received_transactions(request):
-    """All cash/bank receipt entries for the transaction details modal. Superuser only."""
+    """Cash/bank receipt entries for the transaction details modal, filter-scoped. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
@@ -3002,7 +3379,8 @@ def api_cash_received_transactions(request):
         CashBankReceiptEntry.PaymentType.BANK: 'Bank transfer',
         CashBankReceiptEntry.PaymentType.LOAN: 'Loan repayment',
     }
-    entries = CashBankReceiptEntry.objects.select_related('collected_by').order_by('-transaction_date', '-id')
+    cash_qs = _scoped_cash_receipts_from_request(request)
+    entries = cash_qs.select_related('collected_by').order_by('-transaction_date', '-id')
     transactions = []
     for entry in entries:
         transactions.append({
@@ -3016,7 +3394,7 @@ def api_cash_received_transactions(request):
             'collected_by': entry.collected_by.username if entry.collected_by_id else '',
             'amount': float(entry.amount),
         })
-    total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = cash_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'total': float(total),
         'transactions': transactions,
@@ -3025,11 +3403,15 @@ def api_cash_received_transactions(request):
 
 @staff_member_required
 def export_cash_received_transactions(request):
-    """Export all cash/bank receipt entries for bulk edit (e.g. update collected by). Superuser only."""
+    """Export cash/bank receipt entries in the current dashboard filter scope. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
-    entries = CashBankReceiptEntry.objects.select_related('collected_by').order_by('-transaction_date', '-id')
+    entries = (
+        _scoped_cash_receipts_from_request(request)
+        .select_related('collected_by')
+        .order_by('-transaction_date', '-id')
+    )
     data_rows = []
     for entry in entries:
         data_rows.append([
@@ -3110,7 +3492,7 @@ def api_cash_bank_receipt_update(request, entry_id):
             'transaction_date': entry.transaction_date.isoformat(),
             'amount': str(entry.amount),
         },
-        'financial': _order_financial_summary(),
+        'financial': _order_financial_summary_from_request(request),
     })
 
 
@@ -3124,21 +3506,22 @@ def api_cash_bank_receipt_delete(request, entry_id):
     entry = get_object_or_404(CashBankReceiptEntry, pk=entry_id)
     entry.delete()
 
-    total = CashBankReceiptEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = _scoped_cash_receipts_from_request(request).aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'success': True,
         'total': float(total),
-        'financial': _order_financial_summary(),
+        'financial': _order_financial_summary_from_request(request),
     })
 
 
 @staff_member_required
 def api_commission_paid_transactions(request):
-    """All commission payment entries for the transaction details modal. Superuser only."""
+    """Commission payment entries for the transaction details modal, filter-scoped. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
-    entries = AgentCommissionPaymentEntry.objects.order_by('-payment_date', '-id')
+    commission_qs = _scoped_commission_payments_from_request(request)
+    entries = commission_qs.order_by('-payment_date', '-id')
     transactions = []
     for entry in entries:
         transactions.append({
@@ -3149,7 +3532,7 @@ def api_commission_paid_transactions(request):
             'notes': entry.notes or '',
             'amount': float(entry.amount),
         })
-    total = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = commission_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'total': float(total),
         'transactions': transactions,
@@ -3158,7 +3541,7 @@ def api_commission_paid_transactions(request):
 
 @staff_member_required
 def api_revenue_adjustment_transactions(request):
-    """All revenue adjustment entries for the transaction details modal. Superuser only."""
+    """Revenue adjustment entries for the view modal, filter-scoped. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({'error': 'Forbidden'}, status=403)
 
@@ -3166,7 +3549,8 @@ def api_revenue_adjustment_transactions(request):
         RevenueAdjustmentEntry.AdjustmentType.COMMISSION_RELEASED: 'Commission released',
         RevenueAdjustmentEntry.AdjustmentType.LOAN_INTEREST: 'Interest of loan',
     }
-    entries = RevenueAdjustmentEntry.objects.order_by('-transaction_date', '-id')
+    adjustment_qs = _scoped_revenue_adjustments_from_request(request)
+    entries = adjustment_qs.select_related('agent').order_by('-transaction_date', '-id')
     transactions = []
     for entry in entries:
         transactions.append({
@@ -3175,10 +3559,12 @@ def api_revenue_adjustment_transactions(request):
             'transaction_date': entry.transaction_date.isoformat(),
             'type': type_labels.get(entry.adjustment_type, entry.get_adjustment_type_display()),
             'type_code': entry.adjustment_type,
+            'agent_id': entry.agent_id,
+            'agent': entry.agent.username if entry.agent_id else '',
             'reference': entry.reference or '',
             'amount': float(entry.amount),
         })
-    total = RevenueAdjustmentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = adjustment_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'total': float(total),
         'transactions': transactions,
@@ -3227,7 +3613,7 @@ def api_agent_commission_payment_create(request):
         notes=notes,
         recorded_by=request.user,
     )
-    financial = _order_financial_summary()
+    financial = _order_financial_summary_from_request(request)
     return JsonResponse({
         'success': True,
         'entry': {
@@ -3282,7 +3668,7 @@ def api_agent_commission_payment_update(request, entry_id):
     entry.notes = notes
     entry.save()
 
-    financial = _order_financial_summary()
+    financial = _order_financial_summary_from_request(request)
     return JsonResponse({
         'success': True,
         'entry': {
@@ -3307,12 +3693,35 @@ def api_agent_commission_payment_delete(request, entry_id):
     entry = get_object_or_404(AgentCommissionPaymentEntry, pk=entry_id)
     entry.delete()
 
-    total = AgentCommissionPaymentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = _scoped_commission_payments_from_request(request).aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'success': True,
         'total': float(total),
-        'financial': _order_financial_summary(),
+        'financial': _order_financial_summary_from_request(request),
     })
+
+
+def _revenue_adjustment_payload_entry(entry):
+    return {
+        'id': entry.pk,
+        'transaction_id': entry.transaction_id,
+        'adjustment_type': entry.adjustment_type,
+        'agent_id': entry.agent_id,
+        'agent': entry.agent.username if entry.agent_id else '',
+        'reference': entry.reference,
+        'transaction_date': entry.transaction_date.isoformat(),
+        'amount': str(entry.amount),
+    }
+
+
+def _revenue_adjustment_agent_or_error(data):
+    agent = _resolve_order_agent_user(
+        agent_id=data.get('agent_id'),
+        agent_username=data.get('agent'),
+    )
+    if not agent:
+        return None, JsonResponse({'success': False, 'error': 'agent is required'}, status=400)
+    return agent, None
 
 
 @staff_member_required
@@ -3321,7 +3730,8 @@ def api_revenue_adjustment_create(request):
     """
     Record a standalone revenue adjustment line for order exports.
     Body JSON: { "adjustment_type": "COMMISSION_RELEASED"|"LOAN_INTEREST",
-                 "reference": str, "transaction_date": "YYYY-MM-DD", "amount": number|string }
+                 "agent_id": int, "agent": str, "reference": str,
+                 "transaction_date": "YYYY-MM-DD", "amount": number|string }
     """
     if not request.user.is_superuser:
         return JsonResponse({'success': False, 'error': 'Forbidden'}, status=403)
@@ -3356,8 +3766,13 @@ def api_revenue_adjustment_create(request):
     if amount <= 0:
         return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
 
+    agent, error_response = _revenue_adjustment_agent_or_error(data)
+    if error_response:
+        return error_response
+
     entry = RevenueAdjustmentEntry.objects.create(
         adjustment_type=adj_type,
+        agent=agent,
         reference=reference,
         transaction_date=tx_date,
         amount=amount,
@@ -3365,14 +3780,7 @@ def api_revenue_adjustment_create(request):
     )
     return JsonResponse({
         'success': True,
-        'entry': {
-            'id': entry.pk,
-            'transaction_id': entry.transaction_id,
-            'adjustment_type': entry.adjustment_type,
-            'reference': entry.reference,
-            'transaction_date': entry.transaction_date.isoformat(),
-            'amount': str(entry.amount),
-        },
+        'entry': _revenue_adjustment_payload_entry(entry),
     })
 
 
@@ -3415,7 +3823,12 @@ def api_revenue_adjustment_update(request, entry_id):
     if amount <= 0:
         return JsonResponse({'success': False, 'error': 'amount must be greater than zero'}, status=400)
 
+    agent, error_response = _revenue_adjustment_agent_or_error(data)
+    if error_response:
+        return error_response
+
     entry.adjustment_type = adj_type
+    entry.agent = agent
     entry.reference = reference
     entry.transaction_date = tx_date
     entry.amount = amount
@@ -3423,14 +3836,7 @@ def api_revenue_adjustment_update(request, entry_id):
 
     return JsonResponse({
         'success': True,
-        'entry': {
-            'id': entry.pk,
-            'transaction_id': entry.transaction_id,
-            'adjustment_type': entry.adjustment_type,
-            'reference': entry.reference,
-            'transaction_date': entry.transaction_date.isoformat(),
-            'amount': str(entry.amount),
-        },
+        'entry': _revenue_adjustment_payload_entry(entry),
     })
 
 
@@ -3444,7 +3850,7 @@ def api_revenue_adjustment_delete(request, entry_id):
     entry = get_object_or_404(RevenueAdjustmentEntry, pk=entry_id)
     entry.delete()
 
-    total = RevenueAdjustmentEntry.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total = _scoped_revenue_adjustments_from_request(request).aggregate(t=Sum('amount'))['t'] or Decimal('0')
     return JsonResponse({
         'success': True,
         'total': float(total),
@@ -3492,7 +3898,7 @@ def api_agent_commission_payment_bulk_upload(request):
         'success': True,
         'created': len(entries),
         'message': f'Imported {len(entries)} commission payment(s).',
-        'financial': _order_financial_summary(),
+        'financial': _order_financial_summary_from_request(request),
     })
 
 
@@ -3521,16 +3927,25 @@ def api_revenue_adjustment_bulk_upload(request):
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
-    entries = [
-        RevenueAdjustmentEntry(
+    entries = []
+    row_errors = []
+    for row in rows:
+        agent = _resolve_order_agent_user(agent_username=row.get('agent', ''))
+        if not agent:
+            row_errors.append(f'Unknown agent: {row.get("agent") or "(empty)"}')
+            continue
+        entries.append(RevenueAdjustmentEntry(
             adjustment_type=row['adjustment_type'],
+            agent=agent,
             reference=row['reference'],
             transaction_date=row['transaction_date'],
             amount=row['amount'],
             recorded_by=request.user,
-        )
-        for row in rows
-    ]
+        ))
+    if row_errors:
+        return JsonResponse({'success': False, 'errors': row_errors}, status=400)
+    if not entries:
+        return JsonResponse({'success': False, 'errors': ['No rows to import.']}, status=400)
     _bulk_create_finance_entries(RevenueAdjustmentEntry, 'RA', entries)
 
     return JsonResponse({
@@ -4071,6 +4486,12 @@ def export_order_statement(request):
         year = int(request.GET.get('year', timezone.now().year))
         status_filter = (request.GET.get('status') or '').strip()
         agent_filter = (request.GET.get('agent') or '').strip()
+        simple_report = (request.GET.get('simple_report') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+        usd_rate = None
+        if simple_report:
+            usd_rate = _parse_positive_decimal(request.GET.get('usd_rate'))
+            if usd_rate is None:
+                return HttpResponse('Enter a convert rate greater than zero.', status=400)
 
         orders = Order.objects.filter(
             Q(transaction_date__year=year, transaction_date__month=month)
@@ -4082,6 +4503,7 @@ def export_order_statement(request):
         orders = orders.order_by('transaction_date', 'created_at', 'id')
 
         rows = []
+        simple_rows = []
 
         for order in orders:
             items = list(order.items.all())
@@ -4096,6 +4518,20 @@ def export_order_statement(request):
 
             for item in items:
                 product = item.product
+                if simple_report:
+                    reference_price = product.reference_price
+                    simple_rows.append({
+                        'month_key': month_key,
+                        'sort_date': order_date,
+                        'order_id': order.id,
+                        'salesteam': salesteam_username,
+                        'customer': customer_name or '',
+                        'product': product.name or '',
+                        'sku': product.sku or '',
+                        'price': float(reference_price) if reference_price is not None else None,
+                        'quantity': item.quantity,
+                    })
+                    continue
                 base_cost = getattr(product, 'saved_base_cost', None)
                 if base_cost is None:
                     base_cost = item.landed_cost
@@ -4119,6 +4555,14 @@ def export_order_statement(request):
                         float(item.profit),
                     ],
                 })
+
+        if simple_report:
+            simple_rows.sort(key=lambda row: (
+                _export_row_sort_date({'sort_date': row['sort_date'], 'values': [row['order_id']]}),
+                str(row['order_id']),
+            ))
+            filename = f'order_statement_{year}_{month:02d}_simple.xlsx'
+            return _excel_response_for_simple_sale_rows(filename, simple_rows, usd_rate)
 
         receipts = CashBankReceiptEntry.objects.filter(
             transaction_date__year=year,

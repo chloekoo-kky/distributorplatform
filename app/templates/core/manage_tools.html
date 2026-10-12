@@ -26,7 +26,7 @@
          @open-create-quotation-modal.window="createQuotationModalOpen = true"
          @open-upload-batch-modal.window="uploadBatchModalOpen = true"
          @open-pricing-modal.window="openPricingModal($event.detail)"
-         @open-upload-product-modal.window="uploadProductModalOpen = true"
+         @open-upload-product-modal.window="openUploadModal()"
          @open-seo-modal.window="openSeoModal($event.detail)"
          @open-category-modal.window="openCategoryModal($event.detail)"
          @close-receive-modal.window="closeReceiveStockModal()"
@@ -136,6 +136,7 @@
                 <div x-show="tab === '#invoices'" id="invoices" x-cloak>{% include 'inventory/partials/invoices_tab.html' %}</div>
                 <div x-show="tab === '#inventory'" id="inventory" x-cloak>{% include 'inventory/partials/inventory_tab.html' %}</div>
                 <div x-show="tab === '#products'" id="products" x-cloak>{% include 'product/manage_products_tab.html' %}</div>
+                <div x-show="tab === '#product-mapping'" id="product-mapping" x-cloak>{% include 'product/partials/product_mapping_tab.html' %}</div>
                 <div x-show="tab === '#categories'" id="categories" x-cloak>{% include 'product/manage_categories_tab.html' %}</div>
                 <div x-show="tab === '#blog'" id="blog" x-cloak>{% include 'blog/manage_blog_tab.html' %}</div>
                 <div x-show="tab === '#seo'" id="seo" x-cloak>{% include 'seo/manage_seo_tab.html' %}</div>

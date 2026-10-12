@@ -431,6 +431,14 @@ class RevenueAdjustmentEntry(models.Model):
 
     adjustment_type = models.CharField(max_length=20, choices=AdjustmentType.choices)
     transaction_id = models.CharField(max_length=20, unique=True, editable=False, blank=True, default='')
+    agent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agent_revenue_adjustment_entries',
+        help_text='Agent this positive line revenue belongs to (Salesteam on exports).',
+    )
     reference = models.CharField(max_length=255, help_text='Description or reference.')
     transaction_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)

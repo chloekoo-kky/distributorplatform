@@ -25,6 +25,7 @@
 
             // Upload Products State
             uploadStep: 1,
+            uploadMode: '',
             uploadIsLoading: false,
             uploadTempFilePath: '',
             uploadPreviewData: [],
@@ -522,11 +523,13 @@
             openUploadModal() {
                 // Reset upload state
                 this.uploadStep = 1;
+                this.uploadMode = '';
                 this.uploadIsLoading = false;
                 this.uploadTempFilePath = '';
                 this.uploadPreviewData = [];
                 this.uploadTotalRows = 0;
                 this.uploadErrorMessage = '';
+                this.uploadProductModalOpen = true;
 
                 // Clear file input if present
                 const input = document.querySelector('#product-upload-file-input');
@@ -534,8 +537,6 @@
                     input.value = '';
                 }
 
-                // This flag lives in the parent x-data (manageTools)
-                window.uploadProductModalOpen = true;
             },
 
             async submitUploadForm(event) {
@@ -569,8 +570,14 @@
 
                     if (data.require_confirmation) {
                         this.uploadStep = 2;
+                        this.uploadMode = data.mode || '';
                         this.uploadTempFilePath = data.temp_file_path || '';
-                        this.uploadPreviewData = data.preview_data || [];
+                        this.uploadPreviewData = (data.preview_data || []).map((row) => ({
+                            ...row,
+                            productQuery: '',
+                            productResults: [],
+                            picking: !row.product_id,
+                        }));
                         this.uploadTotalRows = data.total_rows || 0;
                     }
                 } catch (err) {
@@ -590,6 +597,13 @@
                 formData.append('confirm', 'true');
                 formData.append('temp_file_path', this.uploadTempFilePath);
                 formData.append('csrfmiddlewaretoken', Alpine.store('globals').csrfToken);
+                if (this.uploadMode === 'invoice_sku') {
+                    const assignments = this.uploadPreviewData
+                        .filter((row) => row.product_id && row.item_code && row.status !== 'conflict')
+                        .map((row) => ({ row_key: row.row_key, product_id: row.product_id }));
+                    formData.append('mode', 'invoice_sku');
+                    formData.append('assignments', JSON.stringify(assignments));
+                }
 
                 try {
                     const response = await fetch("{% url 'product:upload_products' %}", {
@@ -613,6 +627,39 @@
                 } finally {
                     this.uploadIsLoading = false;
                 }
+            },
+
+            invoiceUploadReady() {
+                return this.uploadPreviewData.some((row) => row.product_id && row.item_code && row.status !== 'conflict');
+            },
+
+            async searchUploadProduct(row) {
+                const query = (row.productQuery || '').trim();
+                if (query.length < 2) {
+                    row.productResults = [];
+                    return;
+                }
+                try {
+                    const response = await fetch(`{% url 'product:api_product_search' %}?search=${encodeURIComponent(query)}&limit=8`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                    });
+                    const data = await response.json();
+                    row.productResults = data.products || [];
+                } catch (err) {
+                    row.productResults = [];
+                }
+            },
+
+            selectUploadProduct(row, product) {
+                row.product_id = product.id;
+                row.product_name = product.name;
+                row.current_sku = product.sku || '';
+                row.productQuery = '';
+                row.productResults = [];
+                row.picking = false;
+                row.message = '';
+                const same = (row.current_sku || '').toLowerCase() === (row.item_code || '').toLowerCase();
+                row.status = same ? 'unchanged' : 'update';
             }
         };
     }

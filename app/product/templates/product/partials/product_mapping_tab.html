@@ -1,0 +1,597 @@
+<div x-data="productMappingData()" x-init="init()">
+    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <h3 class="text-xl sm:text-2xl font-semibold text-gray-700">Product mapping</h3>
+            <p class="text-sm text-gray-500 mt-1">
+                Every catalog product, with its invoice aliases and reference price. Import an invoice or a price list to review mappings and prices before saving.
+            </p>
+        </div>
+        <button type="button"
+                @click.stop="openImport()"
+                class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 shadow-sm shrink-0">
+            Import
+        </button>
+    </div>
+
+    <div x-show="importOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4">
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6" @click.outside="closeImport()">
+            <button type="button" @click="closeImport()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" aria-label="Close">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-xl font-semibold text-gray-800 mb-1">Import mappings and reference prices</h3>
+            <p class="text-sm text-gray-500 mb-4">Review each row, choose the catalog product, and set a reference price when the file has one. This does not change SKUs.</p>
+            <p x-show="importError" class="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700" x-text="importError"></p>
+
+            <div x-show="importStep === 1">
+                <form @submit.prevent="submitImport($event)">
+                    {% csrf_token %}
+                    <input type="file" name="file" accept=".csv,.xls,.xlsx" required
+                           class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <p class="text-xs text-gray-500 mt-2">Use columns named Code, Item Code, or SKU, with a Description and/or a Price column.</p>
+                    <button type="submit" :disabled="importLoading"
+                            class="mt-4 w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                        <span x-text="importLoading ? 'Reading…' : 'Review invoice'"></span>
+                    </button>
+                </form>
+            </div>
+
+            <div x-show="importStep === 2">
+                <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-sm text-gray-700">
+                        <span class="font-semibold" x-text="importRows.length"></span> description(s).
+                        <span class="text-gray-500" x-text="importSummary()"></span>
+                    </p>
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" x-model="importOnlyNeedsMapping" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        Show rows that need a mapping
+                    </label>
+                </div>
+                <div class="border border-gray-200 rounded-md overflow-hidden max-h-[28rem] overflow-y-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Save</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item code</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Invoice description</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Catalog product</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reference price</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="row in visibleImportRows()" :key="row.row_key">
+                                <tr class="align-top">
+                                    <td class="px-3 py-2">
+                                        <input type="checkbox" x-model="row.include"
+                                               class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                    </td>
+                                    <td class="px-3 py-2 font-mono text-xs text-gray-700" x-text="row.item_code || '—'"></td>
+                                    <td class="px-3 py-2 text-gray-900" x-text="row.description || '—'"></td>
+                                    <td class="px-3 py-2 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                              :class="{
+                                                  'bg-green-100 text-green-800': row.status === 'mapped',
+                                                  'bg-gray-100 text-gray-600': row.status === 'catalog',
+                                                  'bg-indigo-100 text-indigo-800': row.status === 'suggested',
+                                                  'bg-amber-100 text-amber-800': row.status === 'unmatched'
+                                              }"
+                                              x-text="importStatusLabel(row.status)"></span>
+                                    </td>
+                                    <td class="px-3 py-2 min-w-[16rem]">
+                                        <div x-show="row.product_id && !row.picking">
+                                            <div class="text-gray-800" x-text="row.product_name"></div>
+                                            <div class="text-xs text-gray-400" x-show="row.product_sku" x-text="row.product_sku"></div>
+                                            <button type="button" class="mt-1 text-xs text-indigo-600 hover:text-indigo-800" @click="row.picking = true">Change</button>
+                                        </div>
+                                        <div x-show="!row.product_id || row.picking" class="relative" @click.outside="row.productResults = []">
+                                            <input type="text" x-model="row.productQuery" @input.debounce.300ms="searchImportProduct(row)"
+                                                   placeholder="Search product name or SKU"
+                                                   class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+                                            <div x-show="row.productResults && row.productResults.length"
+                                                 class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                                                <template x-for="product in row.productResults" :key="product.id">
+                                                    <button type="button" class="block w-full px-2 py-1.5 text-left text-sm hover:bg-indigo-50"
+                                                            @click="selectImportProduct(row, product)">
+                                                        <span x-text="product.name"></span>
+                                                        <span class="text-gray-400" x-show="product.sku" x-text="' · ' + product.sku"></span>
+                                                    </button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-2 min-w-[8rem]">
+                                        <input type="text" inputmode="decimal" x-model="row.reference_price"
+                                               @input="syncImportInclude(row)"
+                                               placeholder="—"
+                                               class="w-28 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                                        <div class="text-xs text-gray-400 mt-1" x-show="row.current_reference_price" x-text="'Current ' + row.current_reference_price"></div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="visibleImportRows().length === 0">
+                                <td colspan="6" class="px-3 py-6 text-center text-sm text-gray-500">Nothing to review in this view.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 flex items-center justify-between">
+                    <button type="button" @click="importStep = 1" :disabled="importLoading"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Back
+                    </button>
+                    <button type="button" @click="confirmImport()" :disabled="importLoading || importSaveCount() === 0"
+                            class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50">
+                        <span x-text="importLoading ? 'Saving…' : ('Save (' + importSaveCount() + ')')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="aliasOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-gray-800 bg-opacity-75 p-4">
+        <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg p-6" @click.outside="closeAlias()">
+            <button type="button" @click="closeAlias()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" aria-label="Close">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h3 class="text-xl font-semibold text-gray-800 mb-4" x-text="editingId ? 'Edit alias' : 'Add alias'"></h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Alias</label>
+                    <input type="text"
+                           x-model="form.name"
+                           placeholder="Invoice description, e.g. Re N Tox 100u"
+                           class="block w-full h-10 px-3 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                    <p class="text-sm text-gray-900" x-text="form.product_name"></p>
+                    <p class="text-xs text-gray-400" x-show="form.product_sku" x-text="form.product_sku"></p>
+                </div>
+            </div>
+            <p x-show="formError" class="mt-3 text-sm text-red-700" x-text="formError"></p>
+            <div class="mt-5 flex items-center justify-end gap-2">
+                <button type="button"
+                        @click="closeAlias()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="button"
+                        @click="saveMapping()"
+                        :disabled="saving"
+                        class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                    <span x-text="saving ? 'Saving…' : (editingId ? 'Save changes' : 'Add alias')"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="p-4 border-b border-gray-200">
+            <input type="text"
+                   x-model.debounce.400ms="search"
+                   @input.debounce.400ms="fetchAliases(1)"
+                   placeholder="Search product, alias, or SKU"
+                   class="block w-full sm:w-80 h-10 px-3 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aliases</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference price</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-if="loading">
+                        <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
+                    </template>
+                    <template x-if="!loading && items.length === 0">
+                        <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
+                    </template>
+                    <template x-for="item in items" :key="item.id">
+                        <tr class="align-top">
+                            <td class="px-4 py-3 text-gray-900" x-text="item.name"></td>
+                            <td class="px-4 py-3 font-mono text-xs text-gray-600" x-text="item.sku || '—'"></td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-col items-start gap-1.5">
+                                    <template x-for="alias in item.aliases" :key="alias.id">
+                                        <span class="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 py-1 pl-2.5 pr-1 text-xs text-gray-800">
+                                            <span class="font-medium whitespace-nowrap" x-text="alias.name"></span>
+                                            <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400 border border-gray-200" x-text="sourceLabel(alias.source)"></span>
+                                            <span class="mx-0.5 h-4 w-px bg-gray-200" aria-hidden="true"></span>
+                                            <button type="button"
+                                                    class="rounded px-1.5 py-0.5 font-medium text-indigo-600 hover:bg-indigo-50"
+                                                    @click.stop="startEdit(alias, item)">Edit</button>
+                                            <button type="button"
+                                                    class="rounded p-0.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600"
+                                                    @click.stop="deleteMapping(alias)"
+                                                    aria-label="Remove alias"
+                                                    title="Remove alias">
+                                                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                                </svg>
+                                            </button>
+                                        </span>
+                                    </template>
+                                    <span x-show="!item.aliases.length" class="text-xs text-gray-400">No alias</span>
+                                    <button type="button"
+                                            class="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 bg-white px-2 py-1 text-xs font-medium text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50"
+                                            @click.stop="startAdd(item)">
+                                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                        </svg>
+                                        Add alias
+                                    </button>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <input type="text" inputmode="decimal"
+                                       x-model="item.reference_price"
+                                       @change="saveReferencePrice(item)"
+                                       placeholder="—"
+                                       class="w-28 h-9 px-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                <p x-show="item.priceError" class="mt-1 text-xs text-red-600" x-text="item.priceError"></p>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <div class="px-4 py-3 border-t border-gray-200 flex items-center justify-between text-sm text-gray-600" x-show="pagination.total_pages > 1">
+            <span>
+                Page <span x-text="pagination.current_page"></span> of <span x-text="pagination.total_pages"></span>
+            </span>
+            <div class="flex gap-2">
+                <button type="button" class="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-40" :disabled="!pagination.has_previous" @click="fetchAliases(pagination.current_page - 1)">Previous</button>
+                <button type="button" class="px-3 py-1 border border-gray-300 rounded-md disabled:opacity-40" :disabled="!pagination.has_next" @click="fetchAliases(pagination.current_page + 1)">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('productMappingData', () => ({
+        items: [],
+        loading: true,
+        search: '',
+        pagination: { current_page: 1, total_pages: 1, has_next: false, has_previous: false },
+        form: { name: '', product_id: null, product_name: '', product_sku: '' },
+        editingId: null,
+        aliasOpen: false,
+        saving: false,
+        formError: '',
+        importOpen: false,
+        importStep: 1,
+        importLoading: false,
+        importError: '',
+        importTempPath: '',
+        importRows: [],
+        importOnlyNeedsMapping: true,
+
+        init() {
+            this.fetchAliases(1);
+        },
+
+        sourceLabel(source) {
+            if (source === 'invoice') return 'Invoice';
+            if (source === 'manual') return 'Manual';
+            if (source === 'merge') return 'Merge';
+            return source || '';
+        },
+
+        resetForm() {
+            this.editingId = null;
+            this.form = { name: '', product_id: null, product_name: '', product_sku: '' };
+            this.formError = '';
+        },
+
+        closeAlias() {
+            this.aliasOpen = false;
+            this.resetForm();
+        },
+
+        startAdd(product) {
+            this.resetForm();
+            this.form.product_id = product.id;
+            this.form.product_name = product.name;
+            this.form.product_sku = product.sku || '';
+            this.aliasOpen = true;
+        },
+
+        startEdit(alias, product) {
+            this.editingId = alias.id;
+            this.form = {
+                name: alias.name,
+                product_id: product.id,
+                product_name: product.name,
+                product_sku: product.sku || '',
+            };
+            this.formError = '';
+            this.aliasOpen = true;
+        },
+
+        async fetchAliases(page = 1) {
+            this.loading = true;
+            const params = new URLSearchParams({ page: String(page), search: this.search || '' });
+            try {
+                const response = await fetch(`{% url 'product:api_product_aliases' %}?${params}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                const data = await response.json();
+                this.items = data.items || [];
+                this.pagination = data.pagination || this.pagination;
+            } catch (err) {
+                Alpine.store('globals').showToast('Could not load mappings', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async saveMapping() {
+            this.formError = '';
+            if (!this.form.name.trim() || !this.form.product_id) {
+                this.formError = 'Enter an alias and choose a product.';
+                return;
+            }
+            this.saving = true;
+            const url = this.editingId
+                ? `{% url 'product:api_product_alias_detail' 0 %}`.replace('/0/', `/${this.editingId}/`)
+                : `{% url 'product:api_product_aliases' %}`;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    },
+                    body: JSON.stringify({
+                        name: this.form.name,
+                        product_id: this.form.product_id,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    this.formError = data.error || 'Could not save mapping.';
+                    return;
+                }
+                const wasEdit = !!this.editingId;
+                Alpine.store('globals').showToast(wasEdit ? 'Alias updated' : 'Alias added');
+                this.closeAlias();
+                await this.fetchAliases(this.pagination.current_page || 1);
+            } catch (err) {
+                this.formError = 'Network error while saving the mapping.';
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async saveReferencePrice(item) {
+            const raw = String(item.reference_price ?? '').trim();
+            if (raw !== '' && Number.isNaN(Number(raw.replace(/,/g, '')))) {
+                item.priceError = 'Enter a price like 120.00.';
+                return;
+            }
+            item.priceError = '';
+            try {
+                const response = await fetch(`{% url 'product:api_product_reference_price' 0 %}`.replace('/0/', `/${item.id}/`), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    },
+                    body: JSON.stringify({ reference_price: raw }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    item.priceError = data.error || 'Could not save the reference price.';
+                    return;
+                }
+                item.reference_price = data.reference_price || '';
+                Alpine.store('globals').showToast('Reference price saved');
+            } catch (err) {
+                item.priceError = 'Network error while saving the reference price.';
+            }
+        },
+
+        async deleteMapping(item) {
+            if (!window.confirm(`Remove the mapping “${item.name}”?`)) return;
+            try {
+                const response = await fetch(`{% url 'product:api_product_alias_detail' 0 %}`.replace('/0/', `/${item.id}/`), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': Alpine.store('globals').csrfToken,
+                    },
+                    body: JSON.stringify({ delete: true }),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    Alpine.store('globals').showToast(data.error || 'Delete failed', 'error');
+                    return;
+                }
+                if (this.editingId === item.id) this.closeAlias();
+                Alpine.store('globals').showToast('Mapping removed');
+                await this.fetchAliases(this.pagination.current_page || 1);
+            } catch (err) {
+                Alpine.store('globals').showToast('Network error while deleting', 'error');
+            }
+        },
+
+        openImport() {
+            this.importOpen = true;
+            this.importStep = 1;
+            this.importError = '';
+            this.importRows = [];
+            this.importTempPath = '';
+            this.importOnlyNeedsMapping = true;
+        },
+
+        closeImport() {
+            this.importOpen = false;
+        },
+
+        importStatusLabel(status) {
+            if (status === 'mapped') return 'Already mapped';
+            if (status === 'catalog') return 'Catalog name';
+            if (status === 'suggested') return 'Suggested';
+            return 'Needs mapping';
+        },
+
+        importSummary() {
+            const counts = { unmatched: 0, suggested: 0, mapped: 0, catalog: 0 };
+            this.importRows.forEach((row) => {
+                if (counts[row.status] !== undefined) counts[row.status] += 1;
+            });
+            return `${counts.unmatched} need a mapping, ${counts.suggested} suggested, ${counts.mapped} already mapped, ${counts.catalog} catalog names.`;
+        },
+
+        visibleImportRows() {
+            if (!this.importOnlyNeedsMapping) return this.importRows;
+            return this.importRows.filter((row) => row.status === 'unmatched' || row.status === 'suggested' || row.include);
+        },
+
+        priceChanged(row) {
+            const next = String(row.reference_price ?? '').trim().replace(/,/g, '');
+            if (!next || Number.isNaN(Number(next))) return false;
+            const current = String(row.current_reference_price ?? '').trim();
+            const nextText = Number(next).toFixed(2);
+            const currentText = current === '' ? '' : Number(current).toFixed(2);
+            return nextText !== currentText;
+        },
+
+        aliasWouldChange(row) {
+            if (!row.product_id) return false;
+            const sameProduct = row.product_id === row.original_product_id;
+            if ((row.status === 'catalog' || row.status === 'mapped') && sameProduct) return false;
+            return true;
+        },
+
+        rowWillSave(row) {
+            return !!(row.include && row.product_id && (this.aliasWouldChange(row) || this.priceChanged(row)));
+        },
+
+        syncImportInclude(row) {
+            if (this.priceChanged(row) || this.aliasWouldChange(row)) {
+                row.include = true;
+            }
+        },
+
+        importSaveCount() {
+            return this.importRows.filter((row) => this.rowWillSave(row)).length;
+        },
+
+        async submitImport(event) {
+            if (this.importLoading) return;
+            this.importError = '';
+            this.importLoading = true;
+            const formData = new FormData(event.target);
+            formData.append('csrfmiddlewaretoken', Alpine.store('globals').csrfToken);
+            try {
+                const response = await fetch('{% url "product:api_import_invoice_mappings" %}', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    this.importError = data.error || 'Could not read the invoice.';
+                    return;
+                }
+                this.importTempPath = data.temp_file_path || '';
+                this.importRows = (data.rows || []).map((row) => {
+                    const mapped = {
+                        ...row,
+                        original_product_id: row.product_id,
+                        include: false,
+                        picking: !row.product_id,
+                        productQuery: '',
+                        productResults: [],
+                    };
+                    mapped.include = mapped.status === 'suggested' || this.priceChanged(mapped);
+                    return mapped;
+                });
+                this.importStep = 2;
+            } catch (err) {
+                this.importError = 'Network error while reading the invoice.';
+            } finally {
+                this.importLoading = false;
+            }
+        },
+
+        async searchImportProduct(row) {
+            const query = (row.productQuery || '').trim();
+            if (query.length < 2) {
+                row.productResults = [];
+                return;
+            }
+            try {
+                const response = await fetch(`{% url 'product:api_product_search' %}?search=${encodeURIComponent(query)}&limit=8`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                const data = await response.json();
+                row.productResults = data.products || [];
+            } catch (err) {
+                row.productResults = [];
+            }
+        },
+
+        selectImportProduct(row, product) {
+            const sameAsOriginal = row.original_product_id === product.id;
+            row.product_id = product.id;
+            row.product_name = product.name;
+            row.product_sku = product.sku || '';
+            row.productQuery = '';
+            row.productResults = [];
+            row.picking = false;
+            if ((row.status === 'catalog' || row.status === 'mapped') && sameAsOriginal && !this.priceChanged(row)) {
+                row.include = false;
+            } else {
+                row.include = true;
+            }
+        },
+
+        async confirmImport() {
+            const assignments = this.importRows
+                .filter((row) => this.rowWillSave(row))
+                .map((row) => {
+                    const payload = { row_key: row.row_key, product_id: row.product_id };
+                    if (this.priceChanged(row)) payload.reference_price = row.reference_price;
+                    return payload;
+                });
+            if (!assignments.length || this.importLoading) return;
+            this.importError = '';
+            this.importLoading = true;
+            const formData = new FormData();
+            formData.append('confirm', 'true');
+            formData.append('temp_file_path', this.importTempPath);
+            formData.append('assignments', JSON.stringify(assignments));
+            formData.append('csrfmiddlewaretoken', Alpine.store('globals').csrfToken);
+            try {
+                const response = await fetch('{% url "product:api_import_invoice_mappings" %}', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    this.importError = data.error || 'Could not save mappings.';
+                    return;
+                }
+                Alpine.store('globals').showToast(data.message || 'Mappings saved');
+                this.closeImport();
+                await this.fetchAliases(1);
+            } catch (err) {
+                this.importError = 'Network error while saving mappings.';
+            } finally {
+                this.importLoading = false;
+            }
+        },
+    }));
+});
+</script>

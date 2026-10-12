@@ -303,6 +303,9 @@ def commission_payment_template_bytes() -> bytes:
 REVENUE_ADJUSTMENT_ALIASES = {
     'type': 'adjustment_type',
     'adjustment type': 'adjustment_type',
+    'agent': 'agent',
+    'salesteam': 'agent',
+    'sales team': 'agent',
     'reference': 'reference',
     'description': 'reference',
     'transaction date': 'transaction_date',
@@ -327,6 +330,10 @@ def _parse_revenue_adjustment_row(row, header_map, row_num):
             f'Row {row_num}: type must be COMMISSION_RELEASED or LOAN_INTEREST.'
         )
 
+    agent = _cell_str(row, header_map.get('agent'))
+    if not agent:
+        raise ValueError(f'Row {row_num}: agent is required.')
+
     reference = _cell_str(row, header_map.get('reference'))
     if not reference:
         raise ValueError(f'Row {row_num}: reference is required.')
@@ -341,6 +348,7 @@ def _parse_revenue_adjustment_row(row, header_map, row_num):
 
     return {
         'adjustment_type': adjustment_type,
+        'agent': agent,
         'reference': reference,
         'transaction_date': tx_date,
         'amount': amount,
@@ -350,7 +358,7 @@ def _parse_revenue_adjustment_row(row, header_map, row_num):
 def parse_revenue_adjustment_upload(file_bytes: bytes) -> tuple[list[dict], list[str]]:
     return _parse_rows(
         file_bytes,
-        required_fields={'adjustment_type', 'reference', 'transaction_date', 'amount'},
+        required_fields={'adjustment_type', 'agent', 'reference', 'transaction_date', 'amount'},
         aliases=REVENUE_ADJUSTMENT_ALIASES,
         row_parser=_parse_revenue_adjustment_row,
     )
@@ -358,6 +366,6 @@ def parse_revenue_adjustment_upload(file_bytes: bytes) -> tuple[list[dict], list
 
 def revenue_adjustment_template_bytes() -> bytes:
     return _workbook_bytes(
-        ['Type', 'Reference', 'Transaction Date', 'Amount'],
-        ['COMMISSION_RELEASED', 'Release Q2', '2026-06-26', 200.00],
+        ['Type', 'Agent', 'Reference', 'Transaction Date', 'Amount'],
+        ['COMMISSION_RELEASED', 'agent', 'Release Q2', '2026-06-26', 200.00],
     )

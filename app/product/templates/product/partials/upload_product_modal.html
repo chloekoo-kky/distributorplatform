@@ -7,7 +7,8 @@
     x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" style="display: none;">
 
     <div @click.away="uploadProductModalOpen = false"
-        class="relative bg-white rounded-lg shadow-xl w-full max-w-lg p-8 m-4"
+        class="relative bg-white rounded-lg shadow-xl w-full p-8 m-4"
+        :class="uploadMode === 'invoice_sku' ? 'max-w-5xl' : 'max-w-lg'"
         x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95"
         x-transition:enter-end="opacity-100 transform scale-100"
         x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 transform scale-100"
@@ -21,6 +22,11 @@
             Step <span x-text="uploadStep"></span> of 2
         </p>
 
+        <p class="text-sm text-gray-600 mb-4" x-show="uploadStep === 1">
+            You can also upload an invoice or item list with <strong>Item Code</strong> and <strong>Description</strong> columns.
+            Each description is matched to a catalog product, or to a mapping you have saved, and the item code is stored as that product's SKU.
+        </p>
+        <div x-show="uploadStep === 1">
         <p class="text-sm text-gray-600 mb-4">
             Select a .csv or .xlsx file to import. Use the same columns as <strong>Export products to Excel</strong>.
             Rows are matched by <code class="text-xs bg-gray-100 p-1 rounded">sku</code> for updates. The exported
@@ -55,6 +61,7 @@
             <code class="text-xs bg-gray-100 p-1 rounded">tier_N_selling_price</code>.
             Exported selling prices are Excel formulas from base cost and margin; if a cell is still a formula on import, the price is recalculated from those two columns.
         </p>
+        </div>
 
         <!-- Error Banner -->
         <div
@@ -107,8 +114,103 @@
             </form>
         </div>
 
+        <!-- Step 2: Invoice item codes → SKU -->
+        <div x-show="uploadStep === 2 && uploadMode === 'invoice_sku'">
+            <div class="mb-4">
+                <p class="text-sm text-gray-700">
+                    <span class="font-semibold" x-text="uploadTotalRows"></span>
+                    item code(s) found. Matched rows update the product SKU. Unmatched descriptions need a product before they can be saved as a mapping.
+                </p>
+            </div>
+            <div class="border border-gray-200 rounded-md overflow-hidden mb-4 max-h-96 overflow-y-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item code</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="(row, index) in uploadPreviewData" :key="row.row_key || index">
+                            <tr class="align-top">
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                          :class="{
+                                              'bg-yellow-100 text-yellow-800': row.status === 'update',
+                                              'bg-gray-100 text-gray-600': row.status === 'unchanged',
+                                              'bg-amber-100 text-amber-800': row.status === 'unmatched',
+                                              'bg-red-100 text-red-800': row.status === 'conflict'
+                                          }"
+                                          x-text="row.status"></span>
+                                </td>
+                                <td class="px-3 py-2 font-mono text-xs text-gray-800" x-text="row.item_code || '—'"></td>
+                                <td class="px-3 py-2 text-gray-800 max-w-[14rem]" x-text="row.description"></td>
+                                <td class="px-3 py-2 min-w-[16rem]">
+                                    <div x-show="row.product_id && !row.picking" class="text-gray-800">
+                                        <div x-text="row.product_name"></div>
+                                        <button type="button"
+                                                class="mt-1 text-xs text-indigo-600 hover:text-indigo-800"
+                                                @click="row.picking = true"
+                                                x-show="row.status !== 'conflict'">
+                                            Change
+                                        </button>
+                                    </div>
+                                    <div x-show="!row.product_id || row.picking" class="relative" @click.outside="row.productResults = []">
+                                        <input type="text"
+                                               x-model="row.productQuery"
+                                               @input.debounce.300ms="searchUploadProduct(row)"
+                                               placeholder="Search product name or SKU"
+                                               class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm">
+                                        <div x-show="row.productResults && row.productResults.length"
+                                             class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                                            <template x-for="product in row.productResults" :key="product.id">
+                                                <button type="button"
+                                                        class="block w-full px-2 py-1.5 text-left text-sm hover:bg-indigo-50"
+                                                        @click="selectUploadProduct(row, product)">
+                                                    <span x-text="product.name"></span>
+                                                    <span class="text-gray-400" x-show="product.sku" x-text="' · ' + product.sku"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <p x-show="row.message" class="mt-1 text-xs text-red-700" x-text="row.message"></p>
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-700">
+                                    <template x-if="row.product_id && row.item_code">
+                                        <span>
+                                            <span class="text-gray-400" x-text="row.current_sku || '—'"></span>
+                                            <span class="mx-1 text-gray-400">→</span>
+                                            <span class="font-medium text-gray-900" x-text="row.item_code"></span>
+                                        </span>
+                                    </template>
+                                    <span x-show="!row.product_id || !row.item_code" class="text-gray-400">—</span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <div class="flex justify-between items-center mt-4">
+                <button type="button"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                        @click="uploadStep = 1; uploadMode = ''"
+                        :disabled="uploadIsLoading">
+                    Back
+                </button>
+                <button type="button"
+                        class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        @click="confirmUpload()"
+                        :disabled="uploadIsLoading || !uploadTempFilePath || !invoiceUploadReady()">
+                    <span x-text="uploadIsLoading ? 'Saving...' : 'Update SKUs'"></span>
+                </button>
+            </div>
+        </div>
+
         <!-- Step 2: Preview & Confirm -->
-        <div x-show="uploadStep === 2">
+        <div x-show="uploadStep === 2 && uploadMode !== 'invoice_sku'">
             <div class="mb-4">
                 <p class="text-sm text-gray-700">
                     Found

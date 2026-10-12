@@ -29,6 +29,12 @@ from .pricing_sync import reconcile_saved_base_cost_with_quotations
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
 from .excel_export import build_products_xlsx
+from .invoice_sku import (
+    apply_invoice_sku_assignments,
+    build_invoice_sku_preview,
+    dataset_is_invoice_item_sheet,
+    extract_invoice_item_rows,
+)
 
 from blog.models import Post
 from blog.views import get_accessible_posts
@@ -477,6 +483,83 @@ def build_product_upload_row_changes(row_result):
     return changes
 
 
+def _load_upload_dataset(temp_file_path: str):
+    dataset = Dataset()
+    if temp_file_path.endswith('.csv'):
+        with open(temp_file_path, 'rb') as handle:
+            file_content = handle.read()
+        try:
+            decoded_content = file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            decoded_content = file_content.decode('latin-1')
+        dataset.load(decoded_content, format='csv')
+    else:
+        with open(temp_file_path, 'rb') as handle:
+            dataset.load(handle.read(), format='xlsx')
+    return dataset
+
+
+def _preview_invoice_sku_upload(dataset, temp_path: str):
+    rows = extract_invoice_item_rows(dataset)
+    if not rows:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        return JsonResponse({
+            'success': False,
+            'error': 'No item codes found. The file needs an Item Code and a Description for each product.',
+        }, status=400)
+    return JsonResponse({
+        'success': True,
+        'mode': 'invoice_sku',
+        'require_confirmation': True,
+        'temp_file_path': temp_path,
+        'total_rows': len(rows),
+        'preview_data': build_invoice_sku_preview(rows),
+    })
+
+
+def _confirm_invoice_sku_upload(request, temp_file_path: str):
+    if not os.path.exists(temp_file_path):
+        return JsonResponse({'success': False, 'error': 'Temporary file not found. Please re-upload.'}, status=400)
+    try:
+        assignments = json.loads(request.POST.get('assignments') or '[]')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'success': False, 'error': 'Invalid product assignments.'}, status=400)
+    if not isinstance(assignments, list) or not assignments:
+        return JsonResponse({'success': False, 'error': 'Choose at least one product to update.'}, status=400)
+
+    try:
+        dataset = _load_upload_dataset(temp_file_path)
+        rows = extract_invoice_item_rows(dataset)
+        result = apply_invoice_sku_assignments(rows, assignments)
+    except Exception as exc:
+        logger.error('[upload_products] Invoice SKU import failed: %s', exc, exc_info=True)
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    if result['errors']:
+        return JsonResponse({
+            'success': False,
+            'error': ' '.join(result['errors'][:8]),
+        }, status=400)
+
+    try:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+    except OSError:
+        pass
+
+    parts = []
+    if result['updated']:
+        parts.append(f"Updated SKU on {result['updated']} product(s).")
+    if result['aliases']:
+        parts.append(f"Saved {result['aliases']} product mapping(s).")
+    if not parts:
+        parts.append('No SKU changes were needed. Existing mappings were kept.')
+    return JsonResponse({'success': True, 'message': ' '.join(parts)})
+
+
 @staff_required
 def upload_products(request):
     """
@@ -496,6 +579,9 @@ def upload_products(request):
             temp_file_path = request.POST.get('temp_file_path')
             if not temp_file_path:
                 return JsonResponse({'success': False, 'error': 'Missing temp_file_path.'}, status=400)
+
+            if (request.POST.get('mode') or '') == 'invoice_sku':
+                return _confirm_invoice_sku_upload(request, temp_file_path)
 
             if not os.path.exists(temp_file_path):
                 return JsonResponse({'success': False, 'error': 'Temporary file not found. Please re-upload.'}, status=400)
@@ -576,6 +662,8 @@ def upload_products(request):
                 with open(temp_path, 'rb') as f:
                     dataset.load(f.read(), format='xlsx')
             logger.info("[upload_products] Dataset loaded from temp file for preview.")
+            if dataset_is_invoice_item_sheet(dataset):
+                return _preview_invoice_sku_upload(dataset, temp_path)
         except Exception as e:
             logger.error(f"[upload_products] Error reading temp file into dataset: {e}", exc_info=True)
             try:
