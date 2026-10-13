@@ -1375,13 +1375,19 @@ def sales_invoice_print(request, order_id):
         terms = 'C.O.D.'
 
     rounding = Decimal('0.00')
-    total_payable = gross + rounding
+    invoice_discount = order.invoice_discount if order.invoice_discount is not None else Decimal('0.00')
+    if invoice_discount < 0:
+        invoice_discount = Decimal('0.00')
+    if invoice_discount > gross:
+        invoice_discount = gross
+    total_payable = gross - invoice_discount + rounding
 
     context = {
         'order': order,
         'issuer': issuer,
         'items_rows': items_rows,
         'gross': gross,
+        'invoice_discount': invoice_discount,
         'rounding': rounding,
         'total_payable': total_payable,
         'amount_in_words': ringgit_amount_in_words(total_payable),
@@ -2573,6 +2579,7 @@ def api_manage_orders(request):
             'status_code': order.status,
             'total_items': total_items,
             'total_value': float(total_value),
+            'invoice_discount': float(order.invoice_discount or 0),
             'total_profit': float(gross_profit),
             'total_commission': float(order.total_commission),
         })
@@ -3025,6 +3032,7 @@ def api_manage_order_edit_details(request, order_id):
             'shipping_address': order.shipping_address or '',
             'remarks': order.remarks or '',
             'payment_method': order.payment_method or '',
+            'invoice_discount': str(order.invoice_discount or '0.00'),
         }
         if data['can_edit_items']:
             data['items'] = [_serialize_order_item_for_edit(item) for item in order.items.all()]
@@ -3063,6 +3071,14 @@ def api_manage_order_edit_details(request, order_id):
                 order.shipping_address = (payload.get('shipping_address') or '').strip() or None
                 order.remarks = (payload.get('remarks') or '').strip() or None
                 order.payment_method = (payload.get('payment_method') or '').strip() or None
+                if request.user.is_superuser and 'invoice_discount' in payload:
+                    try:
+                        invoice_discount = Decimal(str(payload.get('invoice_discount') or 0))
+                    except Exception:
+                        invoice_discount = Decimal('0.00')
+                    if invoice_discount < 0:
+                        invoice_discount = Decimal('0.00')
+                    order.invoice_discount = invoice_discount
                 order.save()
         except ValueError as exc:
             return JsonResponse({'success': False, 'error': str(exc)}, status=400)

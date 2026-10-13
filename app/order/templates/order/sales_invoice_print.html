@@ -349,6 +349,13 @@
                         <td class="totals-label">:</td>
                         <td class="totals-value">{{ gross|rm_amount }}</td>
                     </tr>
+                    {% if invoice_discount %}
+                    <tr>
+                        <td class="totals-label">- Discount</td>
+                        <td class="totals-label">:</td>
+                        <td class="totals-value">{{ invoice_discount|rm_amount }}</td>
+                    </tr>
+                    {% endif %}
                     <tr>
                         <td class="totals-label">Rounding Adjustment</td>
                         <td class="totals-label">:</td>

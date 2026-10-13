@@ -212,7 +212,14 @@ class Order(models.Model):
     transaction_date = models.DateField(blank=True, null=True, help_text='Date of transaction (manual orders).')
 
     payment_method = models.CharField(max_length=50, blank=True, null=True, help_text="The selected payment method (e.g., COD).")
-    
+
+    invoice_discount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Lump-sum discount printed on the sales invoice after Gross.',
+    )
+
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

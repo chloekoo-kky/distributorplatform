@@ -172,6 +172,10 @@ class OrderAdmin(admin.ModelAdmin):
                 'shipping_address',
             ),
         }),
+        ('Sales invoice', {
+            'fields': ('invoice_discount',),
+            'description': 'Lump-sum discount printed on the sales invoice after Gross.',
+        }),
         ('Financial Summary', {
             'fields': (
                 'get_total_value',
