@@ -530,10 +530,12 @@ def _excel_response_for_order_rows(filename, rows):
 
 
 SIMPLE_SALE_HEADERS = [
-    'Order Date', 'Customer Name', 'Product ID', 'Product Name',
+    'Order ID', 'Order Date', 'Customer Name', 'Product ID', 'Product Name',
     'Price', 'Quantity', 'Line Revenue (MYR)', 'Line Revenue (USD)',
 ]
 SIMPLE_SALE_SHEET_NAME = 'Sale Transactions'
+SIMPLE_SALE_PASTE_SHEET_NAME = 'Pasted Sales'
+SIMPLE_SALE_PASTE_HEADERS = ['Order Date', 'Customer Name', 'Product Name', 'Quantity']
 SIMPLE_SALE_MONTHLY_SHEET_NAME = 'Monthly Sales'
 SIMPLE_SALE_PRODUCT_SHEET_NAME = 'Product Sales'
 SIMPLE_SALE_MONTHLY_HEADERS = ['Year', 'Month', 'Revenue (USD)']
@@ -561,10 +563,10 @@ def _write_simple_sale_summary_sheets(wb, rows):
     """Monthly and product totals. USD amounts sum the live line formulas."""
     data_start = 4
     data_end = data_start + len(rows) - 1
-    usd_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$H${data_start}:$H${data_end}"
-    date_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$A${data_start}:$A${data_end}"
-    sku_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$C${data_start}:$C${data_end}"
-    name_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$D${data_start}:$D${data_end}"
+    usd_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$I${data_start}:$I${data_end}"
+    date_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$B${data_start}:$B${data_end}"
+    sku_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$D${data_start}:$D${data_end}"
+    name_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$E${data_start}:$E${data_end}"
 
     monthly = wb.create_sheet(SIMPLE_SALE_MONTHLY_SHEET_NAME)
     _write_simple_sale_header_row(monthly, SIMPLE_SALE_MONTHLY_HEADERS)
@@ -619,6 +621,23 @@ def _write_simple_sale_summary_sheets(wb, rows):
     products_sheet.column_dimensions['C'].width = 18
 
 
+def _write_pasted_sales_sheet(wb):
+    """Blank sheet for sale rows pasted from another source."""
+    ws = wb.create_sheet(SIMPLE_SALE_PASTE_SHEET_NAME)
+    _write_simple_sale_header_row(ws, SIMPLE_SALE_PASTE_HEADERS)
+    ws['F1'] = 'Paste rows under the headers. Quantity on Sale Transactions sums column D where Order Date, Customer Name, and Product Name all match.'
+    ws['F1'].font = HEADER_FONT_BOLD
+    for row_index in range(2, 201):
+        ws.cell(row=row_index, column=1).number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
+        ws.cell(row=row_index, column=4).number_format = '0'
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 28
+    ws.column_dimensions['C'].width = 28
+    ws.column_dimensions['D'].width = 14
+    ws.column_dimensions['F'].width = 78
+    return ws
+
+
 def _excel_response_for_simple_sale_rows(filename, rows, usd_rate):
     """Sales-only statement: reference price, live MYR and USD formulas."""
     wb = Workbook()
@@ -646,31 +665,42 @@ def _excel_response_for_simple_sale_rows(filename, rows, usd_rate):
             use_blue = not use_blue
         fill = MONTH_FILL_BLUE if use_blue else MONTH_FILL_WHITE
 
-        date_cell = ws.cell(row=excel_row, column=1, value=None)
+        ws.cell(row=excel_row, column=1, value=row['order_id'])
+        date_cell = ws.cell(row=excel_row, column=2, value=None)
         excel_date = _coerce_export_date(row.get('sort_date'))
         if excel_date is not None:
             date_cell.value = float(to_excel(datetime.combine(excel_date, time.min)))
             date_cell.number_format = ORDER_EXPORT_DATE_NUMBER_FORMAT
             date_cell.alignment = Alignment(horizontal='right')
-        ws.cell(row=excel_row, column=2, value=row['customer'])
-        ws.cell(row=excel_row, column=3, value=row['sku'])
-        ws.cell(row=excel_row, column=4, value=row['product'])
+        ws.cell(row=excel_row, column=3, value=row['customer'])
+        ws.cell(row=excel_row, column=4, value=row['sku'])
+        ws.cell(row=excel_row, column=5, value=row['product'])
 
-        price_cell = ws.cell(row=excel_row, column=5, value=row['price'])
+        price_cell = ws.cell(row=excel_row, column=6, value=row['price'])
         if row['price'] is not None:
             price_cell.number_format = '0.00'
-        qty_cell = ws.cell(row=excel_row, column=6, value=row['quantity'])
+        qty_cell = ws.cell(
+            row=excel_row,
+            column=7,
+            value=(
+                f"=SUMIFS('{SIMPLE_SALE_PASTE_SHEET_NAME}'!$D:$D,"
+                f"'{SIMPLE_SALE_PASTE_SHEET_NAME}'!$A:$A,B{excel_row},"
+                f"'{SIMPLE_SALE_PASTE_SHEET_NAME}'!$B:$B,C{excel_row},"
+                f"'{SIMPLE_SALE_PASTE_SHEET_NAME}'!$C:$C,E{excel_row})"
+            ),
+        )
         qty_cell.number_format = '0'
 
-        myr_cell = ws.cell(row=excel_row, column=7, value=f'=E{excel_row}*F{excel_row}')
+        myr_cell = ws.cell(row=excel_row, column=8, value=f'=F{excel_row}*G{excel_row}')
         myr_cell.number_format = '0.00'
-        usd_cell = ws.cell(row=excel_row, column=8, value=f'=IF($B$1=0,"",G{excel_row}/$B$1)')
+        usd_cell = ws.cell(row=excel_row, column=9, value=f'=IF($B$1=0,"",H{excel_row}/$B$1)')
         usd_cell.number_format = '0.00'
 
         for col in range(1, len(SIMPLE_SALE_HEADERS) + 1):
             ws.cell(row=excel_row, column=col).fill = fill
         prev_month = month_key
 
+    _write_pasted_sales_sheet(wb)
     _write_simple_sale_summary_sheets(wb, rows)
 
     for col in ws.columns:

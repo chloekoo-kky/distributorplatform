@@ -369,31 +369,39 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         workbook = self._workbook(simple_report='1', usd_rate='4.70')
         self.assertEqual(
             workbook.sheetnames,
-            ['Sale Transactions', 'Monthly Sales', 'Product Sales'],
+            ['Sale Transactions', 'Pasted Sales', 'Monthly Sales', 'Product Sales'],
         )
         sheet = workbook['Sale Transactions']
         self.assertEqual(sheet['A1'].value, 'Convert rate (MYR per 1 USD)')
         self.assertEqual(sheet['B1'].value, 4.7)
         headers = [cell.value for cell in sheet[3]]
         self.assertEqual(headers, [
-            'Order Date', 'Customer Name', 'Product ID', 'Product Name',
+            'Order ID', 'Order Date', 'Customer Name', 'Product ID', 'Product Name',
             'Price', 'Quantity', 'Line Revenue (MYR)', 'Line Revenue (USD)',
         ])
-        self.assertNotIn('Order ID', headers)
         self.assertNotIn('Salesteam', headers)
         self.assertNotIn('Product Base Cost', headers)
         self.assertNotIn('Platform Price', headers)
         self.assertNotIn('Profit', headers)
         self.assertNotIn('Accumulated Line Revenue', headers)
         self.assertNotIn('Accumulated Profit', headers)
-        labels = [row[3] for row in sheet.iter_rows(min_row=4, values_only=True)]
+        labels = [row[4] for row in sheet.iter_rows(min_row=4, values_only=True)]
         self.assertEqual(labels, ['Sales Widget'])
-        self.assertEqual(sheet['B4'].value, 'Statement Customer')
-        self.assertEqual(sheet['C4'].value, 'STMT-W-1')
-        self.assertEqual(sheet['E4'].value, 109.0)
-        self.assertEqual(sheet['F4'].value, 1)
-        self.assertEqual(sheet['G4'].value, '=E4*F4')
-        self.assertEqual(sheet['H4'].value, '=IF($B$1=0,"",G4/$B$1)')
+        self.assertEqual(sheet['C4'].value, 'Statement Customer')
+        self.assertEqual(sheet['D4'].value, 'STMT-W-1')
+        self.assertEqual(sheet['F4'].value, 109.0)
+        self.assertEqual(
+            sheet['G4'].value,
+            "=SUMIFS('Pasted Sales'!$D:$D,'Pasted Sales'!$A:$A,B4,'Pasted Sales'!$B:$B,C4,'Pasted Sales'!$C:$C,E4)",
+        )
+        self.assertEqual(sheet['H4'].value, '=F4*G4')
+        self.assertEqual(sheet['I4'].value, '=IF($B$1=0,"",H4/$B$1)')
+
+        pasted = workbook['Pasted Sales']
+        self.assertEqual(
+            [cell.value for cell in pasted[1][:4]],
+            ['Order Date', 'Customer Name', 'Product Name', 'Quantity'],
+        )
 
         monthly = workbook['Monthly Sales']
         self.assertEqual([cell.value for cell in monthly[1]], ['Year', 'Month', 'Revenue (USD)'])
@@ -401,7 +409,7 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         self.assertEqual(monthly['B2'].value, self.month)
         self.assertEqual(
             monthly['C2'].value,
-            "=SUMIFS('Sale Transactions'!$H$4:$H$4,'Sale Transactions'!$A$4:$A$4,\">=\"&DATE(A2,B2,1),'Sale Transactions'!$A$4:$A$4,\"<\"&DATE(A2,B2+1,1))",
+            "=SUMIFS('Sale Transactions'!$I$4:$I$4,'Sale Transactions'!$B$4:$B$4,\">=\"&DATE(A2,B2,1),'Sale Transactions'!$B$4:$B$4,\"<\"&DATE(A2,B2+1,1))",
         )
 
         products = workbook['Product Sales']
@@ -413,7 +421,7 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         self.assertEqual(products['B2'].value, 'Sales Widget')
         self.assertEqual(
             products['C2'].value,
-            "=SUMIFS('Sale Transactions'!$H$4:$H$4,'Sale Transactions'!$C$4:$C$4,A2,'Sale Transactions'!$D$4:$D$4,B2)",
+            "=SUMIFS('Sale Transactions'!$I$4:$I$4,'Sale Transactions'!$D$4:$D$4,A2,'Sale Transactions'!$E$4:$E$4,B2)",
         )
 
     def test_multiple_periods_include_only_selected_months(self):
