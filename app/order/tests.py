@@ -369,7 +369,7 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         workbook = self._workbook(simple_report='1', usd_rate='4.70')
         self.assertEqual(
             workbook.sheetnames,
-            ['Sale Transactions', 'Pasted Sales', 'Monthly Sales', 'Product Sales'],
+            ['Sale Transactions', 'Monthly Sales', 'Product Sales'],
         )
         sheet = workbook['Sale Transactions']
         self.assertEqual(sheet['A1'].value, 'Convert rate (MYR per 1 USD)')
@@ -390,18 +390,9 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         self.assertEqual(sheet['C4'].value, 'Statement Customer')
         self.assertEqual(sheet['D4'].value, 'STMT-W-1')
         self.assertEqual(sheet['F4'].value, 109.0)
-        self.assertEqual(
-            sheet['G4'].value,
-            "=SUMIFS('Pasted Sales'!$D:$D,'Pasted Sales'!$A:$A,B4,'Pasted Sales'!$B:$B,C4,'Pasted Sales'!$C:$C,E4)",
-        )
+        self.assertEqual(sheet['G4'].value, 1)
         self.assertEqual(sheet['H4'].value, '=F4*G4')
         self.assertEqual(sheet['I4'].value, '=IF($B$1=0,"",H4/$B$1)')
-
-        pasted = workbook['Pasted Sales']
-        self.assertEqual(
-            [cell.value for cell in pasted[1][:4]],
-            ['Order Date', 'Customer Name', 'Product Name', 'Quantity'],
-        )
 
         monthly = workbook['Monthly Sales']
         self.assertEqual([cell.value for cell in monthly[1]], ['Year', 'Month', 'Revenue (USD)'])
