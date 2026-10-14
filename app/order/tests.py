@@ -416,6 +416,64 @@ class OrderStatementSalesOnlyExportTests(TestCase):
             "=SUMIFS('Sale Transactions'!$H$4:$H$4,'Sale Transactions'!$C$4:$C$4,A2,'Sale Transactions'!$D$4:$D$4,B2)",
         )
 
+    def test_multiple_periods_include_only_selected_months(self):
+        june = date(self.year - 1, 6, 15)
+        july = date(self.year - 1, 7, 15)
+        june_product = Product.objects.create(
+            name='June Widget',
+            sku='STMT-W-JUNE',
+            reference_price=Decimal('12.00'),
+        )
+        july_product = Product.objects.create(
+            name='July Widget',
+            sku='STMT-W-JULY',
+            reference_price=Decimal('13.00'),
+        )
+        for when, product in ((june, june_product), (july, july_product)):
+            order = Order.objects.create(
+                agent=self.agent,
+                created_by=self.superuser,
+                status=Order.OrderStatus.COMPLETED,
+                customer_name='Statement Customer',
+                transaction_date=when,
+            )
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=1,
+                selling_price=Decimal('20.00'),
+                landed_cost=Decimal('5.00'),
+            )
+        selected = [
+            f'{self.year}-{self.month:02d}',
+            f'{june.year:04d}-{june.month:02d}',
+        ]
+        response = self.client.get('/order/export/', {'period': selected})
+        self.assertEqual(response.status_code, 200, response.content[:200])
+        sheet = load_workbook(BytesIO(response.content)).active
+        labels = [row[4] for row in sheet.iter_rows(min_row=2, values_only=True)]
+        self.assertIn('Sales Widget', labels)
+        self.assertIn('June Widget', labels)
+        self.assertNotIn('July Widget', labels)
+        self.assertIn(
+            f'order_statement_{june.year}_{june.month:02d}_{self.year}_{self.month:02d}.xlsx',
+            response['Content-Disposition'],
+        )
+
+        simple = self.client.get('/order/export/', {
+            'period': selected,
+            'simple_report': '1',
+            'usd_rate': '4.70',
+        })
+        self.assertEqual(simple.status_code, 200, simple.content[:200])
+        monthly = load_workbook(BytesIO(simple.content))['Monthly Sales']
+        self.assertEqual(
+            [(monthly['A2'].value, monthly['B2'].value), (monthly['A3'].value, monthly['B3'].value)],
+            [(june.year, june.month), (self.year, self.month)],
+        )
+        product_ids = [row[0] for row in monthly.parent['Product Sales'].iter_rows(min_row=2, values_only=True)]
+        self.assertEqual(product_ids, ['STMT-W-1', 'STMT-W-JUNE'])
+
     def test_simple_report_requires_a_positive_rate(self):
         missing = self.client.get('/order/export/', {
             'month': self.month,

@@ -1234,36 +1234,45 @@
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4" @click.away="showExportModal = false">
             <div class="px-6 py-4 border-b border-gray-200">
                 <h3 class="text-lg font-medium text-gray-900">Export Order Statement</h3>
-                <p class="mt-1 text-sm text-gray-500">Download orders for a specific month. Uses the current <strong class="font-medium text-gray-700">Status</strong> and <strong class="font-medium text-gray-700">Agent</strong> filters from the toolbar.</p>
+                <p class="mt-1 text-sm text-gray-500">Select one or more months. Uses the current <strong class="font-medium text-gray-700">Status</strong> and <strong class="font-medium text-gray-700">Agent</strong> filters from the toolbar.</p>
             </div>
 
             <form action="{% url 'order:export_order_statement' %}" method="GET" class="p-6"
                   @submit="submitExportStatement($event)">
                 <input type="hidden" name="status" :value="filters.status || ''">
                 <input type="hidden" name="agent" :value="filters.agent || ''">
-                {# USE SEPARATE EXPORT FILTERS #}
-                <div class="grid grid-cols-2 gap-4 mb-6">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                        <select name="month" class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500" x-model="exportFilters.month">
-                            <option value="1">January</option>
-                            <option value="2">February</option>
-                            <option value="3">March</option>
-                            <option value="4">April</option>
-                            <option value="5">May</option>
-                            <option value="6">June</option>
-                            <option value="7">July</option>
-                            <option value="8">August</option>
-                            <option value="9">September</option>
-                            <option value="10">October</option>
-                            <option value="11">November</option>
-                            <option value="12">December</option>
-                        </select>
+                <template x-for="period in exportFilters.periods" :key="period">
+                    <input type="hidden" name="period" :value="period">
+                </template>
+                <div class="mb-6">
+                    <div class="mb-3 flex items-center justify-between">
+                        <button type="button" @click="shiftExportYear(-1)"
+                                class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+                                aria-label="Previous year">&lsaquo;</button>
+                        <span class="text-sm font-semibold text-gray-900" x-text="exportFilters.calendarYear"></span>
+                        <button type="button" @click="shiftExportYear(1)"
+                                class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+                                aria-label="Next year">&rsaquo;</button>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                        <input type="number" name="year" x-model="exportFilters.year"
-                               class="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <div class="grid grid-cols-4 gap-2">
+                        <template x-for="month in exportCalendarMonths" :key="month">
+                            <button type="button"
+                                    @click="toggleExportMonth(month)"
+                                    :aria-pressed="isExportMonthSelected(month)"
+                                    :class="isExportMonthSelected(month)
+                                        ? 'border-indigo-600 bg-indigo-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'"
+                                    class="rounded-md border px-2 py-2 text-sm font-medium"
+                                    x-text="exportMonthLabels[month - 1]"></button>
+                        </template>
+                    </div>
+                    <p class="mt-3 text-xs text-red-600" x-show="!exportFilters.periods.length" x-cloak>Select at least one month.</p>
+                    <div class="mt-3 flex flex-wrap gap-1.5" x-show="exportFilters.periods.length" x-cloak>
+                        <template x-for="period in exportFilters.periods" :key="'chip-' + period">
+                            <button type="button" @click="toggleExportPeriod(period)"
+                                    class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                                    x-text="exportPeriodLabel(period)"></button>
+                        </template>
                     </div>
                 </div>
 
@@ -1300,7 +1309,8 @@
                         Cancel
                     </button>
                     <button type="submit"
-                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            :disabled="!exportFilters.periods.length"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-300">
                         Download CSV
                     </button>
                 </div>
@@ -1983,9 +1993,11 @@
             excludeCustomersOpen: false,
             excludeCustomerSearch: '',
             // Separate filters for the export modal to prevent issues when main view is "All Time"
+            exportMonthLabels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+            exportCalendarMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             exportFilters: {
-                month: new Date().getMonth() + 1,
-                year: new Date().getFullYear(),
+                calendarYear: new Date().getFullYear(),
+                periods: [],
                 simple_report: false,
                 usd_rate: '',
             },
@@ -2476,15 +2488,52 @@
             },
 
             openExportModal() {
-                // Pre-fill export modal. If in "All Periods" mode (0), default to current month.
-                // Otherwise, use the currently selected month.
-                this.exportFilters.month = this.filters.month === 0 ? new Date().getMonth() + 1 : this.filters.month;
-                this.exportFilters.year = this.filters.year === 0 ? new Date().getFullYear() : this.filters.year;
+                const rawMonth = Number(this.filters.month);
+                const rawYear = Number(this.filters.year);
+                const month = rawMonth >= 1 && rawMonth <= 12 ? rawMonth : new Date().getMonth() + 1;
+                const year = rawYear >= 1900 ? rawYear : new Date().getFullYear();
+                this.exportFilters.calendarYear = year;
+                this.exportFilters.periods = [this.exportPeriodKey(year, month)];
                 this.exportFilters.simple_report = false;
                 this.showExportModal = true;
             },
 
+            exportPeriodKey(year, month) {
+                return `${year}-${String(month).padStart(2, '0')}`;
+            },
+
+            exportPeriodLabel(period) {
+                const [year, month] = String(period).split('-');
+                return `${this.exportMonthLabels[Number(month) - 1]} ${year}`;
+            },
+
+            shiftExportYear(delta) {
+                this.exportFilters.calendarYear += delta;
+            },
+
+            isExportMonthSelected(month) {
+                return this.exportFilters.periods.includes(
+                    this.exportPeriodKey(this.exportFilters.calendarYear, month)
+                );
+            },
+
+            toggleExportPeriod(period) {
+                const periods = this.exportFilters.periods;
+                const idx = periods.indexOf(period);
+                if (idx === -1) periods.push(period);
+                else periods.splice(idx, 1);
+                periods.sort();
+            },
+
+            toggleExportMonth(month) {
+                this.toggleExportPeriod(this.exportPeriodKey(this.exportFilters.calendarYear, month));
+            },
+
             submitExportStatement(event) {
+                if (!this.exportFilters.periods.length) {
+                    event.preventDefault();
+                    return;
+                }
                 if (!this.exportFilters.simple_report) {
                     this.showExportModal = false;
                     return;

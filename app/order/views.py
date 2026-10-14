@@ -4495,11 +4495,62 @@ def payment_webhook_view(request):
 
     return HttpResponse("Invalid Method", status=405)
 
+def _parse_export_periods(request):
+    """Selected year-months. Repeated period=YYYY-MM, or a single month and year."""
+    periods = []
+    seen = set()
+    for raw in request.GET.getlist('period'):
+        parts = (raw or '').strip().split('-')
+        if len(parts) != 2:
+            continue
+        try:
+            year = int(parts[0])
+            month = int(parts[1])
+        except ValueError:
+            continue
+        if year < 1900 or year > 9999 or not 1 <= month <= 12:
+            continue
+        key = (year, month)
+        if key not in seen:
+            seen.add(key)
+            periods.append(key)
+    if periods:
+        periods.sort()
+        return periods
+    now = timezone.now()
+    try:
+        month = int(request.GET.get('month') or now.month)
+        year = int(request.GET.get('year') or now.year)
+    except (TypeError, ValueError):
+        return [(now.year, now.month)]
+    if year < 1900 or year > 9999 or not 1 <= month <= 12:
+        return [(now.year, now.month)]
+    return [(year, month)]
+
+
+def _order_statement_filename(periods, simple=False):
+    if len(periods) == 1:
+        year, month = periods[0]
+        stem = f'order_statement_{year}_{month:02d}'
+    else:
+        joined = '_'.join(f'{year}_{month:02d}' for year, month in periods)
+        stem = f'order_statement_{joined}'
+    if simple:
+        stem += '_simple'
+    return f'{stem}.xlsx'
+
+
+def _filter_dates_in_periods(qs, field, periods):
+    period_q = Q()
+    for year, month in periods:
+        period_q |= Q(**{f'{field}__year': year, f'{field}__month': month})
+    return qs.filter(period_q)
+
+
 @staff_member_required
 def export_order_statement(request):
     try:
-        month = int(request.GET.get('month', timezone.now().month))
-        year = int(request.GET.get('year', timezone.now().year))
+        periods = _parse_export_periods(request)
         status_filter = (request.GET.get('status') or '').strip()
         agent_filter = (request.GET.get('agent') or '').strip()
         simple_report = (request.GET.get('simple_report') or '').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -4509,11 +4560,13 @@ def export_order_statement(request):
             if usd_rate is None:
                 return HttpResponse('Enter a convert rate greater than zero.', status=400)
 
-        orders = Order.objects.filter(
-            Q(transaction_date__year=year, transaction_date__month=month)
-            |
-            Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
-        ).select_related('agent', 'created_by').prefetch_related('items__product')
+        order_period_q = Q()
+        for year, month in periods:
+            order_period_q |= (
+                Q(transaction_date__year=year, transaction_date__month=month)
+                | Q(transaction_date__isnull=True, created_at__year=year, created_at__month=month)
+            )
+        orders = Order.objects.filter(order_period_q).select_related('agent', 'created_by').prefetch_related('items__product')
 
         orders = _apply_order_status_agent_filters(orders, status_filter, agent_filter)
         orders = orders.order_by('transaction_date', 'created_at', 'id')
@@ -4577,21 +4630,24 @@ def export_order_statement(request):
                 _export_row_sort_date({'sort_date': row['sort_date'], 'values': [row['order_id']]}),
                 str(row['order_id']),
             ))
-            filename = f'order_statement_{year}_{month:02d}_simple.xlsx'
+            filename = _order_statement_filename(periods, simple=True)
             return _excel_response_for_simple_sale_rows(filename, simple_rows, usd_rate)
 
-        receipts = CashBankReceiptEntry.objects.filter(
-            transaction_date__year=year,
-            transaction_date__month=month,
+        receipts = _filter_dates_in_periods(
+            CashBankReceiptEntry.objects.all(),
+            'transaction_date',
+            periods,
         )
         receipts = _filter_cash_receipts_for_agent(receipts, agent_filter)
-        adjustments = RevenueAdjustmentEntry.objects.filter(
-            transaction_date__year=year,
-            transaction_date__month=month,
+        adjustments = _filter_dates_in_periods(
+            RevenueAdjustmentEntry.objects.all(),
+            'transaction_date',
+            periods,
         )
-        commission_payments = AgentCommissionPaymentEntry.objects.filter(
-            payment_date__year=year,
-            payment_date__month=month,
+        commission_payments = _filter_dates_in_periods(
+            AgentCommissionPaymentEntry.objects.all(),
+            'payment_date',
+            periods,
         )
         rows = _merge_sorted_export_rows(
             rows,
@@ -4600,7 +4656,7 @@ def export_order_statement(request):
             _agent_commission_payment_export_rows(commission_payments),
         )
 
-        filename = f"order_statement_{year}_{month:02d}.xlsx"
+        filename = _order_statement_filename(periods)
         return _excel_response_for_order_rows(filename, rows)
 
     except Exception as e:
