@@ -103,8 +103,7 @@
             },
             get filteredProductsForModal() {
                 if (!this.assignProductModalSearchTerm) return this.allProducts;
-                const search = this.assignProductModalSearchTerm.toLowerCase();
-                return this.allProducts.filter(p => p.name.toLowerCase().includes(search) || (p.sku && p.sku.toLowerCase().includes(search)));
+                return this.allProducts.filter(p => window.productSearchMatches(p, this.assignProductModalSearchTerm));
             },
             get filteredPostsForModal() {
                 if (!this.assignPostModalSearchTerm) return this.allPosts;
@@ -113,8 +112,7 @@
             },
             get filteredProductsForBulkAssign() {
                 if (!this.bulkAssignSearchTerm) return this.allProducts;
-                const search = this.bulkAssignSearchTerm.toLowerCase();
-                return this.allProducts.filter(p => p.name.toLowerCase().includes(search) || (p.sku && p.sku.toLowerCase().includes(search)));
+                return this.allProducts.filter(p => window.productSearchMatches(p, this.bulkAssignSearchTerm));
             },
             get filteredPostsForBulkAssign() {
                 if (!this.bulkAssignSearchTerm) return this.allPosts;

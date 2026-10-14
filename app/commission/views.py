@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_date
 from django.utils import timezone
 
 from inventory.views import staff_required
+from product.product_search import product_name_search_q
 from core.dates import format_display_date, format_display_datetime
 from .models import CommissionLedger
 
@@ -75,7 +76,7 @@ def api_get_commissions(request):
         commissions_qs = commissions_qs.filter(
             Q(agent__username__icontains=search_query) |
             Q(order_item__order__id__icontains=search_query) |
-            Q(order_item__product__name__icontains=search_query)
+            product_name_search_q(search_query, 'order_item__product')
         )
 
     # Apply Sorting

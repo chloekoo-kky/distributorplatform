@@ -51,6 +51,20 @@
 <body class="bg-gray-100 text-gray-800 flex flex-col min-h-screen">
 
     <script>
+        window.compactProductSearch = function (value) {
+            return String(value || '').toLowerCase()
+                .replace(/[^a-z0-9]+/g, '')
+                .replace(/([0-9])units/g, '$1u')
+                .replace(/([0-9])unit/g, '$1u')
+                .replace(/([0-9])iu/g, '$1u');
+        };
+        window.productSearchMatches = function (product, query) {
+            const needle = window.compactProductSearch(query);
+            if (!needle) return true;
+            const name = window.compactProductSearch(product && product.name);
+            const sku = window.compactProductSearch(product && product.sku);
+            return name.includes(needle) || sku.includes(needle);
+        };
         document.addEventListener('alpine:init', () => {
             Alpine.store('cartStore', {
                 items: JSON.parse(localStorage.getItem('distributorCart') || '[]'),

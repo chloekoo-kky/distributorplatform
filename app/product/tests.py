@@ -683,3 +683,38 @@ class InvoiceSkuUploadTests(TestCase):
         self.assertFalse(ProductInvoiceNameAlias.objects.filter(
             name_normalized=ProductInvoiceNameAlias.normalize_name('Re N Tox 100u')
         ).exists())
+
+
+class ManageProductNameSearchTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username='productsearch',
+            password='testpass123',
+            is_staff=True,
+        )
+        self.client = Client()
+        self.client.force_login(self.user)
+        self.iu = Product.objects.create(name='BOTOX100iu uk')
+        self.spaced = Product.objects.create(name='BOTOX® 100 U International English (PD)')
+        self.symbol = Product.objects.create(name='BOTOX® 100u (Non-English)')
+        Product.objects.create(name='BOTOX 50u')
+
+    def test_botox_100u_matches_spacing_symbols_and_iu(self):
+        response = self.client.get(
+            '/api/manage-products/',
+            {'search': 'Botox 100u'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        names = {item['name'] for item in response.json()['items']}
+        self.assertEqual(names, {self.iu.name, self.spaced.name, self.symbol.name})
+
+        picker = self.client.get(
+            '/api/product-search/',
+            {'search': 'Botox 100u'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(picker.status_code, 200, picker.content)
+        picker_names = {item['name'] for item in picker.json()['products']}
+        self.assertEqual(picker_names, {self.iu.name, self.spaced.name, self.symbol.name})

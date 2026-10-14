@@ -27,6 +27,7 @@ import urllib.parse
 
 from inventory.models import QuotationItem
 from product.models import Product, Category
+from product.product_search import product_name_search_q
 from commission.models import CommissionLedger
 from .invoice_amount_words import ringgit_amount_in_words
 from .models import (
@@ -2043,8 +2044,7 @@ def _manage_orders_search_q(search_query: str) -> Q:
         Q(agent__username__icontains=search_query) |
         Q(agent__first_name__icontains=search_query) |
         Q(agent__last_name__icontains=search_query) |
-        Q(items__product__name__icontains=search_query) |
-        Q(items__product__alias_name__icontains=search_query)
+        product_name_search_q(search_query, 'items__product')
     )
     if normalized_id_term and normalized_id_term != search_query:
         search_q |= Q(id__icontains=normalized_id_term)

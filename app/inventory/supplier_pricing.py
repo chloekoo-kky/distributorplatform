@@ -1408,11 +1408,15 @@ def list_quotation_matrix_rows(supplier_ids=None, search_query: str = '') -> lis
     )
     if supplier_ids:
         items_qs = items_qs.filter(quotation__supplier_id__in=supplier_ids)
-    for token in _matrix_search_tokens(search_query):
+    from product.product_search import compact_fields_q, product_name_search_q
+
+    for index, token in enumerate(_matrix_search_tokens(search_query)):
+        annotations, text_q = compact_fields_q(token, ['line_product_label'], f'quote{index}')
+        if annotations:
+            items_qs = items_qs.annotate(**annotations)
         items_qs = items_qs.filter(
-            Q(product__name__icontains=token)
-            | Q(product__sku__icontains=token)
-            | Q(line_product_label__icontains=token)
+            text_q
+            | product_name_search_q(token, 'product')
             | Q(quotation__supplier__name__icontains=token)
         )
 

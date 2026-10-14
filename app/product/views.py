@@ -26,6 +26,7 @@ from inventory.views import staff_required
 
 from .models import Product, Category, CategoryGroup, ProductContentSection, IgnoredMergeSuggestion, ProductPriceTier
 from .pricing_sync import reconcile_saved_base_cost_with_quotations
+from .product_search import filter_products_by_search
 from .forms import ProductUploadForm, ProductForm, CategoryForm
 from .resources import ProductResource
 from .excel_export import build_products_xlsx
@@ -152,10 +153,8 @@ def product_list(request):
 
     # Apply Search Filtering
     if search_query:
-        products_query = products_query.filter(
-            Q(name__icontains=search_query) |
-            Q(sku__icontains=search_query) |
-            Q(description__icontains=search_query)
+        products_query = filter_products_by_search(
+            products_query, search_query, include_description=True,
         )
 
     all_products = list(products_query.select_related('featured_image').distinct().order_by('display_order', 'name'))
@@ -998,11 +997,7 @@ def api_manage_products(request):
     )
 
     if search_query:
-        queryset = queryset.filter(
-            Q(name__icontains=search_query)
-            | Q(sku__icontains=search_query)
-            | Q(alias_name__icontains=search_query)
-        )
+        queryset = filter_products_by_search(queryset, search_query)
     if group_filter:
         queryset = queryset.filter(categories__group__name=group_filter)
     if category_filter:
@@ -1358,7 +1353,7 @@ def api_product_merge_suggestions(request):
     if selection_mode:
         qs = qs.filter(pk__in=scoped_product_ids)
     elif search_query:
-        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+        qs = filter_products_by_search(qs, search_query)
     products = list(qs.order_by("name"))
 
     raw_groups = _build_merge_candidate_groups(products, min_score=min_score)
@@ -1595,7 +1590,7 @@ def api_product_search(request):
         limit = 50
     qs = Product.objects.all().prefetch_related("price_tiers").only("id", "name", "sku", "selling_price")
     if search_query:
-        qs = qs.filter(Q(name__icontains=search_query) | Q(sku__icontains=search_query))
+        qs = filter_products_by_search(qs, search_query)
     products = list(qs.order_by("name")[:limit])
     return JsonResponse({
         "products": [

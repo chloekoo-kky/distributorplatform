@@ -7,7 +7,7 @@ import os
 import tempfile
 
 from django.core.paginator import EmptyPage, Paginator
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from tablib import Dataset
@@ -21,6 +21,7 @@ from product.invoice_sku import (
 )
 from product.models import Product, ProductInvoiceNameAlias
 from product.name_aliases import normalize_invoice_product_name, upsert_invoice_name_alias
+from product.product_search import filter_products_by_search
 from product.views import staff_required
 
 logger = logging.getLogger(__name__)
@@ -87,12 +88,7 @@ def api_product_aliases(request):
             )
         ).order_by('name')
         if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search)
-                | Q(sku__icontains=search)
-                | Q(alias_name__icontains=search)
-                | Q(invoice_name_aliases__name__icontains=search)
-            ).distinct()
+            queryset = filter_products_by_search(queryset, search)
         paginator = Paginator(queryset, 50)
         try:
             page = paginator.page(page_number)

@@ -29,6 +29,7 @@ from .models import UserGroup, CustomUser, SubscriptionPlan, SubscriptionPayment
 from .utils import generate_verification_code, send_verification_code
 from django.core.paginator import Paginator, EmptyPage
 from django.db.models import Q
+from product.product_search import product_name_search_q
 from django.views.decorators.http import require_POST
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -534,8 +535,7 @@ def api_order_history(request):
                 Q(customer_name__icontains=term) |
                 Q(company_name__icontains=term) |
                 Q(customer_phone__icontains=term) |
-                Q(items__product__name__icontains=term) |
-                Q(items__product__sku__icontains=term)
+                product_name_search_q(term, 'items__product')
             )
         base_orders = base_orders.distinct()
 

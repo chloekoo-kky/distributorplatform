@@ -170,11 +170,7 @@ function orderForm() {
             if (!this.filterText) {
                 return this.allProducts;
             }
-            const search = this.filterText.toLowerCase();
-            return this.allProducts.filter(p =>
-                p.name.toLowerCase().includes(search) ||
-                p.sku.toLowerCase().includes(search)
-            );
+            return this.allProducts.filter(p => window.productSearchMatches(p, this.filterText));
         },
 
         get cartSubtotal() {

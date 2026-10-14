@@ -37,6 +37,7 @@ from .invoice_import import (
 )
 from .resources import QuotationResource, InventoryBatchResource
 from product.models import Product, Category, CategoryGroup
+from product.product_search import compact_fields_q, filter_products_by_search, product_name_search_q
 from product.pricing_sync import sync_saved_base_costs_for_quotation
 from .models import (
     Quotation, InventoryBatch, QuotationItem, Supplier,
@@ -147,9 +148,7 @@ def api_manage_inventory(request):
 
     # --- 4. Apply Filters ---
     if search_query:
-        queryset = queryset.filter(
-            Q(name__icontains=search_query) | Q(sku__icontains=search_query)
-        )
+        queryset = filter_products_by_search(queryset, search_query)
     if group_filter:
         queryset = queryset.filter(categories__group__name=group_filter)
     if category_filter:
@@ -426,7 +425,7 @@ def api_manage_procurement(request):
             po_qs = po_qs.filter(
                 Q(quotation_id__icontains=search_query)
                 | Q(supplier__name__icontains=search_query)
-                | Q(items__product__name__icontains=search_query)
+                | product_name_search_q(search_query, 'items__product')
             ).distinct()
         for q in po_qs:
             records.append(_serialize_procurement_po(
@@ -446,7 +445,7 @@ def api_manage_procurement(request):
                 Q(invoice_id__icontains=search_query)
                 | Q(supplier__name__icontains=search_query)
                 | Q(quotation__quotation_id__icontains=search_query)
-                | Q(items__product__name__icontains=search_query)
+                | product_name_search_q(search_query, 'items__product')
                 | Q(items__description__icontains=search_query)
             ).distinct()
         if status_filter and status_filter != 'OPEN':
@@ -1594,9 +1593,7 @@ def api_products_for_mapping(request):
     if not q:
         products = Product.objects.all().order_by('name')[:50]
     else:
-        products = Product.objects.filter(
-            Q(name__icontains=q) | Q(sku__icontains=q)
-        ).order_by('name')[:30]
+        products = filter_products_by_search(Product.objects.all(), q).order_by('name')[:30]
     return JsonResponse({
         'products': [{'id': p.id, 'name': p.name, 'sku': p.sku or ''} for p in products],
     })
@@ -2610,15 +2607,17 @@ def _filter_matrix_by_search(queryset, search_query: str):
     Each token must match at least one searchable field (AND across tokens).
     Handles multi-word queries and double-spaces in stored medication names.
     """
-    for token in matrix_search_tokens(search_query):
+    for index, token in enumerate(matrix_search_tokens(search_query)):
+        annotations, text_q = compact_fields_q(
+            token,
+            ['line_medication', 'strength', 'size', 'form', 'notes'],
+            f'matrix{index}',
+        )
+        if annotations:
+            queryset = queryset.annotate(**annotations)
         queryset = queryset.filter(
-            Q(line_medication__icontains=token)
-            | Q(strength__icontains=token)
-            | Q(size__icontains=token)
-            | Q(form__icontains=token)
-            | Q(notes__icontains=token)
-            | Q(product__name__icontains=token)
-            | Q(product__sku__icontains=token)
+            text_q
+            | product_name_search_q(token, 'product')
             | Q(supplier__name__icontains=token)
         )
     return queryset
