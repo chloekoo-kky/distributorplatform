@@ -406,13 +406,19 @@ class OrderStatementSalesOnlyExportTests(TestCase):
         products = workbook['Product Sales']
         self.assertEqual(
             [cell.value for cell in products[1]],
-            ['Product ID', 'Product Name', 'Revenue (USD)'],
+            ['Product ID', 'Product Name', 'Year', 'Month', 'Quantity', 'Revenue (USD)'],
         )
         self.assertEqual(products['A2'].value, 'STMT-W-1')
         self.assertEqual(products['B2'].value, 'Sales Widget')
+        self.assertEqual(products['C2'].value, self.year)
+        self.assertEqual(products['D2'].value, self.month)
         self.assertEqual(
-            products['C2'].value,
-            "=SUMIFS('Sale Transactions'!$I$4:$I$4,'Sale Transactions'!$D$4:$D$4,A2,'Sale Transactions'!$E$4:$E$4,B2)",
+            products['E2'].value,
+            "=SUMIFS('Sale Transactions'!$G$4:$G$4,'Sale Transactions'!$D$4:$D$4,A2,'Sale Transactions'!$E$4:$E$4,B2,'Sale Transactions'!$B$4:$B$4,\">=\"&DATE(C2,D2,1),'Sale Transactions'!$B$4:$B$4,\"<\"&DATE(C2,D2+1,1))",
+        )
+        self.assertEqual(
+            products['F2'].value,
+            "=SUMIFS('Sale Transactions'!$I$4:$I$4,'Sale Transactions'!$D$4:$D$4,A2,'Sale Transactions'!$E$4:$E$4,B2,'Sale Transactions'!$B$4:$B$4,\">=\"&DATE(C2,D2,1),'Sale Transactions'!$B$4:$B$4,\"<\"&DATE(C2,D2+1,1))",
         )
 
     def test_multiple_periods_include_only_selected_months(self):
@@ -470,8 +476,14 @@ class OrderStatementSalesOnlyExportTests(TestCase):
             [(monthly['A2'].value, monthly['B2'].value), (monthly['A3'].value, monthly['B3'].value)],
             [(june.year, june.month), (self.year, self.month)],
         )
-        product_ids = [row[0] for row in monthly.parent['Product Sales'].iter_rows(min_row=2, values_only=True)]
-        self.assertEqual(product_ids, ['STMT-W-1', 'STMT-W-JUNE'])
+        product_rows = [
+            (row[0], row[2], row[3])
+            for row in monthly.parent['Product Sales'].iter_rows(min_row=2, values_only=True)
+        ]
+        self.assertEqual(product_rows, [
+            ('STMT-W-1', self.year, self.month),
+            ('STMT-W-JUNE', june.year, june.month),
+        ])
 
     def test_simple_report_requires_a_positive_rate(self):
         missing = self.client.get('/order/export/', {

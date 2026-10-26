@@ -538,7 +538,9 @@ SIMPLE_SALE_SHEET_NAME = 'Sale Transactions'
 SIMPLE_SALE_MONTHLY_SHEET_NAME = 'Monthly Sales'
 SIMPLE_SALE_PRODUCT_SHEET_NAME = 'Product Sales'
 SIMPLE_SALE_MONTHLY_HEADERS = ['Year', 'Month', 'Revenue (USD)']
-SIMPLE_SALE_PRODUCT_HEADERS = ['Product ID', 'Product Name', 'Revenue (USD)']
+SIMPLE_SALE_PRODUCT_HEADERS = [
+    'Product ID', 'Product Name', 'Year', 'Month', 'Quantity', 'Revenue (USD)',
+]
 
 
 def _parse_positive_decimal(raw):
@@ -563,6 +565,7 @@ def _write_simple_sale_summary_sheets(wb, rows):
     data_start = 4
     data_end = data_start + len(rows) - 1
     usd_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$I${data_start}:$I${data_end}"
+    qty_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$G${data_start}:$G${data_end}"
     date_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$B${data_start}:$B${data_end}"
     sku_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$D${data_start}:$D${data_end}"
     name_range = f"'{SIMPLE_SALE_SHEET_NAME}'!$E${data_start}:$E${data_end}"
@@ -600,24 +603,44 @@ def _write_simple_sale_summary_sheets(wb, rows):
     products = []
     seen_products = set()
     for row in rows:
-        key = (row.get('sku') or '', row.get('product') or '')
+        excel_date = _coerce_export_date(row.get('sort_date'))
+        if excel_date is None:
+            continue
+        key = (row.get('sku') or '', row.get('product') or '', excel_date.year, excel_date.month)
         if key not in seen_products:
             seen_products.add(key)
             products.append(key)
-    products.sort(key=lambda item: (item[0].casefold(), item[1].casefold()))
-    for offset, (sku, name) in enumerate(products):
+    products.sort(key=lambda item: (item[0].casefold(), item[1].casefold(), item[2], item[3]))
+    for offset, (sku, name, year, month) in enumerate(products):
         excel_row = 2 + offset
         products_sheet.cell(row=excel_row, column=1, value=sku)
         products_sheet.cell(row=excel_row, column=2, value=name)
+        products_sheet.cell(row=excel_row, column=3, value=year)
+        products_sheet.cell(row=excel_row, column=4, value=month)
         if rows:
-            formula = (
-                f'=SUMIFS({usd_range},{sku_range},A{excel_row},{name_range},B{excel_row})'
+            month_match = (
+                f'{date_range},">="&DATE(C{excel_row},D{excel_row},1),'
+                f'{date_range},"<"&DATE(C{excel_row},D{excel_row}+1,1)'
             )
-            revenue = products_sheet.cell(row=excel_row, column=3, value=formula)
+            product_match = f'{sku_range},A{excel_row},{name_range},B{excel_row}'
+            quantity = products_sheet.cell(
+                row=excel_row,
+                column=5,
+                value=f'=SUMIFS({qty_range},{product_match},{month_match})',
+            )
+            quantity.number_format = '0'
+            revenue = products_sheet.cell(
+                row=excel_row,
+                column=6,
+                value=f'=SUMIFS({usd_range},{product_match},{month_match})',
+            )
             revenue.number_format = '0.00'
     products_sheet.column_dimensions['A'].width = 18
     products_sheet.column_dimensions['B'].width = 36
-    products_sheet.column_dimensions['C'].width = 18
+    products_sheet.column_dimensions['C'].width = 12
+    products_sheet.column_dimensions['D'].width = 12
+    products_sheet.column_dimensions['E'].width = 14
+    products_sheet.column_dimensions['F'].width = 18
 
 
 def _excel_response_for_simple_sale_rows(filename, rows, usd_rate):

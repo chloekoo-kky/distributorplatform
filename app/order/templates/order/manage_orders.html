@@ -1254,10 +1254,11 @@
                                 class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
                                 aria-label="Next year">&rsaquo;</button>
                     </div>
-                    <div class="grid grid-cols-4 gap-2">
+                    <p class="mb-2 text-xs text-gray-500">Shift-click a second month to select every month in between.</p>
+                    <div class="grid grid-cols-4 gap-2 select-none">
                         <template x-for="month in exportCalendarMonths" :key="month">
                             <button type="button"
-                                    @click="toggleExportMonth(month)"
+                                    @click="toggleExportMonth(month, $event)"
                                     :aria-pressed="isExportMonthSelected(month)"
                                     :class="isExportMonthSelected(month)
                                         ? 'border-indigo-600 bg-indigo-600 text-white'
@@ -2001,6 +2002,7 @@
                 simple_report: false,
                 usd_rate: '',
             },
+            exportSelectionAnchor: null,
             stats: {
                 total_orders: {{ stats.total_orders|default:0 }},
                 revenue: {{ stats.revenue|default:0 }}
@@ -2494,6 +2496,7 @@
                 const year = rawYear >= 1900 ? rawYear : new Date().getFullYear();
                 this.exportFilters.calendarYear = year;
                 this.exportFilters.periods = [this.exportPeriodKey(year, month)];
+                this.exportSelectionAnchor = this.exportPeriodKey(year, month);
                 this.exportFilters.simple_report = false;
                 this.showExportModal = true;
             },
@@ -2525,8 +2528,37 @@
                 periods.sort();
             },
 
-            toggleExportMonth(month) {
-                this.toggleExportPeriod(this.exportPeriodKey(this.exportFilters.calendarYear, month));
+            exportPeriodIndex(period) {
+                const [year, month] = String(period).split('-').map(Number);
+                return year * 12 + (month - 1);
+            },
+
+            exportPeriodFromIndex(index) {
+                const year = Math.floor(index / 12);
+                const month = (index % 12) + 1;
+                return this.exportPeriodKey(year, month);
+            },
+
+            selectExportPeriodRange(startPeriod, endPeriod) {
+                const start = this.exportPeriodIndex(startPeriod);
+                const end = this.exportPeriodIndex(endPeriod);
+                const from = Math.min(start, end);
+                const to = Math.max(start, end);
+                const periods = new Set(this.exportFilters.periods);
+                for (let index = from; index <= to; index += 1) {
+                    periods.add(this.exportPeriodFromIndex(index));
+                }
+                this.exportFilters.periods = Array.from(periods).sort();
+            },
+
+            toggleExportMonth(month, event) {
+                const period = this.exportPeriodKey(this.exportFilters.calendarYear, month);
+                if (event && event.shiftKey && this.exportSelectionAnchor) {
+                    this.selectExportPeriodRange(this.exportSelectionAnchor, period);
+                    return;
+                }
+                this.toggleExportPeriod(period);
+                this.exportSelectionAnchor = period;
             },
 
             submitExportStatement(event) {
