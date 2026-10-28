@@ -99,17 +99,32 @@
                         <p class="mt-1 text-xs font-medium text-indigo-600 opacity-80 group-hover:opacity-100">View product breakdown &rarr;</p>
                     </button>
                     {% if request.user.is_superuser %}
-                    <button type="button" @click="openRevenueBreakdown()"
-                            class="group text-left w-full px-4 py-5 sm:p-6 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-400">
-                        <dt class="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5">
-                            Total Revenue
-                            <svg class="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    <div class="relative group">
+                        <button type="button" @click="openRevenueBreakdown()"
+                                class="text-left w-full h-full px-4 py-5 sm:p-6 pr-14 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-400">
+                            <dt class="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5">
+                                Total Revenue
+                                <svg class="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                                </svg>
+                            </dt>
+                            <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
+                            <p class="mt-1 text-xs font-medium text-indigo-600 opacity-80 group-hover:opacity-100">View customer breakdown &rarr;</p>
+                        </button>
+                        <button type="button"
+                                @click="copyTotalRevenue()"
+                                class="absolute top-3 right-3 sm:top-4 sm:right-4 inline-flex items-center justify-center w-8 h-8 rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                                :class="revenueCardCopied ? 'text-green-700 bg-green-50 border-green-300' : 'text-gray-600 bg-white border-gray-200 hover:bg-gray-50'"
+                                :title="revenueCardCopied ? 'Copied' : 'Copy date range and total revenue'"
+                                :aria-label="revenueCardCopied ? 'Copied' : 'Copy date range and total revenue'">
+                            <svg x-show="!revenueCardCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
-                        </dt>
-                        <dd class="mt-1 text-2xl font-semibold text-gray-900" x-text="formatRevenue(stats.revenue)">RM {{ stats.revenue|default:"0.00"|intcomma }}</dd>
-                        <p class="mt-1 text-xs font-medium text-indigo-600 opacity-80 group-hover:opacity-100">View customer breakdown &rarr;</p>
-                    </button>
+                            <svg x-show="revenueCardCopied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" x-cloak aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </button>
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -2036,6 +2051,7 @@
             revenueTotal: 0,
             revenueBreakdown: [],
             revenueCopied: false,
+            revenueCardCopied: false,
             showCashReceivedBreakdownModal: false,
             cashReceivedBreakdownLoading: false,
             cashReceivedTotal: 0,
@@ -3516,6 +3532,33 @@
                     await this.copyToClipboard(lines.join('\n'));
                     this.ordersCopied = true;
                     setTimeout(() => { this.ordersCopied = false; }, 2000);
+                } catch (e) {
+                    console.error(e);
+                    alert('Failed to copy to clipboard.');
+                }
+            },
+
+            periodDateRangeLabel() {
+                const fmt = (iso) => (window.formatDisplayDate ? window.formatDisplayDate(iso) : iso) || '…';
+                if (this.filters.start_date || this.filters.end_date) {
+                    const start = this.filters.start_date ? fmt(this.filters.start_date) : '…';
+                    const end = this.filters.end_date ? fmt(this.filters.end_date) : '…';
+                    return `${start} ~ ${end}`;
+                }
+                if (!this.filters.month || !this.filters.year) return 'All Periods';
+                const start = new Date(this.filters.year, this.filters.month - 1, 1);
+                const end = new Date(this.filters.year, this.filters.month, 0);
+                const pad = (n) => String(n).padStart(2, '0');
+                const toLabel = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+                return `${toLabel(start)} ~ ${toLabel(end)}`;
+            },
+
+            async copyTotalRevenue() {
+                const text = `${this.periodDateRangeLabel()}\n${this.formatRevenue(this.stats.revenue)}`;
+                try {
+                    await this.copyToClipboard(text);
+                    this.revenueCardCopied = true;
+                    setTimeout(() => { this.revenueCardCopied = false; }, 2000);
                 } catch (e) {
                     console.error(e);
                     alert('Failed to copy to clipboard.');
